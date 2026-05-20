@@ -1,0 +1,10 @@
+project_id: platforminit
+hetzner:
+  token_secret: HCLOUD_TOKEN_PLATFORMINIT
+  region: hel1
+  server_prefix: platforminit-prod
+ssh:
+  key_name: platforminit-platforminit-automation
+volumes:
+  namespace: platforminit-platforminit
+  layout: split

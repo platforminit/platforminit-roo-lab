@@ -1,0 +1,11 @@
+project_id: n8n
+hetzner:
+  token_secret: HCLOUD_TOKEN_N8N
+  region: hel1
+  server_prefix: platforminit-n8n
+  default_server_type: cx23
+ssh:
+  key_name: platforminit-n8n-automation
+volumes:
+  namespace: platforminit-n8n
+  layout: none

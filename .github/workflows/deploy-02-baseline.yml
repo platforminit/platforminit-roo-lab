@@ -1,0 +1,170 @@
+name: 02 - Apply Host Baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: PlatformInit project / Hetzner project routing key
+        required: false
+        default: development
+        type: choice
+        options:
+          - development
+          - n8n
+          - platforminit
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      artifact_run_id:
+        description: Producing build workflow run ID
+        required: true
+        type: string
+      artifact_id:
+        description: Host-baseline artifact ID
+        required: true
+        type: string
+      server_id_override:
+        description: Optional Hetzner server id override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+      runtime_root:
+        description: Runtime root. Use auto to derive from volume layout.
+        required: false
+        default: auto
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'development' }}
+      host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      duration_minutes: '15'
+      mode: baseline
+
+  deploy:
+    needs: grant
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: target
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Download host-baseline artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          artifact-ids: ${{ inputs.artifact_id }}
+          github-token: ${{ github.token }}
+          path: ./downloaded-artifacts
+
+      - name: Resolve archive
+        id: artifact
+        run: |
+          set -euo pipefail
+          archive_path="$(find ./downloaded-artifacts -type f -name 'platforminit-host-baseline-*.tar.gz' | sort | head -n1)"
+          [ -n "$archive_path" ] || { find ./downloaded-artifacts -type f | sort >&2; exit 1; }
+          filename="$(basename "$archive_path")"
+          short_sha="${filename#platforminit-host-baseline-}"
+          short_sha="${short_sha%.tar.gz}"
+          echo "archive_path=$archive_path" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.target.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Apply baseline
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+          ARCHIVE: ${{ steps.artifact.outputs.archive_path }}
+          RUNTIME_ROOT: ${{ inputs.runtime_root }}
+          AUTOMATION_SSH_PUBLIC_KEY: ${{ secrets.AUTOMATION_SSH_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          remote_tmp="/tmp/host-baseline/${SHORTSHA}"
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/host-baseline /tmp/platforminit-run"
+          scp -i ~/.ssh/id_ed25519 "$ARCHIVE" "$HOST_LOGIN_USER@$HOST:${remote_tmp}.tar.gz"
+          scp -i ~/.ssh/id_ed25519 platform/host-baseline/remote/apply-baseline-remote.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/ch02-remote.sh"
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" \
+            "chmod +x /tmp/platforminit-run/ch02-remote.sh && sudo -n /tmp/platforminit-run/ch02-remote.sh '$remote_tmp' '$RUNTIME_ROOT' '$AUTOMATION_SSH_PUBLIC_KEY'"
+
+      - name: Collect remote baseline artifacts
+        if: always()
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p baseline-artifacts/reports baseline-artifacts/audit baseline-artifacts/diagnostics
+
+          # The privileged CH02 entrypoint now writes this collection directory
+          # during its EXIT trap.  Do not run a second sudo-based collector here:
+          # recreate scenarios may have older host-side sudo contracts, while the
+          # remote entrypoint itself already has the baseline grant.
+          scp -i ~/.ssh/id_ed25519 -r \
+            "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-baseline-collect/." \
+            baseline-artifacts/ || true
+
+          echo "Collected baseline artifacts:"
+          find baseline-artifacts -maxdepth 4 -type f | sort || true
+
+      - name: Upload baseline artifact bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-baseline-runtime-${{ github.run_id }}
+          path: baseline-artifacts
+          if-no-files-found: warn
+
+      - name: Evaluate validation result
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 tools/platforminit_ops/evaluate_validation.py baseline-artifacts/reports

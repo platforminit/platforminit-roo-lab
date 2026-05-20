@@ -1,0 +1,748 @@
+name: 01 - Create or Rebuild Host
+"on":
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Create a new host or rebuild an existing one
+        required: true
+        default: create
+        type: choice
+        options:
+          - create
+          - rebuild
+      project:
+        description: PlatformInit project label / logical environment
+        required: true
+        default: development
+      host_name:
+        description: Logical host name within the project
+        required: true
+        default: platforminit-dev-01
+      host_role:
+        description: PlatformInit host role label
+        required: true
+        default: primary
+        type: choice
+        options:
+          - primary
+          - worker
+          - db
+          - observability
+      image:
+        description: Hetzner image
+        required: true
+        default: ubuntu-24.04
+      server_type:
+        description: Hetzner server type for create
+        required: true
+        default: cax31
+        type: choice
+        options:
+          - cx23
+          - cax31
+          - cx43
+      region:
+        description: Primary Hetzner location for create/volume
+        required: true
+        default: fsn1
+      fallback_regions:
+        description: Comma-separated fallback locations used only when Hetzner returns placement/resource_unavailable during host creation
+        required: false
+        default: nbg1,hel1
+      server_name:
+        description: Optional physical server name override; empty means host_name
+        required: false
+        default: ""
+      server_id_override:
+        description: Existing server ID for rebuild / break-glass
+        required: false
+        default: ""
+      volume_layout:
+        description: Volume layout for create; project-default uses platform defaults such as n8n=none and development/platforminit=split
+        required: true
+        default: project-default
+        type: choice
+        options:
+          - project-default
+          - none
+          - single
+          - split
+      volume_size_gb:
+        description: Single /srv volume size in GB when volume_layout=single
+        required: true
+        default: "80"
+      data_volume_size_gb:
+        description: /srv/data volume size in GB when volume_layout=split
+        required: true
+        default: "80"
+      db_volume_size_gb:
+        description: /srv/db volume size in GB when volume_layout=split
+        required: true
+        default: "40"
+      observability_volume_size_gb:
+        description: /srv/observability volume size in GB when volume_layout=split
+        required: true
+        default: "40"
+
+permissions:
+  contents: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  host-lifecycle:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+
+    steps:
+      - name: Validate inputs and secrets
+        shell: bash
+        env:
+          INFRA_SERVER_ID: ${{ secrets.INFRA_SERVER_ID }}
+          AUTOMATION_SSH_PUBLIC_KEY: ${{ secrets.AUTOMATION_SSH_PUBLIC_KEY }}
+          ACTION_NAME: ${{ inputs.action }}
+          PROJECT: ${{ inputs.project || 'development' }}
+          HOST_NAME: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          HOST_ROLE: ${{ inputs.host_role }}
+          SERVER_ID_OVERRIDE: ${{ inputs.server_id_override }}
+          VOLUME_LAYOUT: ${{ inputs.volume_layout }}
+          VOLUME_SIZE_GB: ${{ inputs.volume_size_gb }}
+          DATA_VOLUME_SIZE_GB: ${{ inputs.data_volume_size_gb }}
+          DB_VOLUME_SIZE_GB: ${{ inputs.db_volume_size_gb }}
+          OBS_VOLUME_SIZE_GB: ${{ inputs.observability_volume_size_gb }}
+        run: |
+          set -euo pipefail
+          resolve_hcloud_token() {
+            if [[ -n "${INFRA_API_TOKEN:-}" ]]; then return 0; fi
+            case "${PROJECT:-development}" in
+              development) INFRA_API_TOKEN="${HCLOUD_TOKEN_DEVELOPMENT:-}" ;;
+              n8n) INFRA_API_TOKEN="${HCLOUD_TOKEN_N8N:-}" ;;
+              platforminit) INFRA_API_TOKEN="${HCLOUD_TOKEN_PLATFORMINIT:-}" ;;
+              *) echo "Unsupported project for Hetzner token routing: ${PROJECT:-}" >&2; exit 1 ;;
+            esac
+            export INFRA_API_TOKEN
+          }
+          resolve_hcloud_token
+          resolve_volume_layout() {
+            local requested="${VOLUME_LAYOUT:-project-default}"
+            case "$requested" in
+              project-default|"")
+                case "${PROJECT:-development}" in
+                  n8n) VOLUME_LAYOUT="none" ;;
+                  development|platforminit) VOLUME_LAYOUT="split" ;;
+                  *) VOLUME_LAYOUT="single" ;;
+                esac
+                ;;
+              none|single|split)
+                VOLUME_LAYOUT="$requested"
+                ;;
+              *)
+                echo "Unsupported volume_layout=${requested}" >&2
+                exit 1
+                ;;
+            esac
+            if [[ "${PROJECT:-}" == "n8n" && "$VOLUME_LAYOUT" != "none" ]]; then
+              echo "FATAL: project=n8n is a root-disk-only CX23 runtime and requires volume_layout=none; got ${VOLUME_LAYOUT}" >&2
+              exit 1
+            fi
+          }
+          resolve_volume_layout
+          echo "Effective volume_layout=${VOLUME_LAYOUT} for project=${PROJECT}"
+          [ -n "${INFRA_API_TOKEN:-}" ] || { echo "Missing Hetzner token for project ${PROJECT}" >&2; exit 1; }
+          [ -n "${AUTOMATION_SSH_PUBLIC_KEY:-}" ] || { echo "Missing AUTOMATION_SSH_PUBLIC_KEY" >&2; exit 1; }
+          [[ "${PROJECT}" =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "project contains unsupported characters" >&2; exit 1; }
+          [[ "${HOST_NAME}" =~ ^[a-zA-Z0-9._-]+$ ]] || { echo "host_name contains unsupported characters" >&2; exit 1; }
+          [[ "${VOLUME_SIZE_GB}" =~ ^[0-9]+$ ]] || { echo "volume_size_gb must be numeric" >&2; exit 1; }
+          [[ "${DATA_VOLUME_SIZE_GB}" =~ ^[0-9]+$ ]] || { echo "data_volume_size_gb must be numeric" >&2; exit 1; }
+          [[ "${DB_VOLUME_SIZE_GB}" =~ ^[0-9]+$ ]] || { echo "db_volume_size_gb must be numeric" >&2; exit 1; }
+          [[ "${OBS_VOLUME_SIZE_GB}" =~ ^[0-9]+$ ]] || { echo "observability_volume_size_gb must be numeric" >&2; exit 1; }
+
+          if [[ "${ACTION_NAME}" == "rebuild" ]]; then
+            echo "Rebuild target will be resolved by server_id_override, project+host labels, project+role labels, or INFRA_SERVER_ID fallback."
+          fi
+
+      - name: Resolve Hetzner SSH key
+        id: sshkey
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project || 'development' }}
+          AUTOMATION_SSH_PUBLIC_KEY: ${{ secrets.AUTOMATION_SSH_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          resolve_hcloud_token() {
+            if [[ -n "${INFRA_API_TOKEN:-}" ]]; then return 0; fi
+            case "${PROJECT:-development}" in
+              development) INFRA_API_TOKEN="${HCLOUD_TOKEN_DEVELOPMENT:-}" ;;
+              n8n) INFRA_API_TOKEN="${HCLOUD_TOKEN_N8N:-}" ;;
+              platforminit) INFRA_API_TOKEN="${HCLOUD_TOKEN_PLATFORMINIT:-}" ;;
+              *) echo "Unsupported project for Hetzner token routing: ${PROJECT:-}" >&2; exit 1 ;;
+            esac
+            export INFRA_API_TOKEN
+          }
+          resolve_hcloud_token
+          auth=(-H "Authorization: Bearer ${INFRA_API_TOKEN}" -H "Content-Type: application/json")
+          pubkey_raw="$(printf '%s\n' "${AUTOMATION_SSH_PUBLIC_KEY}" | sed '/^[[:space:]]*$/d' | head -n1)"
+          pubkey_norm="$(printf '%s\n' "${pubkey_raw}" | awk '{print $1" "$2}')"
+          [ -n "${pubkey_norm}" ] || { echo "Normalized public key is empty" >&2; exit 1; }
+          pubkey_file="$(mktemp)"
+          printf '%s\n' "${pubkey_raw}" > "${pubkey_file}"
+          local_md5="$(ssh-keygen -l -E md5 -f "${pubkey_file}" | awk '{print $2}' | sed 's/^MD5://')"
+
+          list_body="$(mktemp)"
+          list_code="$(curl -sS -o "${list_body}" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/ssh_keys")"
+          [[ "${list_code}" == "200" ]] || { cat "${list_body}" >&2; exit 1; }
+
+          ssh_key_id="$(jq -r --arg pk "${pubkey_norm}" --arg md5 "${local_md5}" '
+            [.ssh_keys[] | . as $k | ($k.public_key | split(" ") | .[0:2] | join(" ")) as $remote_norm
+             | select($remote_norm == $pk or ($k.fingerprint // "") == $md5 or (($k.public_key | split(" ") | .[1]) == ($pk | split(" ") | .[1]))) | .id] | first // empty
+          ' "${list_body}")"
+
+          if [[ -n "${ssh_key_id}" ]]; then
+            echo "Reusing existing Hetzner SSH key id=${ssh_key_id}"
+            echo "ssh_key_id=${ssh_key_id}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          create_payload="$(jq -n --arg name "platforminit-automation" --arg public_key "${pubkey_raw}" '{name:$name,public_key:$public_key}')"
+          create_body="$(mktemp)"
+          create_code="$(curl -sS -o "${create_body}" -w '%{http_code}' -X POST "https://api.hetzner.cloud/v1/ssh_keys" "${auth[@]}" -d "${create_payload}")"
+          [[ "${create_code}" == "201" ]] || { cat "${create_body}" >&2; exit 1; }
+          ssh_key_id="$(jq -r '.ssh_key.id // empty' "${create_body}")"
+          [[ -n "${ssh_key_id}" ]] || { cat "${create_body}" >&2; exit 1; }
+          echo "ssh_key_id=${ssh_key_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or rebuild host
+        id: lifecycle
+        shell: bash
+        env:
+          INFRA_SERVER_ID: ${{ secrets.INFRA_SERVER_ID }}
+          AUTOMATION_SSH_PUBLIC_KEY: ${{ secrets.AUTOMATION_SSH_PUBLIC_KEY }}
+          ACTION_NAME: ${{ inputs.action }}
+          IMAGE: ${{ inputs.image }}
+          SERVER_TYPE: ${{ inputs.server_type }}
+          REGION: ${{ inputs.region }}
+          PROJECT: ${{ inputs.project || 'development' }}
+          HOST_NAME: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          HOST_ROLE: ${{ inputs.host_role }}
+          SERVER_NAME_INPUT: ${{ inputs.server_name }}
+          SERVER_ID_OVERRIDE: ${{ inputs.server_id_override }}
+          VOLUME_LAYOUT: ${{ inputs.volume_layout }}
+          VOLUME_SIZE_GB: ${{ inputs.volume_size_gb }}
+          DATA_VOLUME_SIZE_GB: ${{ inputs.data_volume_size_gb }}
+          DB_VOLUME_SIZE_GB: ${{ inputs.db_volume_size_gb }}
+          OBS_VOLUME_SIZE_GB: ${{ inputs.observability_volume_size_gb }}
+          SSH_KEY_ID: ${{ steps.sshkey.outputs.ssh_key_id }}
+        run: |
+          set -euo pipefail
+          resolve_hcloud_token() {
+            if [[ -n "${INFRA_API_TOKEN:-}" ]]; then return 0; fi
+            case "${PROJECT:-development}" in
+              development) INFRA_API_TOKEN="${HCLOUD_TOKEN_DEVELOPMENT:-}" ;;
+              n8n) INFRA_API_TOKEN="${HCLOUD_TOKEN_N8N:-}" ;;
+              platforminit) INFRA_API_TOKEN="${HCLOUD_TOKEN_PLATFORMINIT:-}" ;;
+              *) echo "Unsupported project for Hetzner token routing: ${PROJECT:-}" >&2; exit 1 ;;
+            esac
+            export INFRA_API_TOKEN
+          }
+          resolve_hcloud_token
+          resolve_volume_layout() {
+            local requested="${VOLUME_LAYOUT:-project-default}"
+            case "$requested" in
+              project-default|"")
+                case "${PROJECT:-development}" in
+                  n8n) VOLUME_LAYOUT="none" ;;
+                  development|platforminit) VOLUME_LAYOUT="split" ;;
+                  *) VOLUME_LAYOUT="single" ;;
+                esac
+                ;;
+              none|single|split)
+                VOLUME_LAYOUT="$requested"
+                ;;
+              *)
+                echo "Unsupported volume_layout=${requested}" >&2
+                exit 1
+                ;;
+            esac
+            if [[ "${PROJECT:-}" == "n8n" && "$VOLUME_LAYOUT" != "none" ]]; then
+              echo "FATAL: project=n8n is a root-disk-only CX23 runtime and requires volume_layout=none; got ${VOLUME_LAYOUT}" >&2
+              exit 1
+            fi
+          }
+          resolve_volume_layout
+          echo "Effective volume_layout=${VOLUME_LAYOUT} for project=${PROJECT}"
+
+          mkdir -p .tmp
+          cat > .tmp/user-data.yaml <<EOF
+          #cloud-config
+          disable_root: false
+          ssh_pwauth: false
+          bootcmd:
+            - mkdir -p /root/.ssh
+            - chmod 700 /root/.ssh
+          write_files:
+            - path: /root/.ssh/authorized_keys
+              owner: root:root
+              permissions: '0600'
+              content: |
+                ${AUTOMATION_SSH_PUBLIC_KEY}
+          runcmd:
+            - chage -d -1 root || true
+          EOF
+
+          # Hetzner label values are intentionally conservative here.
+          # Do not store raw filesystem paths (for example /srv/data) in labels:
+          # the Hetzner API rejects values containing slashes as malformed labels.
+          auth=(-H "Authorization: Bearer ${INFRA_API_TOKEN}" -H "Content-Type: application/json")
+          action_id=""
+          sid=""
+          server_name="${SERVER_NAME_INPUT:-$HOST_NAME}"
+          label_project="$PROJECT"
+          label_host="$HOST_NAME"
+          label_role="$HOST_ROLE"
+          label_layout="$VOLUME_LAYOUT"
+          effective_region="$REGION"
+          volume_ids_json="[]"
+          volume_summary=""
+          volume_attach_action_ids=""
+
+          ensure_volume() {
+            local role="$1" name="$2" size="$3" mount_path="$4"
+            [[ "$size" =~ ^[0-9]+$ ]] || { echo "Volume size for ${role} must be numeric" >&2; exit 1; }
+            [[ "$size" != "0" ]] || return 0
+
+            local list_body list_code volume_id payload body code requery requery_code
+            list_body="$(mktemp)"
+            list_code="$(curl -sS -o "$list_body" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/volumes")"
+            [[ "$list_code" == "200" ]] || { cat "$list_body" >&2; exit 1; }
+
+            volume_id="$(jq -r --arg name "$name" --arg location "$effective_region" '[.volumes[] | select(.name == $name and (.location.name // "") == $location) | .id] | first // empty' "$list_body")"
+            if [[ -z "$volume_id" ]]; then
+              payload="$(jq -n \
+                --arg name "$name" \
+                --argjson size "$size" \
+                --arg location "$effective_region" \
+                --arg project "$PROJECT" \
+                --arg host "$HOST_NAME" \
+                --arg role "$role" \
+                --arg layout "$VOLUME_LAYOUT" \
+                --arg mount_path "$mount_path" \
+                '{name:$name,size:$size,location:$location,format:"ext4",labels:{"platforminit.project":$project,"platforminit.host":$host,"platforminit.volume_role":$role,"platforminit.volume_layout":$layout,"platforminit.mount_role":$role}}')"
+              body="$(mktemp)"
+              code="$(curl -sS -o "$body" -w '%{http_code}' -X POST "https://api.hetzner.cloud/v1/volumes" "${auth[@]}" -d "$payload")"
+              if [[ "$code" == "201" ]]; then
+                volume_id="$(jq -r '.volume.id // empty' "$body")"
+              elif [[ "$code" == "409" ]]; then
+                requery="$(mktemp)"
+                requery_code="$(curl -sS -o "$requery" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/volumes")"
+                [[ "$requery_code" == "200" ]] || { cat "$requery" >&2; exit 1; }
+                volume_id="$(jq -r --arg name "$name" --arg location "$effective_region" '[.volumes[] | select(.name == $name and (.location.name // "") == $location) | .id] | first // empty' "$requery")"
+              else
+                cat "$body" >&2
+                exit 1
+              fi
+            else
+              echo "Reusing existing volume ${volume_id} (${name})"
+            fi
+            [[ -n "$volume_id" ]] || { echo "Failed to resolve volume id for ${name}" >&2; exit 1; }
+            volume_ids_json="$(jq -cn --argjson existing "$volume_ids_json" --argjson id "$volume_id" '$existing + [$id]')"
+            volume_summary+="${role}:${name}:${volume_id}:${mount_path};"
+          }
+
+          attach_volumes_to_server() {
+            local id body code action_id
+            for id in $(jq -r '.[]' <<< "$volume_ids_json"); do
+              body="$(mktemp)"
+              code="$(curl -sS -o "$body" -w '%{http_code}' -X POST "https://api.hetzner.cloud/v1/volumes/${id}/actions/attach" "${auth[@]}" -d "$(jq -n --argjson server "$sid" '{server:$server, automount:false}')")"
+              if [[ "$code" == "201" ]]; then
+                action_id="$(jq -r '.action.id // empty' "$body")"
+                volume_attach_action_ids+="${action_id} "
+              elif [[ "$code" == "422" ]] && grep -qi 'already attached' "$body"; then
+                echo "Volume ${id} is already attached; continuing"
+              else
+                echo "Failed to attach volume ${id} to server ${sid}" >&2
+                cat "$body" >&2
+                exit 1
+              fi
+            done
+          }
+
+          if [[ "${ACTION_NAME}" == "create" ]]; then
+            # Create the server first, then create/attach volumes in the final effective location.
+            # This avoids Hetzner placement failures caused by pre-created volumes constraining server placement.
+            create_server_in_location() {
+              local candidate_location="$1" body code payload err_code
+              payload="$(jq -n \
+                --arg name "$server_name" \
+                --arg server_type "$SERVER_TYPE" \
+                --arg image "$IMAGE" \
+                --arg location "$candidate_location" \
+                --rawfile user_data .tmp/user-data.yaml \
+                --argjson ssh_key_id "$SSH_KEY_ID" \
+                --arg project "$label_project" \
+                --arg host "$label_host" \
+                --arg role "$label_role" \
+                --arg layout "$label_layout" \
+                '{name:$name,server_type:$server_type,image:$image,location:$location,user_data:$user_data,ssh_keys:[$ssh_key_id],labels:{"platforminit.project":$project,"platforminit.host":$host,"platforminit.role":$role,"platforminit.volume_layout":$layout}}')"
+              body="$(mktemp)"
+              code="$(curl -sS -o "$body" -w '%{http_code}' -X POST "https://api.hetzner.cloud/v1/servers" "${auth[@]}" -d "$payload")"
+              if [[ "$code" == "201" ]]; then
+                sid="$(jq -r '.server.id // empty' "$body")"
+                action_id="$(jq -r '.action.id // empty' "$body")"
+                [[ -n "$sid" ]] || { cat "$body" >&2; exit 1; }
+                effective_region="$candidate_location"
+                return 0
+              fi
+
+              err_code="$(jq -r '.error.code // empty' "$body" 2>/dev/null || true)"
+              if [[ "$err_code" == "resource_unavailable" ]]; then
+                echo "Hetzner placement unavailable in ${candidate_location}; trying next fallback location if available." >&2
+                return 2
+              fi
+
+              cat "$body" >&2
+              exit 1
+            }
+
+            tried_locations=()
+            location_candidates="$REGION"
+            if [[ -n "${FALLBACK_REGIONS:-}" ]]; then
+              location_candidates+=",${FALLBACK_REGIONS}"
+            fi
+
+            IFS=',' read -ra candidate_locations <<< "$location_candidates"
+            for candidate in "${candidate_locations[@]}"; do
+              candidate="$(printf '%s' "$candidate" | xargs)"
+              [[ -n "$candidate" ]] || continue
+              # de-duplicate candidates while preserving order
+              if printf '%s\n' "${tried_locations[@]:-}" | grep -qx "$candidate"; then
+                continue
+              fi
+              tried_locations+=("$candidate")
+              if create_server_in_location "$candidate"; then
+                break
+              fi
+            done
+
+            [[ -n "$sid" ]] || { echo "Failed to create server after trying locations: ${tried_locations[*]}" >&2; exit 1; }
+
+            case "$VOLUME_LAYOUT" in
+              none)
+                volume_ids_json="[]"
+                ;;
+              single)
+                ensure_volume "srv" "platforminit-${PROJECT}-${HOST_NAME}-srv" "$VOLUME_SIZE_GB" "/srv"
+                ;;
+              split)
+                ensure_volume "data" "platforminit-${PROJECT}-${HOST_NAME}-data" "$DATA_VOLUME_SIZE_GB" "/srv/data"
+                ensure_volume "db" "platforminit-${PROJECT}-${HOST_NAME}-db" "$DB_VOLUME_SIZE_GB" "/srv/db"
+                ensure_volume "observability" "platforminit-${PROJECT}-${HOST_NAME}-observability" "$OBS_VOLUME_SIZE_GB" "/srv/observability"
+                ;;
+              *) echo "Unsupported volume_layout=${VOLUME_LAYOUT}" >&2; exit 1 ;;
+            esac
+
+            if [[ "$(jq 'length' <<< "$volume_ids_json")" != "0" ]]; then
+              attach_volumes_to_server
+            fi
+
+          else
+            sid="${SERVER_ID_OVERRIDE:-}"
+            sid="$(printf '%s' "${sid}" | tr -d '[:space:]' | sed 's/^#//')"
+
+            resolve_server_by_selector() {
+              local selector="$1"
+              local q body code count names
+              q="$(jq -rn --arg selector "$selector" '$selector|@uri')"
+              body="$(mktemp)"
+              code="$(curl -sS -o "$body" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/servers?label_selector=${q}")"
+              [[ "$code" == "200" ]] || { cat "$body" >&2; exit 1; }
+              count="$(jq '.servers | length' "$body")"
+              if [[ "$count" != "1" ]]; then
+                names="$(jq -r '[.servers[].name] | join(", ") // "none"' "$body")"
+                echo "Expected exactly one server for ${selector}, found ${count}: ${names:-none}" >&2
+                exit 1
+              fi
+              jq -r '.servers[0].id' "$body"
+            }
+
+            if [[ -z "$sid" ]]; then
+              sid="$(resolve_server_by_selector "platforminit.project=${PROJECT},platforminit.host=${HOST_NAME}")"
+            fi
+            if [[ -z "$sid" && -n "${HOST_ROLE:-}" ]]; then
+              sid="$(resolve_server_by_selector "platforminit.project=${PROJECT},platforminit.role=${HOST_ROLE}")"
+            fi
+            if [[ -z "$sid" ]]; then
+              sid="${INFRA_SERVER_ID:-}"
+              sid="$(printf '%s' "${sid}" | tr -d '[:space:]' | sed 's/^#//')"
+            fi
+            [[ -n "$sid" ]] || { echo "Missing server id for rebuild" >&2; exit 1; }
+
+            body="$(mktemp)"
+            code="$(curl -sS -o "${body}" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/servers/${sid}")"
+            [[ "${code}" == "200" ]] || { cat "${body}" >&2; exit 1; }
+            server_name="$(jq -r '.server.name // empty' "${body}")"
+            effective_region="$(jq -r '.server.datacenter.location.name // .server.location.name // empty' "${body}")"
+            [[ -n "${effective_region}" && "${effective_region}" != "null" ]] || { echo "Failed to resolve server location for rebuild target ${sid}" >&2; cat "${body}" >&2; exit 1; }
+
+            # Rebuild keeps existing volume attachments, but the workflow still must resolve
+            # the requested volume layout and emit volume_summary for the host-context step.
+            # Without this, /etc/platforminit/volume-layout.tsv is empty after rebuild and
+            # 01.1 Host Bootstrap can fall back to the legacy single /srv mount path.
+            case "$VOLUME_LAYOUT" in
+              none)
+                volume_ids_json="[]"
+                ;;
+              single)
+                ensure_volume "srv" "platforminit-${PROJECT}-${HOST_NAME}-srv" "$VOLUME_SIZE_GB" "/srv"
+                ;;
+              split)
+                ensure_volume "data" "platforminit-${PROJECT}-${HOST_NAME}-data" "$DATA_VOLUME_SIZE_GB" "/srv/data"
+                ensure_volume "db" "platforminit-${PROJECT}-${HOST_NAME}-db" "$DB_VOLUME_SIZE_GB" "/srv/db"
+                ensure_volume "observability" "platforminit-${PROJECT}-${HOST_NAME}-observability" "$OBS_VOLUME_SIZE_GB" "/srv/observability"
+                ;;
+              *) echo "Unsupported volume_layout=${VOLUME_LAYOUT}" >&2; exit 1 ;;
+            esac
+
+            if [[ "$(jq 'length' <<< "$volume_ids_json")" != "0" ]]; then
+              attach_volumes_to_server
+            fi
+
+            payload="$(jq -n --arg image "${IMAGE}" --rawfile user_data .tmp/user-data.yaml --argjson ssh_key_id "${SSH_KEY_ID}" '{image:$image,user_data:$user_data,ssh_keys:[$ssh_key_id]}')"
+            rebuild_body="$(mktemp)"
+            rebuild_code="$(curl -sS -o "${rebuild_body}" -w '%{http_code}' -X POST "https://api.hetzner.cloud/v1/servers/${sid}/actions/rebuild" "${auth[@]}" -d "${payload}")"
+            [[ "${rebuild_code}" == "201" ]] || { cat "${rebuild_body}" >&2; exit 1; }
+            action_id="$(jq -r '.action.id // empty' "${rebuild_body}")"
+            [[ -n "${action_id}" ]] || { cat "${rebuild_body}" >&2; exit 1; }
+          fi
+
+          echo "server_id=${sid}" >> "$GITHUB_OUTPUT"
+          echo "action_id=${action_id}" >> "$GITHUB_OUTPUT"
+          echo "server_name=${server_name}" >> "$GITHUB_OUTPUT"
+          echo "volume_ids=${volume_ids_json}" >> "$GITHUB_OUTPUT"
+          echo "volume_summary=${volume_summary}" >> "$GITHUB_OUTPUT"
+          echo "effective_region=${effective_region}" >> "$GITHUB_OUTPUT"
+          echo "volume_attach_action_ids=${volume_attach_action_ids}" >> "$GITHUB_OUTPUT"
+          echo "effective_volume_layout=${VOLUME_LAYOUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Hetzner action to finish
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project || 'development' }}
+          ACTION_ID: ${{ steps.lifecycle.outputs.action_id }}
+        run: |
+          set -euo pipefail
+          resolve_hcloud_token() {
+            if [[ -n "${INFRA_API_TOKEN:-}" ]]; then return 0; fi
+            case "${PROJECT:-development}" in
+              development) INFRA_API_TOKEN="${HCLOUD_TOKEN_DEVELOPMENT:-}" ;;
+              n8n) INFRA_API_TOKEN="${HCLOUD_TOKEN_N8N:-}" ;;
+              platforminit) INFRA_API_TOKEN="${HCLOUD_TOKEN_PLATFORMINIT:-}" ;;
+              *) echo "Unsupported project for Hetzner token routing: ${PROJECT:-}" >&2; exit 1 ;;
+            esac
+            export INFRA_API_TOKEN
+          }
+          resolve_hcloud_token
+          auth=(-H "Authorization: Bearer ${INFRA_API_TOKEN}")
+          for _ in $(seq 1 120); do
+            body="$(mktemp)"
+            code="$(curl -sS -o "${body}" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/actions/${ACTION_ID}")"
+            [[ "${code}" == "200" ]] || { cat "${body}" >&2; exit 1; }
+            status="$(jq -r '.action.status // empty' "${body}")"
+            progress="$(jq -r '.action.progress // 0' "${body}")"
+            echo "Action status=${status} progress=${progress}%"
+            [[ "${status}" == "success" ]] && exit 0
+            [[ "${status}" == "error" ]] && { cat "${body}" >&2; exit 1; }
+            sleep 5
+          done
+          echo "Timed out waiting for Hetzner action ${ACTION_ID}" >&2
+          exit 1
+
+      - name: Wait for volume attach actions
+        if: ${{ steps.lifecycle.outputs.volume_attach_action_ids != '' }}
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project || 'development' }}
+          ACTION_IDS: ${{ steps.lifecycle.outputs.volume_attach_action_ids }}
+        run: |
+          set -euo pipefail
+          resolve_hcloud_token() {
+            if [[ -n "${INFRA_API_TOKEN:-}" ]]; then return 0; fi
+            case "${PROJECT:-development}" in
+              development) INFRA_API_TOKEN="${HCLOUD_TOKEN_DEVELOPMENT:-}" ;;
+              n8n) INFRA_API_TOKEN="${HCLOUD_TOKEN_N8N:-}" ;;
+              platforminit) INFRA_API_TOKEN="${HCLOUD_TOKEN_PLATFORMINIT:-}" ;;
+              *) echo "Unsupported project for Hetzner token routing: ${PROJECT:-}" >&2; exit 1 ;;
+            esac
+            export INFRA_API_TOKEN
+          }
+          resolve_hcloud_token
+          auth=(-H "Authorization: Bearer ${INFRA_API_TOKEN}")
+          for action_id in ${ACTION_IDS}; do
+            [ -n "$action_id" ] || continue
+            for _ in $(seq 1 120); do
+              body="$(mktemp)"
+              code="$(curl -sS -o "${body}" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/actions/${action_id}")"
+              [[ "${code}" == "200" ]] || { cat "${body}" >&2; exit 1; }
+              status="$(jq -r '.action.status // empty' "${body}")"
+              progress="$(jq -r '.action.progress // 0' "${body}")"
+              echo "Volume attach action=${action_id} status=${status} progress=${progress}%"
+              [[ "${status}" == "success" ]] && break
+              [[ "${status}" == "error" ]] && { cat "${body}" >&2; exit 1; }
+              sleep 5
+            done
+          done
+
+      - name: Resolve server public IP
+        id: server
+        shell: bash
+        env:
+          PROJECT: ${{ inputs.project || 'development' }}
+          SERVER_ID: ${{ steps.lifecycle.outputs.server_id }}
+        run: |
+          set -euo pipefail
+          resolve_hcloud_token() {
+            if [[ -n "${INFRA_API_TOKEN:-}" ]]; then return 0; fi
+            case "${PROJECT:-development}" in
+              development) INFRA_API_TOKEN="${HCLOUD_TOKEN_DEVELOPMENT:-}" ;;
+              n8n) INFRA_API_TOKEN="${HCLOUD_TOKEN_N8N:-}" ;;
+              platforminit) INFRA_API_TOKEN="${HCLOUD_TOKEN_PLATFORMINIT:-}" ;;
+              *) echo "Unsupported project for Hetzner token routing: ${PROJECT:-}" >&2; exit 1 ;;
+            esac
+            export INFRA_API_TOKEN
+          }
+          resolve_hcloud_token
+          auth=(-H "Authorization: Bearer ${INFRA_API_TOKEN}")
+          for _ in $(seq 1 60); do
+            body="$(mktemp)"
+            code="$(curl -sS -o "${body}" -w '%{http_code}' "${auth[@]}" "https://api.hetzner.cloud/v1/servers/${SERVER_ID}")"
+            [[ "${code}" == "200" ]] || { cat "${body}" >&2; exit 1; }
+            ip="$(jq -r '.server.public_net.ipv4.ip // empty' "${body}")"
+            if [[ -n "${ip}" ]]; then
+              echo "public_ip=${ip}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for public IPv4" >&2
+          exit 1
+
+      - name: Setup SSH key
+        shell: bash
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${AUTOMATION_SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="${{ steps.server.outputs.public_ip }}"
+          install -d -m 700 "${HOME}/.ssh"
+          touch "${HOME}/.ssh/known_hosts"
+          chmod 600 "${HOME}/.ssh/known_hosts"
+          for _ in $(seq 1 60); do
+            if ssh-keyscan -T 5 -H "${host}" >> "${HOME}/.ssh/known_hosts" 2>/dev/null; then
+              sort -u "${HOME}/.ssh/known_hosts" -o "${HOME}/.ssh/known_hosts"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for SSH host key on ${host}" >&2
+          exit 1
+
+      - name: Wait for root SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          host="${{ steps.server.outputs.public_ip }}"
+          for _ in $(seq 1 60); do
+            if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o NumberOfPasswordPrompts=0 -o ConnectTimeout=10 -i ~/.ssh/id_ed25519 root@"${host}" "true" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for root SSH" >&2
+          exit 1
+
+      - name: Write host context
+        shell: bash
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          PROJECT: ${{ inputs.project || 'development' }}
+          HOST_NAME: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          VOLUME_LAYOUT: ${{ steps.lifecycle.outputs.effective_volume_layout }}
+        run: |
+          set -euo pipefail
+          if [[ "$VOLUME_LAYOUT" == "split" ]]; then
+            data_path="/srv/data"
+            db_path="/srv/db"
+            observability_path="/srv/observability"
+          else
+            data_path="/srv"
+            db_path="/srv/db"
+            observability_path="/srv/observability"
+          fi
+
+          cat > /tmp/platforminit-host-context.env <<EOF
+          PLATFORMINIT_PROJECT="${PROJECT}"
+          PLATFORMINIT_HOST_NAME="${HOST_NAME}"
+          PLATFORMINIT_ROLE="${{ inputs.host_role }}"
+          PLATFORMINIT_VOLUME_LAYOUT="${VOLUME_LAYOUT}"
+          PLATFORMINIT_SRV_PATH="/srv"
+          PLATFORMINIT_DATA_PATH="${data_path}"
+          PLATFORMINIT_DB_PATH="${db_path}"
+          PLATFORMINIT_OBSERVABILITY_PATH="${observability_path}"
+          EOF
+
+          : > /tmp/platforminit-volume-layout.tsv
+          volume_summary='${{ steps.lifecycle.outputs.volume_summary }}'
+          IFS=';' read -ra entries <<< "$volume_summary"
+          for entry in "${entries[@]}"; do
+            [ -n "$entry" ] || continue
+            IFS=':' read -r role name volume_id mount_path <<< "$entry"
+            printf '%s\t%s\t%s\t%s\n' "$role" "$volume_id" "$name" "$mount_path" >> /tmp/platforminit-volume-layout.tsv
+          done
+
+          scp -i ~/.ssh/id_ed25519 /tmp/platforminit-host-context.env root@"$HOST":/tmp/platforminit-host-context.env
+          scp -i ~/.ssh/id_ed25519 /tmp/platforminit-volume-layout.tsv root@"$HOST":/tmp/platforminit-volume-layout.tsv
+          ssh -i ~/.ssh/id_ed25519 root@"$HOST" "install -d -m 755 /etc/platforminit && install -m 644 /tmp/platforminit-host-context.env /etc/platforminit/host-context.env && install -m 644 /tmp/platforminit-volume-layout.tsv /etc/platforminit/volume-layout.tsv"
+
+      - name: Write lifecycle summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lifecycle-summary
+          cat > lifecycle-summary/summary.txt <<EOF
+          action=${{ inputs.action }}
+          project=${{ inputs.project || 'development' }}
+          host_name=${{ inputs.host_name || 'platforminit-dev-01' }}
+          server_id=${{ steps.lifecycle.outputs.server_id }}
+          server_name=${{ steps.lifecycle.outputs.server_name }}
+          public_ip=${{ steps.server.outputs.public_ip }}
+          host_role=${{ inputs.host_role }}
+          requested_volume_layout=${{ inputs.volume_layout }}
+          effective_volume_layout=${{ steps.lifecycle.outputs.effective_volume_layout }}
+          volume_ids=${{ steps.lifecycle.outputs.volume_ids }}
+          volume_summary=${{ steps.lifecycle.outputs.volume_summary }}
+          ssh_key_id=${{ steps.sshkey.outputs.ssh_key_id }}
+          requested_region=${{ inputs.region }}
+          effective_region=${{ steps.lifecycle.outputs.effective_region }}
+          server_type=${{ inputs.server_type }}
+          image=${{ inputs.image }}
+          EOF
+          cat lifecycle-summary/summary.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-lifecycle-${{ github.run_id }}
+          path: lifecycle-summary
+          if-no-files-found: error
+
+# NOTE: project resolution handled via tools/platforminit_ops/project_resolver.py

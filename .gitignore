@@ -1,0 +1,6 @@
+*.zip
+*.tar.gz
+artifacts/
+dist/
+__pycache__/
+.local_secrets/

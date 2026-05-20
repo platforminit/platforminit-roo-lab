@@ -1,0 +1,30 @@
+# Environment-specific values are injected by the CH05 Argo CD Application.
+# Do not hardcode customer/dev domains in templates.
+baseDomain: ""
+tlsIssuer: letsencrypt-prod
+
+checkmk:
+  site: cmk
+  image:
+    repository: checkmk/check-mk-community
+    tag: "2.5.0-latest"
+    pullPolicy: IfNotPresent
+  timezone: Europe/Budapest
+  storageSize: 10Gi
+  storageRoot: /srv/observability/data/checkmk
+  remoteUserHeader: X-Remote-User
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+
+authentik:
+  namespace: identity
+  # The embedded outpost is served by authentik-server in this CH04.5 deployment.
+  # Do not point CH05 at ak-outpost-authentik-embedded-outpost unless a separate
+  # outpost Service actually exists in the identity namespace.
+  embeddedOutpostService: authentik-server
+  embeddedOutpostPort: 80

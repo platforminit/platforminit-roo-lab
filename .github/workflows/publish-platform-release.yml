@@ -1,0 +1,184 @@
+name: 90 - Publish Platform Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Release scope
+        required: true
+        default: platform
+        type: choice
+        options:
+          - ch01
+          - ch02
+          - ch03
+          - ch04
+          - ch05
+          - ch04-5
+          - platform
+      release_version:
+        description: Semantic version without prefix, for example 0.1.0 or 0.1.0-rc1
+        required: true
+        type: string
+      project:
+        description: Project channel for umbrella platform releases
+        required: true
+        default: development
+        type: choice
+        options:
+          - development
+          - n8n
+          - platforminit
+      prerelease:
+        description: Mark release as prerelease
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_type="${{ inputs.release_type }}"
+          version="${{ inputs.release_version }}"
+          project="${{ inputs.project }}"
+
+          case "$release_type" in
+            ch01)
+              tag="ch01-v${version}"
+              title="CH01 Infrastructure Foundation v${version}"
+              components=("host-baseline" "host-bootstrap")
+              ;;
+            ch02)
+              tag="ch02-v${version}"
+              title="CH02 Kubernetes Baseline v${version}"
+              components=("cluster")
+              ;;
+            ch03)
+              tag="ch03-v${version}"
+              title="CH03 Platform Services v${version}"
+              components=("platform-services" "argocd")
+              ;;
+            ch04)
+              tag="ch04-v${version}"
+              title="CH04 GitOps Runtime v${version}"
+              components=("argocd")
+              ;;
+            ch05)
+              tag="ch05-v${version}"
+              title="CH05 Observability v${version}"
+              components=("observability")
+              ;;
+            ch04-5)
+              tag="ch04-5-v${version}"
+              title="CH04.5 Identity Foundation v${version}"
+              components=("identity")
+              ;;
+            platform)
+              tag="platforminit-${project}-v${version}"
+              title="PlatformInit ${project} v${version}"
+              components=("host-baseline" "host-bootstrap" "cluster" "platform-services" "observability" "identity" "argocd" "projects")
+              ;;
+            *)
+              echo "Unsupported release_type=$release_type" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${components[@]}" > components.txt
+
+      - name: Build release bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.meta.outputs.tag }}"
+          bundle="${tag}.tar.gz"
+          stage="${RUNNER_TEMP}/${tag}"
+
+          mkdir -p "$stage/platform" "$stage/docs"
+          while IFS= read -r component; do
+            case "$component" in
+              host-baseline)
+                mkdir -p "$stage/platform/host-baseline"
+                rsync -a --exclude 'reports/*' platform/host-baseline/ "$stage/platform/host-baseline/"
+                ;;
+              host-bootstrap)
+                mkdir -p "$stage/platform/host-bootstrap"
+                rsync -a platform/host-bootstrap/ "$stage/platform/host-bootstrap/"
+                ;;
+              cluster)
+                mkdir -p "$stage/platform/cluster"
+                rsync -a --exclude 'reports/*' platform/cluster/ "$stage/platform/cluster/"
+                ;;
+              platform-services)
+                mkdir -p "$stage/platform/platform-services"
+                rsync -a platform/platform-services/ "$stage/platform/platform-services/"
+                ;;
+              observability)
+                mkdir -p "$stage/platform/observability"
+                rsync -a platform/observability/ "$stage/platform/observability/"
+                ;;
+              identity)
+                mkdir -p "$stage/platform/identity"
+                rsync -a --exclude 'reports/*' platform/identity/ "$stage/platform/identity/"
+                ;;
+              argocd)
+                mkdir -p "$stage/argocd"
+                rsync -a argocd/ "$stage/argocd/"
+                ;;
+              projects)
+                mkdir -p "$stage/platform/projects"
+                rsync -a platform/projects/ "$stage/platform/projects/"
+                ;;
+            esac
+          done < components.txt
+
+          rsync -a docs/ "$stage/docs/"
+          cp README.md "$stage/README.md"
+
+          cat > "$stage/release-manifest.json" <<EOF
+          {
+            "tag": "${tag}",
+            "release_type": "${{ inputs.release_type }}",
+            "project": "${{ inputs.project }}",
+            "git_sha": "${GITHUB_SHA}",
+            "run_id": "${GITHUB_RUN_ID}"
+          }
+          EOF
+
+          tar -C "$stage" -czf "$bundle" .
+          sha256sum "$bundle" > checksums.txt
+
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prerelease_flag=""
+          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+            prerelease_flag="--prerelease"
+          fi
+
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            "${{ steps.bundle.outputs.bundle }}" \
+            checksums.txt \
+            --title "${{ steps.meta.outputs.title }}" \
+            --notes "Release generated from ${GITHUB_SHA} by workflow run ${GITHUB_RUN_ID}." \
+            ${prerelease_flag}

@@ -1,0 +1,103 @@
+name: Resolve target host
+description: Resolve Hetzner server id and public IPv4 through project-scoped Hetzner token routing
+
+inputs:
+  infra_api_token:
+    description: Legacy Hetzner Cloud API token override; prefer project-scoped HCLOUD_TOKEN_* secrets
+    required: false
+    default: ''
+  infra_server_id:
+    description: Legacy/default Hetzner server id from secrets; fallback only
+    required: false
+    default: ''
+  server_id_override:
+    description: Optional explicit server id override
+    required: false
+    default: ''
+  host_ipv4_override:
+    description: Optional explicit IPv4 override for break-glass/debug
+    required: false
+    default: ''
+  project:
+    description: PlatformInit project label used for automatic host discovery
+    required: false
+    default: ''
+  host_name:
+    description: Optional explicit PlatformInit host label used for automatic host discovery
+    required: false
+    default: ''
+  role:
+    description: Optional PlatformInit role label used for automatic host discovery when host_name is empty
+    required: false
+    default: ''
+
+outputs:
+  server_id:
+    description: Resolved Hetzner server id
+    value: ${{ steps.resolve.outputs.server_id }}
+  public_ip:
+    description: Resolved or overridden public IPv4
+    value: ${{ steps.resolve.outputs.public_ip }}
+  resolution_mode:
+    description: server_id_override, label_discovery, or legacy_infra_server_id
+    value: ${{ steps.resolve.outputs.resolution_mode }}
+  project:
+    description: Resolved PlatformInit project label
+    value: ${{ steps.resolve.outputs.project }}
+  host_name:
+    description: Resolved PlatformInit host label
+    value: ${{ steps.resolve.outputs.host_name }}
+  volume_layout:
+    description: Resolved PlatformInit volume layout label
+    value: ${{ steps.resolve.outputs.volume_layout }}
+  role:
+    description: Resolved PlatformInit role label
+    value: ${{ steps.resolve.outputs.role }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        INFRA_API_TOKEN: ${{ inputs.infra_api_token }}
+        INFRA_SERVER_ID: ${{ inputs.infra_server_id }}
+        SERVER_ID_OVERRIDE: ${{ inputs.server_id_override }}
+        HOST_IPV4_OVERRIDE: ${{ inputs.host_ipv4_override }}
+        PLATFORMINIT_PROJECT: ${{ inputs.project }}
+        PLATFORMINIT_HOST_NAME: ${{ inputs.host_name }}
+        PLATFORMINIT_ROLE: ${{ inputs.role }}
+
+        HCLOUD_TOKEN_DEVELOPMENT: ${{ env.HCLOUD_TOKEN_DEVELOPMENT }}
+        HCLOUD_TOKEN_N8N: ${{ env.HCLOUD_TOKEN_N8N }}
+        HCLOUD_TOKEN_PLATFORMINIT: ${{ env.HCLOUD_TOKEN_PLATFORMINIT }}
+
+      run: |
+        set -euo pipefail
+
+        PROJECT="${PLATFORMINIT_PROJECT:-}"
+
+        if [ -n "$PROJECT" ] && [ -z "${PLATFORMINIT_HOST_NAME:-}" ]; then
+          PROJECT_FILE="${GITHUB_WORKSPACE}/platform/projects/${PROJECT}.yaml"
+
+          if [ ! -f "$PROJECT_FILE" ]; then
+            echo "Missing project registry file: $PROJECT_FILE" >&2
+            exit 1
+          fi
+
+          SERVER_PREFIX="$(python3 - "$PROJECT_FILE" <<'PY'
+        import sys
+        import yaml
+
+        with open(sys.argv[1], "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+
+        print(cfg["hetzner"]["server_prefix"])
+        PY
+        )"
+
+                  export PLATFORMINIT_HOST_NAME="${SERVER_PREFIX}-01"
+                  echo "Resolved host_name from project registry: ${PLATFORMINIT_HOST_NAME}"
+                fi
+
+                python3 "${{ github.action_path }}/../../../tools/platforminit_ops/hcloud_resolve.py"

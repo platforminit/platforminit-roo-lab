@@ -1,0 +1,11 @@
+# Runtime / mutable outputs
+reports/*
+!reports/.gitkeep
+!reports/README.md
+state/
+work/
+secrets/
+
+# Validation artifacts
+*.log
+*.tmp

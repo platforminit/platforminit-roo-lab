@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkmk-nginx-auth-shim
+  namespace: operations
+  labels:
+    app.kubernetes.io/name: checkmk
+    app.kubernetes.io/part-of: platforminit-operations
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      server_tokens off;
+
+      location /healthz {
+        access_log off;
+        return 200 "ok\n";
+      }
+
+      # Checkmk's native logout endpoint only terminates the local Checkmk
+      # session. In a trusted-header SSO setup the browser must be handed back to
+      # the Authentik global invalidation flow instead, otherwise users can
+      # land on a raw Checkmk 401 page after clicking Log out.
+      #
+      # This is a pod-local fallback. The public ingress also owns a higher-priority
+      # Traefik redirect for these paths so logout is deterministic even before the
+      # request reaches the auth-shim container.
+      location = /cmk/check_mk/logout.py {
+        add_header Cache-Control "no-store" always;
+        add_header Set-Cookie "auth_cmk=deleted; Path=/cmk/; Max-Age=0; HttpOnly; Secure; SameSite=Lax" always;
+        return 302 https://auth.{{ .Values.baseDomain }}/if/flow/default-invalidation-flow/;
+      }
+
+      location = /cmk/logout.py {
+        add_header Cache-Control "no-store" always;
+        add_header Set-Cookie "auth_cmk=deleted; Path=/cmk/; Max-Age=0; HttpOnly; Secure; SameSite=Lax" always;
+        return 302 https://auth.{{ .Values.baseDomain }}/if/flow/default-invalidation-flow/;
+      }
+
+      location / {
+        # Keep the Checkmk upstream request intentionally small and deterministic.
+        # We still preserve the minimal browser/session headers required by the
+        # Checkmk WebUI itself. Without these, dashboard AJAX and WATO forms can
+        # render or submit with broken session/CSRF semantics behind the auth-shim.
+        proxy_pass_request_headers off;
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Ssl on;
+        proxy_set_header X-Forwarded-Port 443;
+        proxy_set_header X-Forwarded-Host $host;
+
+        # Preserve the request body parser contract for Checkmk's own WebUI AJAX
+        # endpoints while still stripping arbitrary browser/Authentik headers.
+        # Without Content-Type, JSON POST requests such as graph rendering can
+        # reach Checkmk with a body that the WebUI does not parse, causing
+        # ajax_render_graph_content.py to fail with a missing graph_recipe key.
+        proxy_set_header Content-Type $content_type;
+
+        # Preserve only the browser WebUI/session headers Checkmk needs for
+        # dashboard AJAX and CSRF-protected form submissions. We still strip
+        # Authorization and all unlisted request headers because authentication is
+        # owned by Authentik forwardAuth plus the deterministic X-Remote-User bridge.
+        proxy_set_header Accept $http_accept;
+        proxy_set_header X-Requested-With $http_x_requested_with;
+        proxy_set_header Referer $http_referer;
+        proxy_set_header Origin $http_origin;
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Authorization "";
+
+        # Authentik forwardAuth returns X-authentik-* headers. Checkmk Raw/Community
+        # consumes X-Remote-User when incoming HTTP header authentication is enabled.
+        # For the first PlatformInit Community/Raw integration, all Authentik-approved
+        # operators land on the deterministic local break-glass administrator. This avoids
+        # Checkmk HTTP 500 / unknown-user failures before per-user provisioning exists.
+        proxy_set_header X-Remote-User cmkadmin;
+        proxy_set_header X-Remote-Original-User $http_x_authentik_username;
+        proxy_set_header X-Remote-Name $http_x_authentik_name;
+        proxy_set_header X-Remote-Email $http_x_authentik_email;
+        proxy_set_header X-Remote-Groups $http_x_authentik_groups;
+      }
+    }

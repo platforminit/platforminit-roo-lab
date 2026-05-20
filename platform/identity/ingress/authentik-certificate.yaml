@@ -1,0 +1,15 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: authentik-tls
+  namespace: identity
+  labels:
+    app.kubernetes.io/name: authentik
+    app.kubernetes.io/part-of: platforminit-identity
+spec:
+  secretName: authentik-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: __CLUSTER_ISSUER__
+  dnsNames:
+    - auth.__BASE_DOMAIN__

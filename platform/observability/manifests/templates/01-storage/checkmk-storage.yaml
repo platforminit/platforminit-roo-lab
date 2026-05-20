@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: platforminit-checkmk-sites
+  labels:
+    app.kubernetes.io/name: checkmk
+    app.kubernetes.io/part-of: platforminit-operations
+    platforminit.io/storage-scope: observability
+spec:
+  capacity:
+    storage: {{ .Values.checkmk.storageSize | quote }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: {{ .Values.checkmk.storageRoot | quote }}
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: checkmk-sites
+  namespace: operations
+  labels:
+    app.kubernetes.io/name: checkmk
+    app.kubernetes.io/part-of: platforminit-operations
+    platforminit.io/storage-scope: observability
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: platforminit-checkmk-sites
+  resources:
+    requests:
+      storage: {{ .Values.checkmk.storageSize | quote }}

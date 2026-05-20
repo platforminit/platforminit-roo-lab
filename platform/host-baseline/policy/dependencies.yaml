@@ -1,0 +1,40 @@
+version: 1
+os:
+  family: ubuntu
+  release: "24.04"
+
+apt:
+  common:
+    - ca-certificates
+    - curl
+    - git
+    - jq
+    - unzip
+    - vim-tiny
+    - sudo
+    - openssh-server
+    - ufw
+    - rsync
+    - tar
+    - gzip
+    - coreutils
+    - findutils
+    - gawk
+    - grep
+    - sed
+    - util-linux
+    - procps
+    - passwd
+  security:
+    - auditd
+    - fail2ban
+    - unattended-upgrades
+    - aide
+
+external_binaries:
+  yq:
+    version: "v4.44.3"
+    arch_map:
+      x86_64: yq_linux_amd64
+      aarch64: yq_linux_arm64
+      arm64: yq_linux_arm64

@@ -1,0 +1,48 @@
+{
+  "schema": "platforminit.identity.bootstrap-users.v1",
+  "bootstrap_memberships": [
+    {
+      "username_env": "AUTHENTIK_BOOTSTRAP_ADMIN_USERNAME",
+      "default_username": "akadmin",
+      "groups": [
+        "PlatformInit Admins",
+        "ArgoCD Admins",
+        "Authentik Admins",
+        "Operations Admins",
+        "Zabbix Admins",
+        "OpenObserve Admins"
+      ]
+    }
+  ],
+  "technical_users": [
+    {
+      "username": "platforminit-automation",
+      "display_name": "PlatformInit Automation",
+      "create_by_default": false,
+      "purpose": "Future non-human automation identity for API-based platform operations.",
+      "groups": [
+        "PlatformInit Operators"
+      ]
+    },
+    {
+      "username": "argocd-bootstrap-admin",
+      "display_name": "Argo CD Bootstrap Admin",
+      "create_by_default": false,
+      "purpose": "Temporary Argo CD bootstrap identity until real user/group onboarding is complete.",
+      "groups": [
+        "ArgoCD Admins"
+      ]
+    },
+    {
+      "username": "operations-bootstrap-admin",
+      "display_name": "Operations Bootstrap Admin",
+      "create_by_default": false,
+      "purpose": "Temporary CH05 operations bootstrap identity until real user/group onboarding is complete.",
+      "groups": [
+        "Operations Admins",
+        "Zabbix Admins",
+        "OpenObserve Admins"
+      ]
+    }
+  ]
+}

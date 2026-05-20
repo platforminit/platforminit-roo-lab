@@ -1,0 +1,151 @@
+name: A2 - Security Patching
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      server_id_override:
+        description: Optional Hetzner server ID override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+  schedule:
+    - cron: '11 3 * * 0'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'development' }}
+      host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      duration_minutes: '15'
+      mode: security-apply
+
+  apply:
+    needs: grant
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: target
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.target.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Render remote security patch script
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/security-patching-remote.sh <<'EOS'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          REMOTE_TMP="$1"
+          REPORT_DIR="$2"
+          install -d -m 755 /tmp/platforminit-run "$REPORT_DIR"
+          cp "$REMOTE_TMP/platform/host-baseline/scripts/security-os-apply.sh" /tmp/platforminit-run/security-os-apply.sh
+          cp "$REMOTE_TMP/platform/host-baseline/scripts/security-os-check.sh" /tmp/platforminit-run/security-os-check.sh
+          chmod +x /tmp/platforminit-run/security-os-apply.sh /tmp/platforminit-run/security-os-check.sh
+          sudo -n /tmp/platforminit-run/security-os-apply.sh | tee "$REPORT_DIR/security-os-apply.log"
+          sudo -n /tmp/platforminit-run/security-os-check.sh "$REPORT_DIR/security-os-check.txt"
+          EOS
+          chmod +x /tmp/security-patching-remote.sh
+
+      - name: Package remote payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/platforminit-host-baseline-lite.tar.gz -C platform host-baseline
+
+      - name: Apply security patching
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_tmp="/tmp/platforminit-day2/security"
+          report_dir="/srv/platforminit/day2/security"
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "mkdir -p '$remote_tmp' /tmp/platforminit-run '$report_dir'"
+          scp -i ~/.ssh/id_ed25519 /tmp/platforminit-host-baseline-lite.tar.gz "$HOST_LOGIN_USER@$HOST:$remote_tmp/payload.tar.gz"
+          scp -i ~/.ssh/id_ed25519 /tmp/security-patching-remote.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/security-patching-remote.sh"
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" <<'EOS'
+          set -euo pipefail
+          remote_tmp="/tmp/platforminit-day2/security"
+          report_dir="/srv/platforminit/day2/security"
+          tar -xzf "$remote_tmp/payload.tar.gz" -C "$remote_tmp"
+          chmod +x /tmp/platforminit-run/security-patching-remote.sh
+          sudo -n /tmp/platforminit-run/security-patching-remote.sh "$remote_tmp" "$report_dir"
+          EOS
+
+      - name: Collect day-2 security artifacts
+        if: always()
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p day2-security-artifacts
+          scp -i ~/.ssh/id_ed25519 -r "$HOST_LOGIN_USER@$HOST:/srv/platforminit/day2/security/." day2-security-artifacts/ || true
+          find day2-security-artifacts -maxdepth 3 -type f | sort || true
+
+      - name: Upload day-2 security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: day2-security-patching-${{ github.run_id }}
+          path: day2-security-artifacts
+          if-no-files-found: warn

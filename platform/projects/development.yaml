@@ -1,0 +1,12 @@
+project_id: development
+hetzner:
+  token_secret: HCLOUD_TOKEN_DEVELOPMENT
+  region: hel1
+  server_prefix: platforminit-dev
+ssh:
+  key_name: platforminit-dev-automation
+volumes:
+  namespace: platforminit-dev
+  layout: split
+dns:
+  base_domain: sysadminhomelab.hu

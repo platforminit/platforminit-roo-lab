@@ -1,0 +1,248 @@
+name: N8N - Deploy Standalone Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Runtime action
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - validate
+          - full
+      project:
+        description: PlatformInit project label / Hetzner project routing key
+        required: false
+        default: n8n
+        type: choice
+        options:
+          - n8n
+      host_name:
+        description: Logical n8n host name
+        required: false
+        default: platforminit-n8n-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      server_id_override:
+        description: Optional Hetzner server id override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override
+        required: false
+        default: ''
+      n8n_domain:
+        description: Public n8n FQDN
+        required: true
+        default: n8n.sysadminhomelab.hu
+      n8n_image:
+        description: n8n container image
+        required: true
+        default: n8nio/n8n:latest
+      postgres_image:
+        description: PostgreSQL container image
+        required: true
+        default: postgres:16-alpine
+      caddy_image:
+        description: Caddy container image
+        required: true
+        default: caddy:2.8-alpine
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  preflight:
+    if: ${{ inputs.action == 'deploy' || inputs.action == 'full' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'n8n' }}
+    steps:
+      - name: Validate required n8n runtime secrets
+        env:
+          N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
+          N8N_POSTGRES_PASSWORD: ${{ secrets.N8N_POSTGRES_PASSWORD }}
+          TLS_CONTACT_EMAIL: ${{ secrets.TLS_CONTACT_EMAIL }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for name in N8N_ENCRYPTION_KEY N8N_POSTGRES_PASSWORD TLS_CONTACT_EMAIL; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing GitHub secret::${name} is required in the '${{ inputs.project || 'n8n' }}' GitHub environment or repository secrets."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Required one-time setup example:"
+            echo
+            echo "  openssl rand -hex 32 | gh secret set N8N_ENCRYPTION_KEY --env n8n --repo platforminit/platforminit-platform"
+            echo "  openssl rand -hex 32 | gh secret set N8N_POSTGRES_PASSWORD --env n8n --repo platforminit/platforminit-platform"
+            echo "  printf '%s' 'admin@example.com' | gh secret set TLS_CONTACT_EMAIL --env n8n --repo platforminit/platforminit-platform"
+            echo
+            echo "Keep N8N_ENCRYPTION_KEY stable. Rotating it without migration can make existing n8n credentials unreadable."
+            exit 1
+          fi
+
+          if [ "${#N8N_ENCRYPTION_KEY}" -lt 32 ]; then
+            echo "::error title=Weak n8n encryption key::N8N_ENCRYPTION_KEY must be at least 32 characters."
+            exit 1
+          fi
+
+          echo "n8n runtime secret preflight passed."
+
+  grant:
+    needs: preflight
+    if: ${{ always() && (inputs.action == 'deploy' || inputs.action == 'full' || inputs.action == 'validate') && (inputs.action == 'validate' || needs.preflight.result == 'success') }}
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'n8n' }}
+      host_name: ${{ inputs.host_name || 'platforminit-n8n-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      duration_minutes: '20'
+      mode: interactive-elevation
+
+  deploy:
+    needs: [preflight, grant]
+    if: ${{ always() && (inputs.action == 'deploy' || inputs.action == 'full') && needs.grant.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'n8n' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: target
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'n8n' }}
+          host_name: ${{ inputs.host_name || 'platforminit-n8n-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.target.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload n8n runtime files
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/platforminit-run/n8n/templates"
+          scp -i ~/.ssh/id_ed25519 platform/n8n/scripts/deploy-n8n-runtime.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/n8n/deploy-n8n-runtime.sh"
+          scp -i ~/.ssh/id_ed25519 platform/n8n/validate/validate-n8n-runtime.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/n8n/validate-n8n-runtime.sh"
+          scp -i ~/.ssh/id_ed25519 platform/n8n/templates/docker-compose.yml.tpl "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/n8n/templates/docker-compose.yml.tpl"
+          scp -i ~/.ssh/id_ed25519 platform/n8n/templates/Caddyfile.tpl "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/n8n/templates/Caddyfile.tpl"
+
+      - name: Deploy n8n runtime
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+          N8N_DOMAIN: ${{ inputs.n8n_domain }}
+          TLS_EMAIL: ${{ secrets.TLS_CONTACT_EMAIL }}
+          N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.N8N_POSTGRES_PASSWORD }}
+          N8N_IMAGE: ${{ inputs.n8n_image }}
+          POSTGRES_IMAGE: ${{ inputs.postgres_image }}
+          CADDY_IMAGE: ${{ inputs.caddy_image }}
+        run: |
+          set -euo pipefail
+          env_file="$(mktemp)"
+          {
+            printf 'export N8N_DOMAIN=%q\n' "$N8N_DOMAIN"
+            printf 'export TLS_EMAIL=%q\n' "$TLS_EMAIL"
+            printf 'export N8N_ENCRYPTION_KEY=%q\n' "$N8N_ENCRYPTION_KEY"
+            printf 'export POSTGRES_PASSWORD=%q\n' "$POSTGRES_PASSWORD"
+            printf 'export N8N_IMAGE=%q\n' "$N8N_IMAGE"
+            printf 'export POSTGRES_IMAGE=%q\n' "$POSTGRES_IMAGE"
+            printf 'export CADDY_IMAGE=%q\n' "$CADDY_IMAGE"
+            printf 'export SOURCE_DIR=%q\n' '/tmp/platforminit-run/n8n'
+          } > "$env_file"
+
+          scp -i ~/.ssh/id_ed25519 "$env_file" "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/n8n/runtime.env"
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" \
+            "chmod 600 /tmp/platforminit-run/n8n/runtime.env && chmod +x /tmp/platforminit-run/n8n/deploy-n8n-runtime.sh /tmp/platforminit-run/n8n/validate-n8n-runtime.sh && sudo -n bash -lc 'source /tmp/platforminit-run/n8n/runtime.env && /tmp/platforminit-run/n8n/deploy-n8n-runtime.sh'"
+
+  validate:
+    needs: [grant, deploy]
+    if: ${{ always() && (inputs.action == 'validate' || inputs.action == 'full' || inputs.action == 'deploy') && needs.grant.result == 'success' && (inputs.action == 'validate' || needs.deploy.result == 'success') }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'n8n' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: target
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'n8n' }}
+          host_name: ${{ inputs.host_name || 'platforminit-n8n-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.target.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload validator when needed
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/platforminit-run/n8n"
+          scp -i ~/.ssh/id_ed25519 platform/n8n/validate/validate-n8n-runtime.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/n8n/validate-n8n-runtime.sh"
+
+      - name: Validate n8n runtime
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+          N8N_DOMAIN: ${{ inputs.n8n_domain }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" \
+            "chmod +x /tmp/platforminit-run/n8n/validate-n8n-runtime.sh && sudo -n env N8N_DOMAIN='$N8N_DOMAIN' /tmp/platforminit-run/n8n/validate-n8n-runtime.sh"

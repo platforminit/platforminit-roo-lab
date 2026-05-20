@@ -1,0 +1,68 @@
+{
+  "schema": "platforminit.identity.groups.v1",
+  "groups": [
+    {
+      "name": "PlatformInit Admins",
+      "slug": "platforminit-admins",
+      "description": "Platform-wide bootstrap administrators. Transitional break-glass/admin group only.",
+      "is_superuser": false,
+      "scope": "platform"
+    },
+    {
+      "name": "PlatformInit Operators",
+      "slug": "platforminit-operators",
+      "description": "Day-2 platform operators with operational visibility but no global Authentik superuser inheritance.",
+      "is_superuser": false,
+      "scope": "platform"
+    },
+    {
+      "name": "ArgoCD Admins",
+      "slug": "argocd-admins",
+      "description": "Administrators inside Argo CD via Argo CD RBAC mapping.",
+      "is_superuser": false,
+      "scope": "application:argocd"
+    },
+    {
+      "name": "ArgoCD Viewers",
+      "slug": "argocd-viewers",
+      "description": "Read-only Argo CD users via Argo CD RBAC mapping.",
+      "is_superuser": false,
+      "scope": "application:argocd"
+    },
+    {
+      "name": "Operations Admins",
+      "slug": "operations-admins",
+      "description": "Administrators for the CH05 operations WebUIs protected by Authentik.",
+      "is_superuser": false,
+      "scope": "application:operations"
+    },
+    {
+      "name": "Operations Viewers",
+      "slug": "operations-viewers",
+      "description": "Read-only users for CH05 operations WebUIs protected by Authentik.",
+      "is_superuser": false,
+      "scope": "application:operations"
+    },
+    {
+      "name": "Zabbix Admins",
+      "slug": "zabbix-admins",
+      "description": "Administrators for the Zabbix operational monitoring UI.",
+      "is_superuser": false,
+      "scope": "application:zabbix"
+    },
+    {
+      "name": "OpenObserve Admins",
+      "slug": "openobserve-admins",
+      "description": "Administrators for the OpenObserve RCA log UI.",
+      "is_superuser": false,
+      "scope": "application:openobserve"
+    },
+    {
+      "name": "Authentik Admins",
+      "slug": "authentik-admins",
+      "description": "Authentik administration group. Keep separate from application SSO groups.",
+      "is_superuser": true,
+      "scope": "identity-platform"
+    }
+  ]
+}

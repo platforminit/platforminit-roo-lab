@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ch06-identity
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/PlatformInit/platforminit-platform.git
+    targetRevision: feat/ch06-identity-sso-foundation
+    path: platform/identity
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: identity
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

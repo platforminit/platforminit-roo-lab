@@ -1,0 +1,343 @@
+name: 04.6 - Enable Argo CD SSO
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Producing build workflow run ID
+        required: true
+        type: string
+      artifact_id:
+        description: Identity artifact ID
+        required: true
+        type: string
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      server_id_override:
+        description: Optional server ID override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+      argocd_provider_slug:
+        description: Authentik OAuth provider slug for Argo CD
+        required: true
+        default: argocd
+        type: string
+      argocd_admin_group:
+        description: Authentik group mapped to Argo CD admin
+        required: true
+        default: PlatformInit Admins
+        type: string
+      authentik_argocd_admin_username:
+        description: Authentik username to add to the Argo CD admin group
+        required: true
+        default: akadmin
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'development' }}
+      host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      duration_minutes: '20'
+      mode: identity
+
+  deploy:
+    needs: grant
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: server
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Download identity artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          artifact-ids: ${{ inputs.artifact_id }}
+          github-token: ${{ github.token }}
+          path: ./downloaded-artifacts
+
+      - name: Resolve archive
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_path="$(find ./downloaded-artifacts -type f -name 'platforminit-identity-*.tar.gz' | sort | head -n1)"
+          [ -n "$archive_path" ] || { find ./downloaded-artifacts -type f | sort >&2; exit 1; }
+          filename="$(basename "$archive_path")"
+          short_sha="${filename#platforminit-identity-}"
+          short_sha="${short_sha%.tar.gz}"
+          echo "archive_path=$archive_path" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.server.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Render remote Argo CD SSO script
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/ch06-remote.sh <<'EOS'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          usage() {
+            echo "Usage: $0 <launch|run> SHORT_SHA BASE_DOMAIN ARGOCD_PROVIDER_SLUG ARGOCD_ADMIN_GROUP AUTHENTIK_ARGOCD_ADMIN_USERNAME OWNER_USER" >&2
+            exit 2
+          }
+
+          [[ $# -ge 7 ]] || usage
+
+          ACTION="$1"
+          SHORT_SHA="$2"
+          BASE_DOMAIN="$3"
+          ARGOCD_PROVIDER_SLUG="$4"
+          ARGOCD_ADMIN_GROUP="$5"
+          AUTHENTIK_ARGOCD_ADMIN_USERNAME="$6"
+          OWNER_USER="$7"
+
+          [[ "${EUID}" -eq 0 ]] || { echo "ch06-remote.sh compatibility entrypoint must run as root" >&2; exit 1; }
+
+          if [[ -f /etc/platforminit/host-context.env ]]; then
+            # shellcheck disable=SC1091
+            source /etc/platforminit/host-context.env
+          fi
+          PLATFORMINIT_IDENTITY_PATH="${PLATFORMINIT_IDENTITY_PATH:-/srv/identity}"
+
+          release_root="${PLATFORMINIT_IDENTITY_PATH}/platforminit"
+          release_dir="${release_root}/${SHORT_SHA}"
+          tmp_root="/tmp/platforminit-argocd-sso"
+          tmp_dir="${tmp_root}/${SHORT_SHA}"
+          unpack_dir="${tmp_dir}/unpacked"
+          report_dir="${release_root}/reports"
+          run_log="${tmp_dir}/ch04-6-argocd-sso-run-${SHORT_SHA}.log"
+          run_pid="${tmp_dir}/ch04-6-argocd-sso-run-${SHORT_SHA}.pid"
+          run_status="${tmp_dir}/ch04-6-argocd-sso-run-${SHORT_SHA}.status"
+          run_done="${tmp_dir}/ch04-6-argocd-sso-run-${SHORT_SHA}.done"
+          validate_log="${tmp_dir}/ch04-6-argocd-sso-validate-${SHORT_SHA}.log"
+          report_file="${report_dir}/ch04-6-argocd-sso-validate-${SHORT_SHA}.log"
+
+          ensure_owner_access() {
+            mkdir -p "$tmp_dir"
+            chown "${OWNER_USER}:${OWNER_USER}" "$tmp_dir" 2>/dev/null || true
+            chmod 755 "$tmp_dir" 2>/dev/null || true
+            for f in "$run_log" "$run_pid" "$run_status" "$run_done" "$validate_log"; do
+              if [ -e "$f" ]; then
+                chown "${OWNER_USER}:${OWNER_USER}" "$f" 2>/dev/null || true
+                chmod 644 "$f" 2>/dev/null || true
+              fi
+            done
+          }
+
+          launch() {
+            mkdir -p "$tmp_dir" "$release_root"
+            rm -f "$run_log" "$run_pid" "$run_status" "$run_done" "$validate_log"
+            : > "$run_log"
+            ensure_owner_access
+            nohup "$0" run "$SHORT_SHA" "$BASE_DOMAIN" "$ARGOCD_PROVIDER_SLUG" "$ARGOCD_ADMIN_GROUP" "$AUTHENTIK_ARGOCD_ADMIN_USERNAME" "$OWNER_USER" >>"$run_log" 2>&1 < /dev/null &
+            echo $! > "$run_pid"
+            ensure_owner_access
+            echo "launched pid=$(cat "$run_pid")"
+          }
+
+          run_main() {
+            trap 'rc=$?; printf "%s\n" "$rc" > "${run_status}.tmp"; mv "${run_status}.tmp" "$run_status"; touch "$run_done"; ensure_owner_access; exit "$rc"' EXIT
+
+            mkdir -p "$release_dir" "$unpack_dir" "$report_dir" "$tmp_dir"
+            rm -rf "${release_dir:?}/"* "${unpack_dir:?}/"*
+            tar -xzf "${tmp_dir}/identity-release.tar.gz" -C "$unpack_dir"
+
+            test -d "$unpack_dir/platform/identity" || {
+              echo "Missing platform/identity in artifact" >&2
+              find "$unpack_dir" -maxdepth 4 -print >&2
+              exit 1
+            }
+
+            rsync -a --delete "$unpack_dir/platform/identity/" "$release_dir/"
+            find "$release_dir" -type f -name "*.sh" -exec chmod +x {} \;
+
+            export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+            test -f "$KUBECONFIG" || {
+              echo "Missing kubeconfig at $KUBECONFIG" >&2
+              exit 1
+            }
+
+            env \
+              KUBECONFIG="$KUBECONFIG" \
+              BASE_DOMAIN="$BASE_DOMAIN" \
+              ARGOCD_OIDC_PROVIDER_SLUG="$ARGOCD_PROVIDER_SLUG" \
+              ARGOCD_ADMIN_GROUP="$ARGOCD_ADMIN_GROUP" \
+              AUTHENTIK_ARGOCD_ADMIN_USERNAME="$AUTHENTIK_ARGOCD_ADMIN_USERNAME" \
+              "$release_dir/scripts/ch04-6-enable-argocd-sso.sh"
+
+            env KUBECONFIG="$KUBECONFIG" BASE_DOMAIN="$BASE_DOMAIN" ARGOCD_OIDC_PROVIDER_SLUG="$ARGOCD_PROVIDER_SLUG" ARGOCD_ADMIN_GROUP="$ARGOCD_ADMIN_GROUP" AUTHENTIK_ARGOCD_ADMIN_USERNAME="$AUTHENTIK_ARGOCD_ADMIN_USERNAME" \
+              "$release_dir/validate/ch04-6-validate-argocd-sso.sh" | tee "$validate_log"
+            cp "$validate_log" "$report_file" || true
+            ensure_owner_access
+          }
+
+          case "$ACTION" in
+            launch) launch ;;
+            run) run_main ;;
+            *) usage ;;
+          esac
+          EOS
+          chmod +x /tmp/ch06-remote.sh
+
+      - name: Upload and launch Argo CD SSO enablement
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+          ARCHIVE: ${{ steps.artifact.outputs.archive_path }}
+          PLATFORM_BASE_DOMAIN: ${{ secrets.PLATFORM_BASE_DOMAIN }}
+          ARGOCD_OIDC_PROVIDER_SLUG: ${{ inputs.argocd_provider_slug }}
+          ARGOCD_ADMIN_GROUP: ${{ inputs.argocd_admin_group }}
+          AUTHENTIK_ARGOCD_ADMIN_USERNAME: ${{ inputs.authentik_argocd_admin_username }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/platforminit-argocd-sso/${SHORTSHA} /tmp/platforminit-run"
+          scp -i ~/.ssh/id_ed25519 "$ARCHIVE" "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-argocd-sso/${SHORTSHA}/identity-release.tar.gz"
+          scp -i ~/.ssh/id_ed25519 /tmp/ch06-remote.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/ch06-remote.sh"
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "
+            set -euo pipefail
+            chmod +x /tmp/platforminit-run/ch06-remote.sh
+            sudo -n /tmp/platforminit-run/ch06-remote.sh launch '${SHORTSHA}' '${PLATFORM_BASE_DOMAIN}' '${ARGOCD_OIDC_PROVIDER_SLUG}' '${ARGOCD_ADMIN_GROUP}' '${AUTHENTIK_ARGOCD_ADMIN_USERNAME}' '${HOST_LOGIN_USER}'
+          "
+          echo "Remote Argo CD SSO enablement launched."
+
+      - name: Poll Argo CD SSO enablement
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_tmp_dir="/tmp/platforminit-argocd-sso/${SHORTSHA}"
+          remote_run_log="${remote_tmp_dir}/ch04-6-argocd-sso-run-${SHORTSHA}.log"
+          remote_run_status="${remote_tmp_dir}/ch04-6-argocd-sso-run-${SHORTSHA}.status"
+          remote_run_done="${remote_tmp_dir}/ch04-6-argocd-sso-run-${SHORTSHA}.done"
+
+          max_attempts=60
+          sleep_seconds=10
+
+          for attempt in $(seq 1 "${max_attempts}"); do
+            if ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "test -f '${remote_run_done}'"; then
+              break
+            fi
+
+            echo "[poll] CH04.6 Argo CD SSO still running (attempt ${attempt}/${max_attempts})"
+            ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "tail -n 30 '${remote_run_log}' 2>/dev/null || true"
+            sleep "${sleep_seconds}"
+          done
+
+          if ! ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "test -f '${remote_run_done}'"; then
+            echo "Timed out waiting for CH04.6 Argo CD SSO to finish." >&2
+            ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "tail -n 200 '${remote_run_log}' 2>/dev/null || true"
+            exit 1
+          fi
+
+          status="$(ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "cat '${remote_run_status}' 2>/dev/null || echo '__NO_STATUS__'" | tr -d '\r[:space:]')"
+          echo "Remote CH04.6 Argo CD SSO exit status: ${status}"
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "tail -n 200 '${remote_run_log}' 2>/dev/null || true"
+          [[ "${status}" =~ ^[0-9]+$ ]] || exit 1
+          [ "${status}" = "0" ] || exit "${status}"
+
+      - name: Fetch validation report
+        if: always()
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ./identity-reports
+          remote_tmp_dir="/tmp/platforminit-argocd-sso/${SHORTSHA}"
+          for file in \
+            "ch04-6-argocd-sso-validate-${SHORTSHA}.log" \
+            "ch04-6-argocd-sso-run-${SHORTSHA}.log"
+          do
+            if ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "test -f '${remote_tmp_dir}/${file}'"; then
+              scp -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST:${remote_tmp_dir}/${file}" "./identity-reports/${file}"
+            fi
+          done
+
+      - name: Upload validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch04-6-argocd-sso-validate-${{ steps.artifact.outputs.short_sha }}
+          path: ./identity-reports/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Print deploy metadata
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "CH04.6 Argo CD SSO run completed"
+            echo "artifact_run_id=${{ inputs.artifact_run_id }}"
+            echo "artifact_id=${{ inputs.artifact_id }}"
+            echo "short_sha=${{ steps.artifact.outputs.short_sha }}"
+            echo "host_public_ip=${{ steps.server.outputs.public_ip }}"
+            echo "public_url=https://argocd.${{ secrets.PLATFORM_BASE_DOMAIN }}/login"
+          }

@@ -1,0 +1,100 @@
+name: 01.2 - Sync Host Access Tooling
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      server_id_override:
+        description: Optional server ID override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: server
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload host access tooling
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/id_ed25519 itadmin@"$HOST" "mkdir -p /tmp/platforminit-host-access"
+
+          scp -i ~/.ssh/id_ed25519 platform/host-baseline/scripts/lib-policy.sh \
+            itadmin@"$HOST":/tmp/platforminit-host-access/lib-policy.sh
+
+          scp -i ~/.ssh/id_ed25519 platform/host-baseline/scripts/grant-temporary-sudo.sh \
+            itadmin@"$HOST":/tmp/platforminit-host-access/grant-temporary-sudo.sh
+
+          scp -i ~/.ssh/id_ed25519 platform/host-bootstrap/scripts/sync-host-access.sh \
+            itadmin@"$HOST":/tmp/platforminit-host-access/sync-host-access.sh
+
+      - name: Apply host access tooling sync
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/id_ed25519 itadmin@"$HOST" \
+            "sudo -n /usr/local/sbin/platforminit-sync-host-access /tmp/platforminit-host-access"

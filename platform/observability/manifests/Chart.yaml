@@ -1,0 +1,6 @@
+apiVersion: v2
+name: platforminit-operations-stack
+description: PlatformInit CH05 Operations Stack (Checkmk Community)
+type: application
+version: 0.2.0
+appVersion: "checkmk-community"

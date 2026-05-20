@@ -1,0 +1,160 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkmk
+  namespace: operations
+  labels:
+    app.kubernetes.io/name: checkmk
+    app.kubernetes.io/part-of: platforminit-operations
+    platforminit.io/chapter: ch05
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: checkmk
+  template:
+    metadata:
+      annotations:
+        # ConfigMap-backed subPath mounts are only read by nginx at container start.
+        # Keep this checksum on the pod template so Argo CD performs a deterministic
+        # rollout whenever the auth-shim config changes.
+        checksum/auth-shim-config: {{ include (print $.Template.BasePath "/checkmk/checkmk-config.yaml") . | sha256sum | quote }}
+      labels:
+        app.kubernetes.io/name: checkmk
+        app.kubernetes.io/part-of: platforminit-operations
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: checkmk
+          image: "{{ .Values.checkmk.image.repository }}:{{ .Values.checkmk.image.tag }}"
+          imagePullPolicy: {{ .Values.checkmk.image.pullPolicy }}
+          env:
+            - name: CMK_SITE_ID
+              value: {{ .Values.checkmk.site | quote }}
+            - name: CMK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: checkmk-admin
+                  key: CMK_PASSWORD
+            - name: TZ
+              value: {{ .Values.checkmk.timezone | quote }}
+          ports:
+            - name: checkmk-http
+              containerPort: 5000
+            - name: agent-receiver
+              containerPort: 8000
+          volumeMounts:
+            - name: checkmk-sites
+              mountPath: /omd/sites
+            - name: checkmk-tmp
+              mountPath: /opt/omd/sites/{{ .Values.checkmk.site }}/tmp
+            - name: host-root
+              mountPath: /platforminit-host/root
+              readOnly: true
+            - name: host-srv-data-k3s
+              mountPath: /platforminit-host/srv-data-k3s
+              readOnly: true
+            - name: host-srv-data-k3s-storage
+              mountPath: /platforminit-host/srv-data-k3s-storage
+              readOnly: true
+            - name: host-srv-observability-data
+              mountPath: /platforminit-host/srv-observability-data
+              readOnly: true
+            - name: host-srv-platforminit
+              mountPath: /platforminit-host/srv-platforminit
+              readOnly: true
+          resources:
+{{ toYaml .Values.checkmk.resources | indent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /{{ .Values.checkmk.site }}/
+              port: checkmk-http
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 20
+          livenessProbe:
+            httpGet:
+              path: /{{ .Values.checkmk.site }}/
+              port: checkmk-http
+            initialDelaySeconds: 180
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+        - name: auth-shim
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: checkmk-nginx-auth-shim
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: checkmk-sites
+          persistentVolumeClaim:
+            claimName: checkmk-sites
+        - name: checkmk-tmp
+          emptyDir:
+            medium: Memory
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
+        - name: host-srv-data-k3s
+          hostPath:
+            path: /srv/data/k3s
+            type: DirectoryOrCreate
+        - name: host-srv-data-k3s-storage
+          hostPath:
+            path: /srv/data/k3s/storage
+            type: DirectoryOrCreate
+        - name: host-srv-observability-data
+          hostPath:
+            path: /srv/observability/data
+            type: DirectoryOrCreate
+        - name: host-srv-platforminit
+          hostPath:
+            path: /srv/platforminit
+            type: DirectoryOrCreate
+        - name: checkmk-nginx-auth-shim
+          configMap:
+            name: checkmk-nginx-auth-shim
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkmk
+  namespace: operations
+  labels:
+    app.kubernetes.io/name: checkmk
+    app.kubernetes.io/part-of: platforminit-operations
+spec:
+  selector:
+    app.kubernetes.io/name: checkmk
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: checkmk-http
+      port: 5000
+      targetPort: checkmk-http
+    - name: agent-receiver
+      port: 8000
+      targetPort: agent-receiver

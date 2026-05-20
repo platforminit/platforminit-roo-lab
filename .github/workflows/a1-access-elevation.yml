@@ -1,0 +1,157 @@
+name: A1 - Access Elevation
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      server_id_override:
+        description: Optional Hetzner server ID override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+      target_user:
+        description: User to elevate temporarily
+        required: false
+        default: devops
+      duration_minutes:
+        description: Time-bound elevation window in minutes
+        required: true
+        default: '15'
+      mode:
+        description: Elevation mode
+        required: true
+        default: interactive-elevation
+        type: choice
+        options:
+          - baseline
+          - drift
+          - security-check
+          - security-apply
+          - fim-check
+          - aide-init
+          - aide-check
+          - cluster
+          - platform
+          - observability
+          - identity
+          - identity-foundation
+          - identity-sso
+          - interactive-elevation
+          - automation-admin-shell
+  workflow_call:
+    inputs:
+      project:
+        required: false
+        type: string
+        default: development
+      host_name:
+        required: false
+        type: string
+        default: platforminit-dev-01
+      role:
+        required: false
+        type: string
+        default: primary
+      server_id_override:
+        required: false
+        type: string
+        default: ''
+      host_ipv4_override:
+        required: false
+        type: string
+        default: ''
+      target_user:
+        required: false
+        type: string
+        default: devops
+      duration_minutes:
+        required: false
+        type: string
+        default: '15'
+      mode:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: target
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.target.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Grant temporary sudo
+        env:
+          HOST: ${{ steps.target.outputs.public_ip }}
+          BROKER_USER: itadmin
+          INPUT_TARGET_USER: ${{ inputs.target_user }}
+          DURATION_MINUTES: ${{ inputs.duration_minutes }}
+          SCOPE: ${{ inputs.mode }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_USER="${INPUT_TARGET_USER:-devops}"
+          [ -n "$TARGET_USER" ] || { echo "Missing target user" >&2; exit 1; }
+
+          echo "Granting temporary sudo: user=${TARGET_USER} scope=${SCOPE} duration=${DURATION_MINUTES}m host=${HOST}"
+          ssh -i ~/.ssh/id_ed25519 "$BROKER_USER@$HOST" \
+            "sudo -n /usr/local/sbin/platforminit-grant-sudo '$TARGET_USER' '$DURATION_MINUTES' '$SCOPE' '$RUN_ID'"
+
+          if [[ "$SCOPE" == "interactive-elevation" ]]; then
+            echo "Validating interactive sudo as ${TARGET_USER}"
+            ssh -i ~/.ssh/id_ed25519 "$TARGET_USER@$HOST" \
+              "sudo -n true && sudo -n -l | sed -n '1,20p'"
+          fi

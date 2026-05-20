@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: operations-stack
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: operations-stack
+    app.kubernetes.io/part-of: platforminit
+    platforminit.io/chapter: ch05
+    platforminit.io/gitops-mode: owner
+  annotations:
+    platforminit.io/description: "Argo CD-owned PlatformInit operations stack: Zabbix, OpenObserve and Vector."
+spec:
+  project: operations
+  source:
+    repoURL: https://github.com/platforminit/platforminit-platform.git
+    targetRevision: dev
+    path: platform/observability/manifests
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: operations
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true

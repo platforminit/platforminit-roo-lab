@@ -1,0 +1,403 @@
+name: 05 - Operations Monitoring
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Producing build workflow run ID from 00 - Build Platform Artifacts
+        required: true
+        type: string
+      artifact_id:
+        description: Operations artifact ID from 00 - Build Platform Artifacts
+        required: true
+        type: string
+      action:
+        description: CH05 operation to run
+        required: true
+        default: full_reconcile
+        type: choice
+        options:
+          - full_reconcile
+          - register_stack
+          - reconcile_prereqs
+          - sync_stack
+          - enable_sso
+          - provision_model
+          - install_agent_discovery
+          - configure_entrypoint
+          - configure_dashboards
+          - clean_alert_noise
+          - validate
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+        type: string
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+        type: string
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+        type: string
+      server_id_override:
+        description: Optional server ID override
+        required: false
+        default: ''
+        type: string
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+        type: string
+      target_user:
+        description: Host user that receives temporary sudo grant and runs CH05 steps
+        required: false
+        default: devops
+        type: string
+      expected_min_services:
+        description: Minimum generated Checkmk service count expected after native discovery
+        required: false
+        default: '20'
+        type: string
+      stale_failed_units:
+        description: Space-separated failed systemd units to reset during alert-noise cleanup
+        required: false
+        default: 'cloud-init-hotplugd.service dailyaidecheck.service'
+        type: string
+      platform_repo_url:
+        description: Git repository URL used by the Argo CD Application
+        required: false
+        default: https://github.com/platforminit/platforminit-platform.git
+        type: string
+      target_revision:
+        description: Git revision for Argo CD to sync. Default is the artifact commit SHA.
+        required: false
+        default: ''
+        type: string
+      validation_mode:
+        description: Validation scope for the final validate action
+        required: false
+        default: runtime_with_sso
+        type: choice
+        options:
+          - runtime
+          - runtime_with_sso
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'development' }}
+      host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      target_user: ${{ inputs.target_user || 'devops' }}
+      duration_minutes: '45'
+      mode: observability
+
+  deploy:
+    needs: grant
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: server
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Download observability artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          artifact-ids: ${{ inputs.artifact_id }}
+          github-token: ${{ github.token }}
+          path: ./downloaded-artifacts
+
+      - name: Resolve archive
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_path="$(find ./downloaded-artifacts -type f -name 'platforminit-observability-*.tar.gz' | sort | head -n1)"
+          [ -n "$archive_path" ] || { find ./downloaded-artifacts -type f | sort >&2; exit 1; }
+          filename="$(basename "$archive_path")"
+          short_sha="${filename#platforminit-observability-}"
+          short_sha="${short_sha%.tar.gz}"
+          echo "archive_path=$archive_path" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          host="${{ steps.server.outputs.public_ip }}"
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan -T 10 -H "$host" >> ~/.ssh/known_hosts 2>/tmp/platforminit-ssh-keyscan.err; then
+              chmod 600 ~/.ssh/known_hosts
+              exit 0
+            fi
+            echo "WARN: ssh-keyscan failed for $host on attempt ${attempt}/5" >&2
+            cat /tmp/platforminit-ssh-keyscan.err >&2 || true
+            sleep $(( attempt * 2 ))
+          done
+          echo "FATAL: could not collect SSH host key for $host" >&2
+          exit 1
+
+      - name: Refresh temporary CH05 sudo grant
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          TARGET_USER: ${{ inputs.target_user || 'devops' }}
+          DURATION_MINUTES: '45'
+          SCOPE: observability
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/id_ed25519 itadmin@"$HOST" \
+            "sudo -n /usr/local/sbin/platforminit-grant-sudo '$TARGET_USER' '$DURATION_MINUTES' '$SCOPE' '$RUN_ID'"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/id_ed25519 "$TARGET_USER@$HOST" \
+            "sudo -n -l | grep -F '/tmp/platforminit-run/ch05-remote.sh' >/dev/null"
+
+      - name: Render remote CH05 privileged entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/ch05-remote.sh <<'EOS'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          usage() { echo "Usage: $0 SHORT_SHA SCRIPT VALIDATE OWNER_USER" >&2; exit 2; }
+          [[ $# -eq 4 ]] || usage
+          SHORT_SHA="$1"; SCRIPT="$2"; VALIDATE="$3"; OWNER_USER="$4"
+          [[ "${EUID}" -eq 0 ]] || { echo "ch05-remote.sh must run as root" >&2; exit 1; }
+          if [[ -f /etc/platforminit/host-context.env ]]; then
+            # shellcheck disable=SC1091
+            source /etc/platforminit/host-context.env
+          fi
+          PLATFORMINIT_OBSERVABILITY_PATH="${PLATFORMINIT_OBSERVABILITY_PATH:-/srv/observability}"
+          release_root="${PLATFORMINIT_OBSERVABILITY_PATH}/platforminit"
+          release_dir="${release_root}/${SHORT_SHA}"
+          tmp_root="/tmp/platforminit-operations"
+          tmp_dir="${tmp_root}/${SHORT_SHA}"
+          unpack_dir="${tmp_dir}/unpacked"
+          report_dir="${release_root}/reports"
+          run_log="${tmp_dir}/${SCRIPT%.sh}-${SHORT_SHA}.log"
+          validate_log="${tmp_dir}/${VALIDATE%.sh}-${SHORT_SHA}.log"
+          mkdir -p "$release_dir" "$unpack_dir" "$report_dir" "$tmp_dir"
+          : > "$run_log"
+          chown -R "${OWNER_USER}:${OWNER_USER}" "$tmp_dir" 2>/dev/null || true
+          chmod 755 "$tmp_dir" 2>/dev/null || true
+          exec > >(tee -a "$run_log") 2>&1
+          rm -rf "${release_dir:?}/"* "${unpack_dir:?}/"*
+          tar -xzf "${tmp_dir}/observability-release.tar.gz" -C "$unpack_dir"
+          test -d "$unpack_dir/platform/observability" || { echo "Missing platform/observability in artifact" >&2; find "$unpack_dir" -maxdepth 4 -print >&2; exit 1; }
+          rsync -a --delete "$unpack_dir/platform/observability/" "$release_dir/"
+          find "$release_dir" -type f -name "*.sh" -exec chmod +x {} \;
+          export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+          test -f "$KUBECONFIG" || { echo "Missing kubeconfig at $KUBECONFIG" >&2; exit 1; }
+          remote_env_file="${tmp_dir}/ch05.env"
+          if [[ -f "$remote_env_file" ]]; then
+            set -a
+            # shellcheck disable=SC1090
+            source "$remote_env_file"
+            set +a
+          fi
+          "$release_dir/scripts/$SCRIPT"
+          "$release_dir/validate/$VALIDATE" | tee "$validate_log"
+          cp "$validate_log" "$report_dir/${VALIDATE%.sh}-${SHORT_SHA}.log" || true
+          chown -R "${OWNER_USER}:${OWNER_USER}" "$tmp_dir" 2>/dev/null || true
+          chmod -R u+rwX,go+rX "$tmp_dir" 2>/dev/null || true
+          EOS
+          chmod +x /tmp/ch05-remote.sh
+
+      - name: Upload artifact and run selected CH05 operation
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ inputs.target_user || 'devops' }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+          ARCHIVE: ${{ steps.artifact.outputs.archive_path }}
+          ACTION: ${{ inputs.action }}
+          BASE_DOMAIN: ${{ secrets.PLATFORM_BASE_DOMAIN }}
+          PLATFORM_REPO_URL: ${{ inputs.platform_repo_url || 'https://github.com/platforminit/platforminit-platform.git' }}
+          TARGET_REVISION_INPUT: ${{ inputs.target_revision }}
+          CHECKMK_ADMIN_PASSWORD: ${{ secrets.CHECKMK_ADMIN_PASSWORD }}
+          CHECKMK_SITE: cmk
+          PLATFORM_HOST: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          EXPECTED_MIN_SERVICES: ${{ inputs.expected_min_services || '20' }}
+          HOST_IPV4: ${{ steps.server.outputs.public_ip }}
+          VALIDATION_MODE: ${{ inputs.validation_mode || 'runtime_with_sso' }}
+          SYSTEMD_RESET_FAILED_UNITS: ${{ inputs.stale_failed_units || 'cloud-init-hotplugd.service dailyaidecheck.service' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ./operations-reports
+          TARGET_REVISION="${TARGET_REVISION_INPUT:-$SHORTSHA}"
+          SSH_OPTS=(
+            -n
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+            -o ConnectTimeout=20
+            -o ConnectionAttempts=1
+            -i ~/.ssh/id_ed25519
+          )
+          SCP_OPTS=(
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+            -o ConnectTimeout=20
+            -o ConnectionAttempts=1
+            -i ~/.ssh/id_ed25519
+          )
+          retry_io() {
+            local attempt=1
+            local max_attempts=6
+            local delay=5
+            local rc=0
+            while (( attempt <= max_attempts )); do
+              "$@" && return 0
+              rc=$?
+              if [[ "${rc}" != "255" ]]; then
+                echo "FATAL: command failed with non-transport rc=${rc}; not retrying: $*" >&2
+                return "${rc}"
+              fi
+              echo "WARN: SSH transport failed with rc=${rc} on attempt ${attempt}/${max_attempts}. Retrying after ${delay}s..." >&2
+              sleep "${delay}"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+              (( delay > 45 )) && delay=45
+            done
+            echo "FATAL: SSH transport failed after ${max_attempts} attempts: $*" >&2
+            return "${rc}"
+          }
+          write_sequence() {
+            case "$ACTION" in
+              full_reconcile)
+                cat > ./ch05-sequence.tsv <<'EOF'
+          ch05-register-operations-stack.sh	ch05-validate-operations-registration.sh
+          ch05-reconcile-operations-prereqs.sh	ch05-validate-operations-prereqs.sh
+          ch05-sync-operations-stack.sh	ch05-noop.sh
+          ch05-3-enable-checkmk-trusted-header-sso.sh	ch05-3-validate-checkmk-trusted-header-sso.sh
+          ch05-5-provision-checkmk-operations-model.sh	ch05-5-validate-checkmk-operations-model.sh
+          ch05-7-install-checkmk-agent.sh	ch05-7-validate-checkmk-agent.sh
+          ch05-6-provision-checkmk-operations-dashboard.sh	ch05-6-validate-checkmk-operations-dashboard.sh
+          ch05-8-provision-checkmk-operations-dashboards.sh	ch05-8-validate-checkmk-operations-dashboards.sh
+          ch05-8b-clean-checkmk-alert-noise.sh	ch05-8b-validate-checkmk-alert-noise.sh
+          ch05-noop.sh	ch05-validate-operations-stack.sh
+          EOF
+                ;;
+              register_stack) echo -e 'ch05-register-operations-stack.sh\tch05-validate-operations-registration.sh' > ./ch05-sequence.tsv ;;
+              reconcile_prereqs) echo -e 'ch05-reconcile-operations-prereqs.sh\tch05-validate-operations-prereqs.sh' > ./ch05-sequence.tsv ;;
+              sync_stack) echo -e 'ch05-sync-operations-stack.sh\tch05-noop.sh' > ./ch05-sequence.tsv ;;
+              enable_sso) echo -e 'ch05-3-enable-checkmk-trusted-header-sso.sh\tch05-3-validate-checkmk-trusted-header-sso.sh' > ./ch05-sequence.tsv ;;
+              provision_model) echo -e 'ch05-5-provision-checkmk-operations-model.sh\tch05-5-validate-checkmk-operations-model.sh' > ./ch05-sequence.tsv ;;
+              install_agent_discovery) echo -e 'ch05-7-install-checkmk-agent.sh\tch05-7-validate-checkmk-agent.sh' > ./ch05-sequence.tsv ;;
+              configure_entrypoint) echo -e 'ch05-6-provision-checkmk-operations-dashboard.sh\tch05-6-validate-checkmk-operations-dashboard.sh' > ./ch05-sequence.tsv ;;
+              configure_dashboards) echo -e 'ch05-8-provision-checkmk-operations-dashboards.sh\tch05-8-validate-checkmk-operations-dashboards.sh' > ./ch05-sequence.tsv ;;
+              clean_alert_noise) echo -e 'ch05-8b-clean-checkmk-alert-noise.sh\tch05-8b-validate-checkmk-alert-noise.sh' > ./ch05-sequence.tsv ;;
+              validate) echo -e 'ch05-noop.sh\tch05-validate-operations-stack.sh' > ./ch05-sequence.tsv ;;
+              *) echo "FATAL: unsupported CH05 action: $ACTION" >&2; exit 2 ;;
+            esac
+          }
+          write_sequence
+          echo "CH05 action: $ACTION"
+          cat ./ch05-sequence.tsv
+
+          retry_io ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/platforminit-operations/${SHORTSHA} /tmp/platforminit-run"
+          retry_io ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "rm -f /tmp/platforminit-operations/${SHORTSHA}/*.log"
+          retry_io scp "${SCP_OPTS[@]}" "$ARCHIVE" "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-operations/${SHORTSHA}/observability-release.tar.gz"
+          retry_io scp "${SCP_OPTS[@]}" /tmp/ch05-remote.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/ch05-remote.sh"
+          {
+            [[ -n "${BASE_DOMAIN:-}" ]] || { echo "FATAL: PLATFORM_BASE_DOMAIN secret is required; CH05 does not hardcode domains." >&2; exit 1; }
+            printf 'BASE_DOMAIN=%q\n' "${BASE_DOMAIN}"
+            printf 'PLATFORM_REPO_URL=%q\n' "${PLATFORM_REPO_URL}"
+            printf 'TARGET_REVISION=%q\n' "${TARGET_REVISION}"
+            printf 'CHECKMK_ADMIN_PASSWORD=%q\n' "${CHECKMK_ADMIN_PASSWORD:-}"
+            printf 'CHECKMK_SITE=%q\n' "${CHECKMK_SITE:-cmk}"
+            printf 'PLATFORM_HOST=%q\n' "${PLATFORM_HOST:-platforminit-dev-01}"
+            printf 'EXPECTED_MIN_SERVICES=%q\n' "${EXPECTED_MIN_SERVICES:-20}"
+            printf 'HOST_IPV4=%q\n' "${HOST_IPV4}"
+            printf 'VALIDATION_MODE=%q\n' "${VALIDATION_MODE:-runtime_with_sso}"
+            printf 'SYSTEMD_RESET_FAILED_UNITS=%q\n' "${SYSTEMD_RESET_FAILED_UNITS:-cloud-init-hotplugd.service dailyaidecheck.service}"
+          } > ./ch05.env
+          retry_io scp "${SCP_OPTS[@]}" ./ch05.env "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-operations/${SHORTSHA}/ch05.env"
+
+          while IFS=$'\t' read -r script validator; do
+            [[ -n "$script" ]] || continue
+            echo "=== CH05 step: script=${script} validator=${validator} ==="
+            retry_io ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "
+              set -euo pipefail
+              chmod +x /tmp/platforminit-run/ch05-remote.sh
+              sudo -n /tmp/platforminit-run/ch05-remote.sh '${SHORTSHA}' '${script}' '${validator}' '${HOST_LOGIN_USER}'
+            "
+          done < ./ch05-sequence.tsv
+
+          missing_logs=0
+          while IFS=$'\t' read -r script validator; do
+            [[ -n "$script" ]] || continue
+            for log_name in "${script%.sh}-${SHORTSHA}.log" "${validator%.sh}-${SHORTSHA}.log"; do
+              if ! ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "test -s '/tmp/platforminit-operations/${SHORTSHA}/${log_name}'"; then
+                echo "FATAL: expected CH05 operations log was not produced: ${log_name}" >&2
+                missing_logs=1
+              fi
+            done
+          done < ./ch05-sequence.tsv
+          (( missing_logs == 0 )) || exit 1
+
+      - name: Fetch CH05 operations reports
+        if: always()
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ inputs.target_user || 'devops' }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+        shell: bash
+        run: |
+          set +e
+          mkdir -p ./operations-reports
+          scp -o BatchMode=yes -o ConnectTimeout=20 -o ConnectionAttempts=1 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-operations/${SHORTSHA}/*.log" ./operations-reports/ 2>/dev/null || true
+          find ./operations-reports -maxdepth 1 -type f -print -exec tail -n 120 {} \;
+
+      - name: Upload CH05 operations reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-${{ inputs.action }}-${{ steps.artifact.outputs.short_sha }}-${{ github.run_attempt }}
+          path: operations-reports
+          if-no-files-found: ignore
+          retention-days: 14

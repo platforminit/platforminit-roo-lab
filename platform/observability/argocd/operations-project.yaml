@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: operations
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: operations
+    app.kubernetes.io/part-of: platforminit
+    platforminit.io/chapter: ch05
+spec:
+  description: PlatformInit CH05 operations monitoring stack
+  sourceRepos:
+    - https://github.com/platforminit/platforminit-platform.git
+    - https://github.com/PlatformInit/platforminit-platform.git
+  destinations:
+    - namespace: operations
+      server: https://kubernetes.default.svc
+    - namespace: identity
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

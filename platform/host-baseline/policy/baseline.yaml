@@ -1,0 +1,64 @@
+version: 2
+profile: ch01-policy-driven
+packages:
+  common:
+    - ca-certificates
+    - curl
+    - git
+    - jq
+    - unzip
+    - vim-tiny
+  security:
+    - auditd
+    - fail2ban
+    - unattended-upgrades
+
+users:
+  devops:
+    shell: /bin/bash
+    groups: [sudo]
+    sudo_mode: grant_only
+    ssh_authorized_keys_from: runtime_secret
+  itadmin:
+    shell: /bin/bash
+    groups: [sudo]
+    sudo_mode: grant_only
+    ssh_authorized_keys_from: runtime_secret
+
+ssh:
+  password_authentication: "no"
+  permit_root_login: "no"
+  pubkey_authentication: "yes"
+  max_auth_tries: 3
+  x11_forwarding: "no"
+  login_grace_time: 20
+  max_startups: "50:30:200"
+
+firewall:
+  default_incoming: deny
+  default_outgoing: allow
+  allow_tcp:
+    - 22
+    - 80
+    - 443
+
+filesystem:
+  srv_mount: /srv
+
+
+fim:
+  required_paths:
+    - /etc/ssh/sshd_config.d/99-platforminit-hardening.conf
+    - /etc/sudoers.d/itadmin-platforminit
+  file_contains:
+    - path: /etc/ssh/sshd_config.d/99-platforminit-hardening.conf
+      contains:
+        - "PermitRootLogin no"
+        - "PasswordAuthentication no"
+        - "PubkeyAuthentication yes"
+        - "AuthorizedKeysFile .ssh/authorized_keys"
+        - "LoginGraceTime 20"
+        - "MaxStartups 50:30:200"
+    - path: /etc/sudoers.d/itadmin-platforminit
+      contains:
+        - "itadmin ALL=(root) NOPASSWD: /usr/local/sbin/platforminit-grant-sudo *"

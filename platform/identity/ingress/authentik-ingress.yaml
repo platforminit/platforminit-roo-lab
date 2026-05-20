@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authentik
+  namespace: identity
+  labels:
+    app.kubernetes.io/name: authentik
+    app.kubernetes.io/part-of: platforminit-identity
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - auth.__BASE_DOMAIN__
+      secretName: authentik-tls
+  rules:
+    - host: auth.__BASE_DOMAIN__
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  number: 80

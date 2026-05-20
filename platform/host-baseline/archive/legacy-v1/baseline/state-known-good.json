@@ -1,0 +1,187 @@
+{
+  "schema_version": "ch01-state-2",
+  "captured_at_utc": "20260301T195637Z",
+  "host": {
+    "hostname_fqdn": "ubuntu-16gb-hel1-1",
+    "ip_brief": "lo               UNKNOWN        127.0.0.1/8 ::1/128 \neth0             UP             77.42.91.193/32 metric 100 fe80::9000:7ff:fe4c:6b97/64 ",
+    "kernel": "6.8.0-90-generic",
+    "lsblk": "NAME      SIZE TYPE MOUNTPOINT FSTYPE UUID\nsda       150G disk /srv       ext4   9e251845-601e-47a8-b6ed-c26302f5119b\nsdb     152.6G disk                   \n├─sdb1  152.3G part /          ext4   10aa7576-6b73-402d-b60f-bf43c72ce928\n├─sdb14     1M part                   \n└─sdb15   256M part /boot/efi  vfat   3D18-653A\nsr0      1024M rom                    "
+  },
+  "storage": {
+    "fstab": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\n# / was on /dev/sda3 during curtin installation\n/dev/disk/by-uuid/10aa7576-6b73-402d-b60f-bf43c72ce928 / ext4 defaults 0 1\n# /boot/efi was on /dev/sda2 during curtin installation\n/dev/disk/by-uuid/3D18-653A /boot/efi vfat defaults 0 1\n/dev/disk/by-id/scsi-0HC_Volume_104750209 /mnt/HC_Volume_104750209 ext4 discard,nofail,defaults 0 0\nUUID=9e251845-601e-47a8-b6ed-c26302f5119b /srv ext4 defaults,nofail 0 2",
+    "mounts": {
+      "filesystems": [
+        {
+          "target": "/",
+          "source": "/dev/sdb1",
+          "fstype": "ext4",
+          "options": "rw,relatime",
+          "children": [
+            {
+              "target": "/sys",
+              "source": "sysfs",
+              "fstype": "sysfs",
+              "options": "rw,nosuid,nodev,noexec,relatime",
+              "children": [
+                {
+                  "target": "/sys/firmware/efi/efivars",
+                  "source": "efivarfs",
+                  "fstype": "efivarfs",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                },
+                {
+                  "target": "/sys/kernel/security",
+                  "source": "securityfs",
+                  "fstype": "securityfs",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                },
+                {
+                  "target": "/sys/fs/cgroup",
+                  "source": "cgroup2",
+                  "fstype": "cgroup2",
+                  "options": "rw,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot"
+                },
+                {
+                  "target": "/sys/fs/pstore",
+                  "source": "pstore",
+                  "fstype": "pstore",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                },
+                {
+                  "target": "/sys/fs/bpf",
+                  "source": "bpf",
+                  "fstype": "bpf",
+                  "options": "rw,nosuid,nodev,noexec,relatime,mode=700"
+                },
+                {
+                  "target": "/sys/kernel/debug",
+                  "source": "debugfs",
+                  "fstype": "debugfs",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                },
+                {
+                  "target": "/sys/kernel/tracing",
+                  "source": "tracefs",
+                  "fstype": "tracefs",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                },
+                {
+                  "target": "/sys/fs/fuse/connections",
+                  "source": "fusectl",
+                  "fstype": "fusectl",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                },
+                {
+                  "target": "/sys/kernel/config",
+                  "source": "configfs",
+                  "fstype": "configfs",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                }
+              ]
+            },
+            {
+              "target": "/proc",
+              "source": "proc",
+              "fstype": "proc",
+              "options": "rw,nosuid,nodev,noexec,relatime",
+              "children": [
+                {
+                  "target": "/proc/sys/fs/binfmt_misc",
+                  "source": "systemd-1",
+                  "fstype": "autofs",
+                  "options": "rw,relatime,fd=32,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=6354",
+                  "children": [
+                    {
+                      "target": "/proc/sys/fs/binfmt_misc",
+                      "source": "binfmt_misc",
+                      "fstype": "binfmt_misc",
+                      "options": "rw,nosuid,nodev,noexec,relatime"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "target": "/dev",
+              "source": "udev",
+              "fstype": "devtmpfs",
+              "options": "rw,nosuid,relatime,size=7939072k,nr_inodes=1984768,mode=755,inode64",
+              "children": [
+                {
+                  "target": "/dev/pts",
+                  "source": "devpts",
+                  "fstype": "devpts",
+                  "options": "rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000"
+                },
+                {
+                  "target": "/dev/shm",
+                  "source": "tmpfs",
+                  "fstype": "tmpfs",
+                  "options": "rw,nosuid,nodev,inode64"
+                },
+                {
+                  "target": "/dev/hugepages",
+                  "source": "hugetlbfs",
+                  "fstype": "hugetlbfs",
+                  "options": "rw,nosuid,nodev,relatime,pagesize=2M"
+                },
+                {
+                  "target": "/dev/mqueue",
+                  "source": "mqueue",
+                  "fstype": "mqueue",
+                  "options": "rw,nosuid,nodev,noexec,relatime"
+                }
+              ]
+            },
+            {
+              "target": "/run",
+              "source": "tmpfs",
+              "fstype": "tmpfs",
+              "options": "rw,nosuid,nodev,noexec,relatime,size=1595160k,mode=755,inode64",
+              "children": [
+                {
+                  "target": "/run/lock",
+                  "source": "tmpfs",
+                  "fstype": "tmpfs",
+                  "options": "rw,nosuid,nodev,noexec,relatime,size=5120k,inode64"
+                },
+                {
+                  "target": "/run/user/1000",
+                  "source": "tmpfs",
+                  "fstype": "tmpfs",
+                  "options": "rw,nosuid,nodev,relatime,size=1595156k,nr_inodes=398789,mode=700,uid=1000,gid=1000,inode64"
+                }
+              ]
+            },
+            {
+              "target": "/boot/efi",
+              "source": "/dev/sdb15",
+              "fstype": "vfat",
+              "options": "rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro"
+            },
+            {
+              "target": "/mnt/HC_Volume_104750209",
+              "source": "/dev/sda",
+              "fstype": "ext4",
+              "options": "rw,relatime,discard"
+            },
+            {
+              "target": "/srv",
+              "source": "/dev/sda",
+              "fstype": "ext4",
+              "options": "rw,relatime,discard"
+            }
+          ]
+        }
+      ]
+    },
+    "srv_uuid_from_fstab": "9e251845-601e-47a8-b6ed-c26302f5119b"
+  },
+  "packages": {
+    "baseline_allowlist": "ca-certificates\ncurl\ngit\njq\nunzip\nvim\nufw"
+  },
+  "security": {
+    "sshd_effective_subset": "port 22\nusepam yes\nclientaliveinterval 0\nclientalivecountmax 3\npermitrootlogin no\npubkeyauthentication yes\npasswordauthentication no\npermitemptypasswords no\nallowtcpforwarding yes",
+    "ufw": "Status: active\nLogging: on (low)\nDefault: deny (incoming), allow (outgoing), disabled (routed)\nNew profiles: skip\n\nTo                         Action      From\n--                         ------      ----\n22/tcp                     ALLOW IN    Anywhere                  \n22/tcp (v6)                ALLOW IN    Anywhere (v6)             "
+  }
+}

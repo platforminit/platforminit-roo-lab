@@ -1,0 +1,119 @@
+name: 02.3 - OS Security Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      server_id_override:
+        description: Optional server ID override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+  schedule:
+    - cron: '47 3 * * 5'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'development' }}
+      host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      duration_minutes: '15'
+      mode: security-check
+
+  run:
+    needs: grant
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: server
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.server.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload script
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/platforminit-run"
+          scp -i ~/.ssh/id_ed25519 platform/host-baseline/scripts/security-os-check.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/security-os-check.sh"
+
+      - name: Execute scoped command
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "chmod +x /tmp/platforminit-run/security-os-check.sh && sudo -n /tmp/platforminit-run/security-os-check.sh /tmp/platforminit-os-security-check.txt"
+
+      - name: Fetch report
+        if: always()
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/os-security
+          scp -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-os-security-check.txt" artifacts/os-security/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: os-security-check-${{ github.run_id }}
+          path: artifacts/os-security
+          if-no-files-found: ignore
+

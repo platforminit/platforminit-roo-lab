@@ -1,0 +1,163 @@
+name: 04 - Enable Platform (Ingress, TLS, ArgoCD)
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Producing build workflow run ID
+        required: true
+        type: string
+      artifact_id:
+        description: Platform-services artifact ID
+        required: true
+        type: string
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+      server_id_override:
+        description: Optional server ID override
+        required: false
+        default: ''
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+      deploy_mode:
+        description: staging or prod issuer selection
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - prod
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'development' }}
+      host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      duration_minutes: '15'
+      mode: platform
+
+  deploy:
+    needs: grant
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve target host
+        id: server
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      - name: Download platform-services artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          artifact-ids: ${{ inputs.artifact_id }}
+          github-token: ${{ github.token }}
+          path: ./downloaded-artifacts
+      - name: Resolve archive
+        id: artifact
+        run: |
+          set -euo pipefail
+          archive_path="$(find ./downloaded-artifacts -type f -name 'platforminit-platform-services-*.tar.gz' | sort | head -n1)"
+          [ -n "$archive_path" ] || { find ./downloaded-artifacts -type f | sort >&2; exit 1; }
+          filename="$(basename "$archive_path")"
+          short_sha="${filename#platforminit-platform-services-}"
+          short_sha="${short_sha%.tar.gz}"
+          echo "archive_path=$archive_path" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+      - name: Add host key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ steps.server.outputs.public_ip }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+      - name: Render remote platform script
+        env:
+          DNS_API_TOKEN: ${{ secrets.DNS_API_TOKEN }}
+          TLS_CONTACT_EMAIL: ${{ secrets.TLS_CONTACT_EMAIL }}
+          PLATFORM_BASE_DOMAIN: ${{ secrets.PLATFORM_BASE_DOMAIN }}
+          DEPLOY_MODE: ${{ inputs.deploy_mode }}
+          PUBLIC_IP: ${{ steps.server.outputs.public_ip }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/ch04-remote.sh <<'EOS'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SHORT_SHA="$1"
+          DNS_API_TOKEN="$2"
+          TLS_CONTACT_EMAIL="$3"
+          PLATFORM_BASE_DOMAIN="$4"
+          DEPLOY_MODE="$5"
+          PUBLIC_IP="$6"
+          release_dir="/srv/platforminit/platform-services/${SHORT_SHA}"
+          tmp_dir="/tmp/platforminit-services/${SHORT_SHA}"
+          unpack_dir="${tmp_dir}/unpacked"
+          mkdir -p "$release_dir" "$unpack_dir"
+          rm -rf "${release_dir:?}/"* "${unpack_dir:?}/"*
+          tar -xzf "${tmp_dir}/platform-services-release.tar.gz" -C "$unpack_dir"
+          test -d "$unpack_dir/platform/platform-services" || { echo "Missing platform/platform-services in artifact" >&2; find "$unpack_dir" -maxdepth 4 -print >&2; exit 1; }
+          rsync -a --delete "$unpack_dir/platform/platform-services/" "$release_dir/"
+          find "$release_dir" -type f -name "*.sh" -exec chmod +x {} \;
+          export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+          test -f "$KUBECONFIG" || { echo "Missing kubeconfig at $KUBECONFIG" >&2; exit 1; }
+          env KUBECONFIG="$KUBECONFIG" CF_API_TOKEN="$DNS_API_TOKEN" LETSENCRYPT_EMAIL="$TLS_CONTACT_EMAIL" BASE_DOMAIN="$PLATFORM_BASE_DOMAIN" DEPLOY_MODE="$DEPLOY_MODE" PUBLIC_IP="$PUBLIC_IP" bash "$release_dir/scripts/ch03-orchestrator.sh"
+          EOS
+          chmod +x /tmp/ch04-remote.sh
+      - name: Upload and run platform deploy
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ secrets.HOST_LOGIN_USER }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+          ARCHIVE: ${{ steps.artifact.outputs.archive_path }}
+          DNS_API_TOKEN: ${{ secrets.DNS_API_TOKEN }}
+          TLS_CONTACT_EMAIL: ${{ secrets.TLS_CONTACT_EMAIL }}
+          PLATFORM_BASE_DOMAIN: ${{ secrets.PLATFORM_BASE_DOMAIN }}
+          DEPLOY_MODE: ${{ inputs.deploy_mode }}
+          PUBLIC_IP: ${{ steps.server.outputs.public_ip }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/platforminit-services/${SHORTSHA} /tmp/platforminit-run"
+          scp -i ~/.ssh/id_ed25519 "$ARCHIVE" "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-services/${SHORTSHA}/platform-services-release.tar.gz"
+          scp -i ~/.ssh/id_ed25519 /tmp/ch04-remote.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/ch04-remote.sh"
+          ssh -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST" \
+            "chmod +x /tmp/platforminit-run/ch04-remote.sh && sudo -n /tmp/platforminit-run/ch04-remote.sh '$SHORTSHA' '$DNS_API_TOKEN' '$TLS_CONTACT_EMAIL' '$PLATFORM_BASE_DOMAIN' '$DEPLOY_MODE' '$PUBLIC_IP'"

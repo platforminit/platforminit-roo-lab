@@ -1,0 +1,448 @@
+name: 05.D - Operations Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Producing build workflow run ID from 00 - Build Platform Artifacts
+        required: true
+        type: string
+      artifact_id:
+        description: Operations artifact ID from 00 - Build Platform Artifacts
+        required: true
+        type: string
+      diagnostic_mode:
+        description: Diagnostic bundle to collect
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - agent_discovery
+          - graph_dashboard_session
+      project:
+        description: PlatformInit project label / logical environment
+        required: false
+        default: development
+        type: string
+      host_name:
+        description: Logical host name within the project
+        required: false
+        default: platforminit-dev-01
+        type: string
+      role:
+        description: Target host role used for label discovery when host_name is empty
+        required: false
+        default: primary
+        type: string
+      server_id_override:
+        description: Optional server ID override
+        required: false
+        default: ''
+        type: string
+      host_ipv4_override:
+        description: Optional explicit IPv4 override for break-glass/debug
+        required: false
+        default: ''
+        type: string
+      target_user:
+        description: Host user that receives temporary sudo grant and runs diagnostics
+        required: false
+        default: devops
+        type: string
+      run_discovery_probe:
+        description: Optional state-changing cmk -I probe for agent diagnostics. Keep false for read-only diagnostics.
+        required: false
+        default: false
+        type: boolean
+      sample_service_limit:
+        description: Number of Checkmk service pages to probe for graph diagnostics
+        required: false
+        default: '25'
+        type: string
+      dashboard_sample_names:
+        description: Space-separated Checkmk dashboard names to probe
+        required: false
+        default: 'main checkmk problems simple_problems'
+        type: string
+      session_probe_paths:
+        description: Space-separated Checkmk WebUI paths to probe for session/cookie/CSRF diagnostics
+        required: false
+        default: 'check_mk/dashboard.py?name=main&owner= check_mk/view.py?view_name=allhosts check_mk/wato.py?mode=global_settings'
+        type: string
+      platform_repo_url:
+        description: Git repository URL used by the Argo CD Application
+        required: false
+        default: https://github.com/platforminit/platforminit-platform.git
+        type: string
+      target_revision:
+        description: Git revision for Argo CD to sync. Default is the artifact commit SHA.
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  HCLOUD_TOKEN_DEVELOPMENT: ${{ secrets.HCLOUD_TOKEN_DEVELOPMENT }}
+  HCLOUD_TOKEN_N8N: ${{ secrets.HCLOUD_TOKEN_N8N }}
+  HCLOUD_TOKEN_PLATFORMINIT: ${{ secrets.HCLOUD_TOKEN_PLATFORMINIT }}
+
+jobs:
+  grant:
+    uses: ./.github/workflows/a1-access-elevation.yml
+    secrets: inherit
+    with:
+      project: ${{ inputs.project || 'development' }}
+      host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+      role: ${{ inputs.role || 'primary' }}
+      server_id_override: ${{ inputs.server_id_override }}
+      host_ipv4_override: ${{ inputs.host_ipv4_override }}
+      target_user: ${{ inputs.target_user || 'devops' }}
+      duration_minutes: '30'
+      mode: observability
+
+  diagnose:
+    needs: grant
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project || 'development' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target host
+        id: server
+        uses: ./.github/actions/resolve-target-host
+        with:
+          infra_server_id: ${{ secrets.INFRA_SERVER_ID }}
+          project: ${{ inputs.project || 'development' }}
+          host_name: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          role: ${{ inputs.role || 'primary' }}
+          server_id_override: ${{ inputs.server_id_override }}
+          host_ipv4_override: ${{ inputs.host_ipv4_override }}
+
+      - name: Download observability artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifact_run_id }}
+          artifact-ids: ${{ inputs.artifact_id }}
+          github-token: ${{ github.token }}
+          path: ./downloaded-artifacts
+
+      - name: Resolve archive
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_path="$(find ./downloaded-artifacts -type f -name 'platforminit-observability-*.tar.gz' | sort | head -n1)"
+          [ -n "$archive_path" ] || { find ./downloaded-artifacts -type f | sort >&2; exit 1; }
+          filename="$(basename "$archive_path")"
+          short_sha="${filename#platforminit-observability-}"
+          short_sha="${short_sha%.tar.gz}"
+          echo "archive_path=$archive_path" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH key
+        env:
+          AUTOMATION_SSH_PRIVATE_KEY: ${{ secrets.AUTOMATION_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AUTOMATION_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Add host key
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          host="${{ steps.server.outputs.public_ip }}"
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan -T 10 -H "$host" >> ~/.ssh/known_hosts 2>/tmp/platforminit-ssh-keyscan.err; then
+              chmod 600 ~/.ssh/known_hosts
+              exit 0
+            fi
+            echo "WARN: ssh-keyscan failed for $host on attempt ${attempt}/5" >&2
+            cat /tmp/platforminit-ssh-keyscan.err >&2 || true
+            sleep $(( attempt * 2 ))
+          done
+          echo "FATAL: could not collect SSH host key for $host" >&2
+          exit 1
+
+      - name: Refresh temporary CH05 sudo grant
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          TARGET_USER: ${{ inputs.target_user || 'devops' }}
+          DURATION_MINUTES: '30'
+          SCOPE: observability
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/id_ed25519 itadmin@"$HOST" \
+            "sudo -n /usr/local/sbin/platforminit-grant-sudo '$TARGET_USER' '$DURATION_MINUTES' '$SCOPE' '$RUN_ID'"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/id_ed25519 "$TARGET_USER@$HOST" \
+            "sudo -n -l | grep -F '/tmp/platforminit-run/ch05-remote.sh' >/dev/null"
+
+      - name: Render remote CH05 privileged entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/ch05-remote.sh <<'EOS'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          usage() { echo "Usage: $0 SHORT_SHA SCRIPT VALIDATE OWNER_USER" >&2; exit 2; }
+          [[ $# -eq 4 ]] || usage
+          SHORT_SHA="$1"; SCRIPT="$2"; VALIDATE="$3"; OWNER_USER="$4"
+          [[ "${EUID}" -eq 0 ]] || { echo "ch05-remote.sh must run as root" >&2; exit 1; }
+          if [[ -f /etc/platforminit/host-context.env ]]; then
+            # shellcheck disable=SC1091
+            source /etc/platforminit/host-context.env
+          fi
+          PLATFORMINIT_OBSERVABILITY_PATH="${PLATFORMINIT_OBSERVABILITY_PATH:-/srv/observability}"
+          release_root="${PLATFORMINIT_OBSERVABILITY_PATH}/platforminit"
+          release_dir="${release_root}/${SHORT_SHA}"
+          tmp_root="/tmp/platforminit-operations"
+          tmp_dir="${tmp_root}/${SHORT_SHA}"
+          unpack_dir="${tmp_dir}/unpacked"
+          report_dir="${release_root}/reports"
+          run_log="${tmp_dir}/${SCRIPT%.sh}-${SHORT_SHA}.log"
+          validate_log="${tmp_dir}/${VALIDATE%.sh}-${SHORT_SHA}.log"
+          mkdir -p "$release_dir" "$unpack_dir" "$report_dir" "$tmp_dir"
+          : > "$run_log"
+          chown -R "${OWNER_USER}:${OWNER_USER}" "$tmp_dir" 2>/dev/null || true
+          chmod 755 "$tmp_dir" 2>/dev/null || true
+          exec > >(tee -a "$run_log") 2>&1
+          rm -rf "${release_dir:?}/"* "${unpack_dir:?}/"*
+          tar -xzf "${tmp_dir}/observability-release.tar.gz" -C "$unpack_dir"
+          test -d "$unpack_dir/platform/observability" || { echo "Missing platform/observability in artifact" >&2; find "$unpack_dir" -maxdepth 4 -print >&2; exit 1; }
+          rsync -a --delete "$unpack_dir/platform/observability/" "$release_dir/"
+          find "$release_dir" -type f -name "*.sh" -exec chmod +x {} \;
+          export KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
+          test -f "$KUBECONFIG" || { echo "Missing kubeconfig at $KUBECONFIG" >&2; exit 1; }
+          remote_env_file="${tmp_dir}/ch05.env"
+          if [[ -f "$remote_env_file" ]]; then
+            set -a
+            # shellcheck disable=SC1090
+            source "$remote_env_file"
+            set +a
+          fi
+          "$release_dir/scripts/$SCRIPT"
+          "$release_dir/validate/$VALIDATE" | tee "$validate_log"
+          cp "$validate_log" "$report_dir/${VALIDATE%.sh}-${SHORT_SHA}.log" || true
+          chown -R "${OWNER_USER}:${OWNER_USER}" "$tmp_dir" 2>/dev/null || true
+          chmod -R u+rwX,go+rX "$tmp_dir" 2>/dev/null || true
+          EOS
+          chmod +x /tmp/ch05-remote.sh
+
+      - name: Upload artifact and run selected CH05 diagnostics
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ inputs.target_user || 'devops' }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+          ARCHIVE: ${{ steps.artifact.outputs.archive_path }}
+          DIAGNOSTIC_MODE: ${{ inputs.diagnostic_mode }}
+          BASE_DOMAIN: ${{ secrets.PLATFORM_BASE_DOMAIN }}
+          PLATFORM_REPO_URL: ${{ inputs.platform_repo_url || 'https://github.com/platforminit/platforminit-platform.git' }}
+          TARGET_REVISION_INPUT: ${{ inputs.target_revision }}
+          CHECKMK_ADMIN_PASSWORD: ${{ secrets.CHECKMK_ADMIN_PASSWORD }}
+          CHECKMK_SITE: cmk
+          PLATFORM_HOST: ${{ inputs.host_name || 'platforminit-dev-01' }}
+          HOST_IPV4: ${{ steps.server.outputs.public_ip }}
+          RUN_DISCOVERY_PROBE: ${{ inputs.run_discovery_probe || false }}
+          SAMPLE_SERVICE_LIMIT: ${{ inputs.sample_service_limit || '25' }}
+          DASHBOARD_SAMPLE_NAMES: ${{ inputs.dashboard_sample_names || 'main checkmk problems simple_problems' }}
+          SESSION_PROBE_PATHS: ${{ inputs.session_probe_paths || 'check_mk/dashboard.py?name=main&owner= check_mk/view.py?view_name=allhosts check_mk/wato.py?mode=global_settings' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ./operations-reports
+          TARGET_REVISION="${TARGET_REVISION_INPUT:-$SHORTSHA}"
+          SSH_OPTS=(
+            -n
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+            -o ConnectTimeout=20
+            -o ConnectionAttempts=1
+            -i ~/.ssh/id_ed25519
+          )
+          SCP_OPTS=(
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+            -o ConnectTimeout=20
+            -o ConnectionAttempts=1
+            -i ~/.ssh/id_ed25519
+          )
+          retry_io() {
+            local attempt=1
+            local max_attempts=6
+            local delay=5
+            local rc=0
+            while (( attempt <= max_attempts )); do
+              "$@" && return 0
+              rc=$?
+              if [[ "${rc}" != "255" ]]; then
+                echo "FATAL: command failed with non-transport rc=${rc}; not retrying: $*" >&2
+                return "${rc}"
+              fi
+              echo "WARN: SSH transport failed with rc=${rc} on attempt ${attempt}/${max_attempts}. Retrying after ${delay}s..." >&2
+              sleep "${delay}"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+              (( delay > 45 )) && delay=45
+            done
+            echo "FATAL: SSH transport failed after ${max_attempts} attempts: $*" >&2
+            return "${rc}"
+          }
+          write_sequence() {
+            case "$DIAGNOSTIC_MODE" in
+              all)
+                cat > ./ch05-diag-sequence.tsv <<'EOF'
+          ch05-7-diagnose-checkmk-agent-discovery.sh	ch05-7-validate-checkmk-agent-diagnostics.sh
+          ch05-8-diagnose-checkmk-graphs.sh	ch05-8-validate-checkmk-graph-diagnostics.sh
+          EOF
+                ;;
+              agent_discovery) echo -e 'ch05-7-diagnose-checkmk-agent-discovery.sh\tch05-7-validate-checkmk-agent-diagnostics.sh' > ./ch05-diag-sequence.tsv ;;
+              graph_dashboard_session) echo -e 'ch05-8-diagnose-checkmk-graphs.sh\tch05-8-validate-checkmk-graph-diagnostics.sh' > ./ch05-diag-sequence.tsv ;;
+              *) echo "FATAL: unsupported CH05 diagnostic mode: $DIAGNOSTIC_MODE" >&2; exit 2 ;;
+            esac
+          }
+          write_sequence
+          audit_log="./operations-reports/ch05-diagnostics-runner-${SHORTSHA}.log"
+          {
+            echo "CH05 diagnostic mode: $DIAGNOSTIC_MODE"
+            echo "artifact short sha: $SHORTSHA"
+            echo "target host: $HOST"
+            echo "target user: $HOST_LOGIN_USER"
+            echo
+            echo "Planned CH05 diagnostic sequence:"
+            cat ./ch05-diag-sequence.tsv
+          } | tee -a "$audit_log"
+
+          artifact_inventory="./operations-reports/ch05-observability-artifact-inventory-${SHORTSHA}.txt"
+          {
+            echo
+            echo "Observability artifact preflight:"
+            echo "archive_path=$ARCHIVE"
+            echo "archive_size_bytes=$(stat -c %s "$ARCHIVE")"
+            echo "archive_sha256=$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+          } | tee -a "$audit_log"
+
+          # Normalize tar paths because GNU tar commonly lists archives as ./platform/...
+          # while CH05 contract paths are written as platform/observability/... .
+          tar -tzf "$ARCHIVE" | sed 's#^\./##' | sort > "$artifact_inventory"
+
+          {
+            echo
+            echo "Artifact inventory sample:"
+            sed -n '1,160p' "$artifact_inventory"
+            echo
+            echo "Artifact CH05 script/validator inventory:"
+            grep -E '^platform/observability/(scripts|validate)/ch05-' "$artifact_inventory" || true
+          } | tee -a "$audit_log"
+
+          if ! grep -q '^platform/observability/' "$artifact_inventory"; then
+            {
+              echo "FATAL: downloaded archive is not an observability release artifact."
+              echo "Expected paths under platform/observability/, but the archive inventory did not contain that prefix."
+              echo "This usually means the workflow was given the wrong artifact_id from 00 - Build Platform Artifacts."
+              echo "Use the artifact ID for observability-release-<sha>, not host-baseline/cluster/platform-services/identity."
+            } | tee -a "$audit_log" >&2
+            exit 1
+          fi
+
+          preflight_missing=0
+          while IFS=$'\t' read -r script validator; do
+            [[ -n "$script" ]] || continue
+            for artifact_path in "platform/observability/scripts/${script}" "platform/observability/validate/${validator}"; do
+              if grep -Fx -- "$artifact_path" "$artifact_inventory" >/dev/null; then
+                echo "PASS: artifact contains ${artifact_path}" | tee -a "$audit_log"
+              else
+                echo "FATAL: artifact is missing ${artifact_path}" | tee -a "$audit_log" >&2
+                echo "Candidate inventory matches for $(basename "$artifact_path"):" | tee -a "$audit_log" >&2
+                grep -F -- "$(basename "$artifact_path")" "$artifact_inventory" | tee -a "$audit_log" >&2 || true
+                preflight_missing=1
+              fi
+            done
+          done < ./ch05-diag-sequence.tsv
+          (( preflight_missing == 0 )) || exit 1
+
+          retry_io ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "mkdir -p /tmp/platforminit-operations/${SHORTSHA} /tmp/platforminit-run"
+          retry_io ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "rm -f /tmp/platforminit-operations/${SHORTSHA}/*.log"
+          retry_io scp "${SCP_OPTS[@]}" "$ARCHIVE" "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-operations/${SHORTSHA}/observability-release.tar.gz"
+          retry_io scp "${SCP_OPTS[@]}" /tmp/ch05-remote.sh "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-run/ch05-remote.sh"
+          {
+            [[ -n "${BASE_DOMAIN:-}" ]] || { echo "FATAL: PLATFORM_BASE_DOMAIN secret is required; CH05 does not hardcode domains." >&2; exit 1; }
+            printf 'BASE_DOMAIN=%q\n' "${BASE_DOMAIN}"
+            printf 'PLATFORM_REPO_URL=%q\n' "${PLATFORM_REPO_URL}"
+            printf 'TARGET_REVISION=%q\n' "${TARGET_REVISION}"
+            printf 'CHECKMK_ADMIN_PASSWORD=%q\n' "${CHECKMK_ADMIN_PASSWORD:-}"
+            printf 'CHECKMK_SITE=%q\n' "${CHECKMK_SITE:-cmk}"
+            printf 'PLATFORM_HOST=%q\n' "${PLATFORM_HOST:-platforminit-dev-01}"
+            printf 'HOST_IPV4=%q\n' "${HOST_IPV4}"
+            printf 'RUN_DISCOVERY_PROBE=%q\n' "${RUN_DISCOVERY_PROBE:-false}"
+            printf 'SAMPLE_SERVICE_LIMIT=%q\n' "${SAMPLE_SERVICE_LIMIT:-25}"
+            printf 'DASHBOARD_SAMPLE_NAMES=%q\n' "${DASHBOARD_SAMPLE_NAMES:-main checkmk problems simple_problems}"
+            printf 'SESSION_PROBE_PATHS=%q\n' "${SESSION_PROBE_PATHS:-check_mk/dashboard.py?name=main\&owner= check_mk/view.py?view_name=allhosts check_mk/wato.py?mode=global_settings}"
+          } > ./ch05.env
+          retry_io scp "${SCP_OPTS[@]}" ./ch05.env "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-operations/${SHORTSHA}/ch05.env"
+
+          diagnostic_failures=0
+          while IFS=$'\t' read -r script validator; do
+            [[ -n "$script" ]] || continue
+            echo "=== CH05 diagnostic: script=${script} validator=${validator} ===" | tee -a "$audit_log"
+            if retry_io ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "
+              set -euo pipefail
+              chmod +x /tmp/platforminit-run/ch05-remote.sh
+              sudo -n /tmp/platforminit-run/ch05-remote.sh '${SHORTSHA}' '${script}' '${validator}' '${HOST_LOGIN_USER}'
+            "; then
+              echo "PASS: CH05 diagnostic completed: ${script} / ${validator}" | tee -a "$audit_log"
+            else
+              rc=$?
+              echo "FATAL: CH05 diagnostic failed before or during remote execution: ${script} / ${validator} rc=${rc}" | tee -a "$audit_log" >&2
+              diagnostic_failures=1
+            fi
+          done < ./ch05-diag-sequence.tsv
+
+          missing_logs=0
+          while IFS=$'\t' read -r script validator; do
+            [[ -n "$script" ]] || continue
+            for log_name in "${script%.sh}-${SHORTSHA}.log" "${validator%.sh}-${SHORTSHA}.log"; do
+              if ssh "${SSH_OPTS[@]}" "$HOST_LOGIN_USER@$HOST" "test -s '/tmp/platforminit-operations/${SHORTSHA}/${log_name}'"; then
+                echo "PASS: expected diagnostic log exists: ${log_name}" | tee -a "$audit_log"
+              else
+                echo "FATAL: expected CH05 diagnostic log was not produced: ${log_name}" | tee -a "$audit_log" >&2
+                missing_logs=1
+              fi
+            done
+          done < ./ch05-diag-sequence.tsv
+          (( diagnostic_failures == 0 && missing_logs == 0 )) || exit 1
+
+      - name: Fetch CH05 diagnostic reports
+        if: always()
+        env:
+          HOST: ${{ steps.server.outputs.public_ip }}
+          HOST_LOGIN_USER: ${{ inputs.target_user || 'devops' }}
+          SHORTSHA: ${{ steps.artifact.outputs.short_sha }}
+        shell: bash
+        run: |
+          set +e
+          mkdir -p ./operations-reports
+          scp -o BatchMode=yes -o ConnectTimeout=20 -o ConnectionAttempts=1 -i ~/.ssh/id_ed25519 "$HOST_LOGIN_USER@$HOST:/tmp/platforminit-operations/${SHORTSHA}/*.log" ./operations-reports/ 2>/dev/null || true
+          find ./operations-reports -maxdepth 1 -type f -print -exec tail -n 120 {} \;
+
+      - name: Upload CH05 diagnostic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-diagnostics-${{ inputs.diagnostic_mode }}-${{ steps.artifact.outputs.short_sha }}-${{ github.run_attempt }}
+          path: operations-reports
+          if-no-files-found: ignore
+          retention-days: 14

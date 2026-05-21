@@ -113,6 +113,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--track", choices=["platform", "n8n"], required=True)
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--print-branch", action="store_true")
     args = parser.parse_args()
 
     roadmap = load_json(ROOT / "tasks" / "roadmap" / f"{args.track}.json")
@@ -123,7 +124,13 @@ def main() -> None:
     if current not in tasks:
         raise SystemExit(f"current_pointer not found in roadmap: {current}")
 
-    content = render_next(args.track, tasks[current])
+    task = tasks[current]
+
+    if args.print_branch:
+        print(task.get("branch", ""))
+        return
+
+    content = render_next(args.track, task)
     out = ROOT / "tasks" / "active" / args.track / "NEXT_TASK.md"
 
     if args.write:

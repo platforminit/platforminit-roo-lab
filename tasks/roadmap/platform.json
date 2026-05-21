@@ -7,7 +7,7 @@
       "chapter": "CH01",
       "title": "Validate shared host lifecycle contract",
       "branch": "batch/platform-ch01-host-lifecycle-contract",
-      "status": "todo",
+      "status": "completed",
       "scope": "shared-foundation",
       "shared_foundation": true,
       "consumers": [
@@ -403,7 +403,7 @@
     }
   ],
   "description": "PlatformInit CH01-CH15 roadmap. CH01 host lifecycle and CH02 host baseline are shared foundation capabilities consumed by both platform and n8n tracks.",
-  "current_pointer": "P-CH01-T01",
+  "current_pointer": "P-CH01-T02",
   "shared_foundation_exports": {
     "exported_to_tracks": [
       "platform",

@@ -1,12 +1,12 @@
 {
   "schema_version": "2.1",
   "track": "platform",
-  "current_pointer": "P-CH01-T01",
+  "current_pointer": "P-CH01-T02",
   "tasks": [
     {
       "id": "P-CH01-T01",
       "title": "Validate shared host lifecycle contract",
-      "status": "todo",
+      "status": "completed",
       "branch": "batch/platform-ch01-host-lifecycle-contract",
       "chapter": "CH01",
       "scope": "shared-foundation",

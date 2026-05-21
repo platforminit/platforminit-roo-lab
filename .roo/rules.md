@@ -10,7 +10,7 @@ These rules apply to all PlatformInit custom modes in this repository.
 - Default branch: `dev`
 - First working branch: `batch/roo-lab-first-validation`
 - Active dev host: `platforminit-dev-01`
-- Forbidden host name: `platforminit-development-01`
+- Forbidden host name: `deprecated long-form development host alias`
 - Downloads path: `/mnt/c/Users/hattila/Downloads`
 - Shell: WSL Ubuntu only.
 

@@ -21,7 +21,7 @@ CH01 owns:
 ## Active contracts
 
 - Host: `platforminit-dev-01`.
-- Do not resolve to `platforminit-development-01`.
+- Do not resolve to `deprecated long-form development host alias`.
 - `development`, `n8n`, `platforminit` are separate project scopes.
 - `volume_layout=none` must mean no attached volume.
 - Root-disk-only hosts must not fail baseline because `/srv` is not an attached mount.

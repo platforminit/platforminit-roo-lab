@@ -47,7 +47,7 @@ Treat these raw-memory tasks as historical/superseded unless re-opened explicitl
 
 ## Deprecated names and scopes
 
-- Do not use `platforminit-development-01`; use `platforminit-dev-01`.
+- Do not use `deprecated long-form development host alias`; use `platforminit-dev-01`.
 - Do not prefer `INFRA_API_TOKEN`; use project-scoped tokens.
 - Do not use the legacy `default` Hetzner project for new active work.
 - Do not use Windows CMD, PowerShell, Git Bash, MobaXterm, or `vscode-remote://` launchers for Roo execution.

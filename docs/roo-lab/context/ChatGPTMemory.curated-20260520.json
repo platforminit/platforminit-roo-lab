@@ -5,7 +5,7 @@
   "generated_for": "platforminit-roo-lab",
   "active_truth": {
     "dev_host": "platforminit-dev-01",
-    "forbidden_host_aliases": ["platforminit-development-01"],
+    "forbidden_host_aliases": ["deprecated long-form development host alias"],
     "default_branch": "dev",
     "first_validation_branch": "batch/roo-lab-first-validation",
     "local_repo_root": "/mnt/d/SYSADMIN/platforminit-roo-lab",
@@ -46,7 +46,7 @@
     "Zabbix + Vector + OpenObserve as active CH05 replacement",
     "Active Zabbix Agent2 model as current CH05 release gate",
     "OpenObserve SSO as required core default path",
-    "platforminit-development-01 host name",
+    "deprecated long-form development host alias host name",
     "legacy default Hetzner project for new active work",
     "INFRA_API_TOKEN as preferred token path",
     "Windows shell execution for Roo"

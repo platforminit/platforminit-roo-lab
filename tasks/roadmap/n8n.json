@@ -1,0 +1,253 @@
+{
+  "schema_version": "1.0",
+  "track": "n8n",
+  "tasks": [
+    {
+      "id": "N8N-CH01-T01",
+      "chapter": "N8N-CH01",
+      "title": "Validate n8n root-disk-only host lifecycle",
+      "branch": "n8n/ch01-root-disk-only-host-lifecycle",
+      "mode": "PlatformInit Architect",
+      "goal": "Validate n8n as a separate standalone host track using the n8n Hetzner project, low-cost host assumptions, no attached volume by default, and /srv/n8n root-disk persistence.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH01-T02",
+      "chapter": "N8N-CH01",
+      "title": "Implement n8n project-default volume_layout none contract",
+      "branch": "n8n/ch01-volume-layout-none-contract",
+      "mode": "PlatformInit Architect",
+      "goal": "Ensure n8n host lifecycle uses project-default -> none volume layout and records zero attached volume expectation in validation docs/tasks.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH02-T01",
+      "chapter": "N8N-CH02",
+      "title": "Define n8n standalone runtime baseline",
+      "branch": "n8n/ch02-standalone-runtime-baseline",
+      "mode": "PlatformInit Architect",
+      "goal": "Define Docker Compose + Caddy + PostgreSQL + n8n runtime baseline under /srv/n8n without k3s, Argo CD, or main platform dependency.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH02-T02",
+      "chapter": "N8N-CH02",
+      "title": "Prepare n8n runtime validation checklist",
+      "branch": "n8n/ch02-runtime-validation-checklist",
+      "mode": "PlatformInit Architect",
+      "goal": "Define validation checks for containers, Caddy TLS route, n8n health, PostgreSQL state, reboot survival, and /srv/n8n ownership.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH03-T01",
+      "chapter": "N8N-CH03",
+      "title": "Define n8n secrets and OAuth safety model",
+      "branch": "n8n/ch03-secrets-oauth-safety-model",
+      "mode": "PlatformInit Architect",
+      "goal": "Define n8n credentials, Gmail OAuth, webhook secrets, encryption key, and secret exposure guardrails.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH04-T01",
+      "chapter": "N8N-CH04",
+      "title": "Define n8n backup and restore model",
+      "branch": "n8n/ch04-backup-restore-model",
+      "mode": "PlatformInit Architect",
+      "goal": "Define n8n PostgreSQL dump, config export, /srv/n8n backup, restore dry-run, retention, and recovery checklist.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH05-T01",
+      "chapter": "N8N-CH05",
+      "title": "Define job-search workflow MVP",
+      "branch": "n8n/ch05-job-search-mvp",
+      "mode": "PlatformInit Architect",
+      "goal": "Define Gmail/job-source ingestion, role keyword filtering, DeepSeek classification, human-review buckets, and no-auto-apply safety model.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH05-T02",
+      "chapter": "N8N-CH05",
+      "title": "Define IT job taxonomy and human-review bucket",
+      "branch": "n8n/ch05-job-taxonomy-human-review",
+      "mode": "PlatformInit Architect",
+      "goal": "Encode target role families, excluded role families, Hungarian/English keywords, and separate all-other-IT human review bucket.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH06-T01",
+      "chapter": "N8N-CH06",
+      "title": "Define job-search productionization roadmap",
+      "branch": "n8n/ch06-job-search-productionization",
+      "mode": "PlatformInit Architect",
+      "goal": "Define deduplication, retry, rate limit, source adapters, notification, audit log, and cost tracking for AI calls.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH07-T01",
+      "chapter": "N8N-CH07",
+      "title": "Define Canva and document automation roadmap",
+      "branch": "n8n/ch07-canva-doc-automation",
+      "mode": "PlatformInit Architect",
+      "goal": "Define optional Canva/document generation workflow boundaries, OAuth safety, and human approval before external publication.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH08-T01",
+      "chapter": "N8N-CH08",
+      "title": "Define n8n monitoring and remote operations model",
+      "branch": "n8n/ch08-monitoring-remote-ops",
+      "mode": "PlatformInit Architect",
+      "goal": "Define lightweight Checkmk remote monitoring, container health, disk alerts, backup alerts, and operator runbook for standalone n8n.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH09-T01",
+      "chapter": "N8N-CH09",
+      "title": "Define optional SSO/Auth integration roadmap",
+      "branch": "n8n/ch09-optional-sso-auth",
+      "mode": "PlatformInit Architect",
+      "goal": "Define optional future Authentik/SSO integration boundaries for n8n without making it a blocker for runtime MVP.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    },
+    {
+      "id": "N8N-CH10-T01",
+      "chapter": "N8N-CH10",
+      "title": "Define n8n workflow template productization roadmap",
+      "branch": "n8n/ch10-workflow-template-productization",
+      "mode": "PlatformInit Architect",
+      "goal": "Define reusable n8n workflow template packaging, docs, safety gates, and handover model.",
+      "allowed_files": [
+        "tasks/roadmap/n8n.json",
+        "tasks/active/n8n/NEXT_TASK.md",
+        "docs/roo-lab/N8N_ROADMAP.md",
+        ".roo/skills/platforminit-n8n-standalone/SKILL.md"
+      ],
+      "forbidden": [
+        "Do not mutate the n8n host unless the task explicitly grants runtime approval.",
+        "Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.",
+        "Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval."
+      ]
+    }
+  ]
+}

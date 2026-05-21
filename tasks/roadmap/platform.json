@@ -1,0 +1,329 @@
+{
+  "schema_version": "1.0",
+  "track": "platform",
+  "tasks": [
+    {
+      "id": "PLATFORM-CH01-T01",
+      "chapter": "CH01",
+      "name": "Host lifecycle",
+      "title": "Validate host lifecycle source of truth",
+      "branch": "platform/ch01-validate-host-lifecycle-source-of-truth",
+      "mode": "PlatformInit Architect",
+      "goal": "Normalize host lifecycle contracts, project routing, host naming, volume layout, and rebuild assumptions before mutable workflows.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH02-T01",
+      "chapter": "CH02",
+      "name": "Host baseline",
+      "title": "Review host baseline and access-elevation task boundaries",
+      "branch": "platform/ch02-review-host-baseline-and-access-elevation-task-boundaries",
+      "mode": "PlatformInit Architect",
+      "goal": "Define baseline, sudo grant, drift, OS security, and FIM/AIDE task boundaries without changing runtime infrastructure.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH03-T01",
+      "chapter": "CH03",
+      "name": "k3s baseline",
+      "title": "Define k3s single-node validation contract",
+      "branch": "platform/ch03-define-k3s-single-node-validation-contract",
+      "mode": "PlatformInit Architect",
+      "goal": "Define single-node install and validation contract including kubeconfig, data-dir, service exposure, and reboot survival checks.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH04-T01",
+      "chapter": "CH04",
+      "name": "Platform services",
+      "title": "Define platform services GitOps boundary",
+      "branch": "platform/ch04-define-platform-services-gitops-boundary",
+      "mode": "PlatformInit Architect",
+      "goal": "Define boundary between GitHub Actions host/bootstrap work and Argo CD owned long-running Kubernetes platform services.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH04-5-T01",
+      "chapter": "CH04.5",
+      "name": "Identity foundation",
+      "title": "Normalize Authentik identity foundation task model",
+      "branch": "platform/ch04-5-normalize-authentik-identity-foundation-task-model",
+      "mode": "PlatformInit Architect",
+      "goal": "Define Authentik bootstrap, group model, outpost, OIDC/proxy provider patterns, and validation.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH04-6-T01",
+      "chapter": "CH04.6",
+      "name": "Argo CD SSO",
+      "title": "Normalize Argo CD SSO task model",
+      "branch": "platform/ch04-6-normalize-argo-cd-sso-task-model",
+      "mode": "PlatformInit Architect",
+      "goal": "Define Argo CD SSO task model including Authentik OIDC provider, RBAC mapping, login/logout validation, and break-glass rules.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH05-T01",
+      "chapter": "CH05",
+      "name": "Operations",
+      "title": "Lock Checkmk as active operations direction",
+      "branch": "platform/ch05-lock-checkmk-as-active-operations-direction",
+      "mode": "PlatformInit Architect",
+      "goal": "Ensure CH05 active task model uses Checkmk Community with Authentik/Traefik trusted-header SSO and keeps deprecated observability experiments out of active work.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH06-T01",
+      "chapter": "CH06",
+      "name": "Security and compliance",
+      "title": "Prepare security diagnostics-first roadmap",
+      "branch": "platform/ch06-prepare-security-diagnostics-first-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define CH06 as diagnostics/evidence-first security and compliance work before destructive remediation.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH07-T01",
+      "chapter": "CH07",
+      "name": "Service templates",
+      "title": "Define service onboarding template roadmap",
+      "branch": "platform/ch07-define-service-onboarding-template-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define app onboarding templates for ingress/TLS, SSO, monitoring, logging, backup metadata, resource policy, and runbooks.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH08-T01",
+      "chapter": "CH08",
+      "name": "Multi-environment promotion",
+      "title": "Define multi-environment promotion roadmap",
+      "branch": "platform/ch08-define-multi-environment-promotion-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define dev/staging/production promotion model, token/environment split, release gates, and cross-environment safety.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH09-T01",
+      "chapter": "CH09",
+      "name": "Backup and DR",
+      "title": "Define backup and disaster recovery roadmap",
+      "branch": "platform/ch09-define-backup-and-disaster-recovery-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define backup/restore strategy, RPO/RTO, DR drill, and stateful workload recovery for Authentik, Checkmk, Argo CD, and future n8n.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH10-T01",
+      "chapter": "CH10",
+      "name": "Productization",
+      "title": "Define productization roadmap",
+      "branch": "platform/ch10-define-productization-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define install profiles, release package, support matrix, compatibility matrix, and operator handbook roadmap.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH11-T01",
+      "chapter": "CH11",
+      "name": "FinOps and governance",
+      "title": "Define FinOps and governance roadmap",
+      "branch": "platform/ch11-define-finops-and-governance-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define cost, ownership, tagging, cleanup, access review, and lifecycle governance.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH12-T01",
+      "chapter": "CH12",
+      "name": "Advanced IAM",
+      "title": "Define advanced identity and access roadmap",
+      "branch": "platform/ch12-define-advanced-identity-and-access-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define advanced IAM, break-glass, MFA, audit, service account lifecycle, and access review roadmap.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH13-T01",
+      "chapter": "CH13",
+      "name": "AIOps",
+      "title": "Define AIOps roadmap",
+      "branch": "platform/ch13-define-aiops-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define AI-assisted operations roadmap for alert summarization, incident timelines, RCA candidates, runbook suggestions, and human gates.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH14-T01",
+      "chapter": "CH14",
+      "name": "Internal Developer Platform",
+      "title": "Define internal developer platform roadmap",
+      "branch": "platform/ch14-define-internal-developer-platform-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define developer portal, service catalog, golden path templates, CI/CD bootstrap, GitOps registration, and runbook generation.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    },
+    {
+      "id": "PLATFORM-CH15-T01",
+      "chapter": "CH15",
+      "name": "Customer PlatformInit",
+      "title": "Define customer-facing PlatformInit roadmap",
+      "branch": "platform/ch15-define-customer-facing-platforminit-roadmap",
+      "mode": "PlatformInit Architect",
+      "goal": "Define customer onboarding, support model, install UX, handover package, security statement, demo platform, and upgrade path.",
+      "allowed_files": [
+        "tasks/roadmap/platform.json",
+        "tasks/active/platform/NEXT_TASK.md",
+        "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md"
+      ],
+      "forbidden": [
+        "Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.",
+        "Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.",
+        "Do not resurrect deprecated CH05 directions as active work."
+      ]
+    }
+  ]
+}

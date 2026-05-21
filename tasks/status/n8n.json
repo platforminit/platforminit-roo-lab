@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "track": "n8n",
+  "updated_at": "2026-05-21T20:15:42.139274+00:00",
+  "tasks": [
+    {
+      "id": "N8N-CH01-T01",
+      "chapter": "N8N-CH01",
+      "title": "Validate n8n root-disk-only host lifecycle",
+      "branch": "n8n/ch01-root-disk-only-host-lifecycle",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH01-T02",
+      "chapter": "N8N-CH01",
+      "title": "Implement n8n project-default volume_layout none contract",
+      "branch": "n8n/ch01-volume-layout-none-contract",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH02-T01",
+      "chapter": "N8N-CH02",
+      "title": "Define n8n standalone runtime baseline",
+      "branch": "n8n/ch02-standalone-runtime-baseline",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH02-T02",
+      "chapter": "N8N-CH02",
+      "title": "Prepare n8n runtime validation checklist",
+      "branch": "n8n/ch02-runtime-validation-checklist",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH03-T01",
+      "chapter": "N8N-CH03",
+      "title": "Define n8n secrets and OAuth safety model",
+      "branch": "n8n/ch03-secrets-oauth-safety-model",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH04-T01",
+      "chapter": "N8N-CH04",
+      "title": "Define n8n backup and restore model",
+      "branch": "n8n/ch04-backup-restore-model",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH05-T01",
+      "chapter": "N8N-CH05",
+      "title": "Define job-search workflow MVP",
+      "branch": "n8n/ch05-job-search-mvp",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH05-T02",
+      "chapter": "N8N-CH05",
+      "title": "Define IT job taxonomy and human-review bucket",
+      "branch": "n8n/ch05-job-taxonomy-human-review",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH06-T01",
+      "chapter": "N8N-CH06",
+      "title": "Define job-search productionization roadmap",
+      "branch": "n8n/ch06-job-search-productionization",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH07-T01",
+      "chapter": "N8N-CH07",
+      "title": "Define Canva and document automation roadmap",
+      "branch": "n8n/ch07-canva-doc-automation",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH08-T01",
+      "chapter": "N8N-CH08",
+      "title": "Define n8n monitoring and remote operations model",
+      "branch": "n8n/ch08-monitoring-remote-ops",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH09-T01",
+      "chapter": "N8N-CH09",
+      "title": "Define optional SSO/Auth integration roadmap",
+      "branch": "n8n/ch09-optional-sso-auth",
+      "is_completed": false
+    },
+    {
+      "id": "N8N-CH10-T01",
+      "chapter": "N8N-CH10",
+      "title": "Define n8n workflow template productization roadmap",
+      "branch": "n8n/ch10-workflow-template-productization",
+      "is_completed": false
+    }
+  ]
+}

@@ -3,15 +3,15 @@
 ## Task
 
 - Track: `platform`
-- Task ID: `P-CH01-T01`
+- Task ID: `P-CH01-T02`
 - Chapter: `CH01`
-- Title: Validate shared host lifecycle contract
-- Branch: `batch/platform-ch01-host-lifecycle-contract`
+- Title: Implement shared start/rebuild task contract
+- Branch: `batch/platform-ch01-shared-start-rebuild-contract`
 - Scope: `shared-foundation`
 
 ## Goal
 
-Validate reusable CH01 host lifecycle contract for both platform and n8n tracks.
+Make CH01 reusable by platform and n8n tracks without duplicating host lifecycle logic.
 
 ## Shared foundation model
 
@@ -21,18 +21,14 @@ No same-track dependency is declared for this current pointer.
 
 ## Acceptance criteria
 
-- development host uses platforminit-dev-01
-- n8n host uses platforminit-n8n-01 when n8n track is selected
-- project input controls environment and token routing
-- volume_layout supports none for n8n and platform-specific layouts for platform
+- Acceptance criteria must be refined during task execution.
 
 ## Forbidden actions
 
 - Do not resurrect deprecated CH05 directions as active work.
 - Do not expose secret values.
 - Do not use Windows shell, PowerShell, CMD, Git Bash, or MobaXterm for Roo execution.
-- do not target production/customer scope
-- do not expose secret values
+- Do not target production/customer scope unless explicitly approved.
 
 ## Required startup
 

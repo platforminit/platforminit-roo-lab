@@ -87,3 +87,34 @@ Preferred lifecycle:
 8. Docs Operator updates handoff/runbook docs.
 
 ## Lessons learned from Peximed failure
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
+## Native Roo mode-switch handoff contract
+
+PlatformInit roles MUST use native Roo `switch_mode` handoff when the next phase belongs to another PlatformInit role.
+
+Manual next-prompt printing is forbidden during normal role flow. It is allowed only when native `switch_mode` is unavailable or blocked. In that case the role must explicitly report:
+
+```text
+SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
+```
+
+Required role flow:
+
+1. PlatformInit Orchestrator MUST request native switch to `platforminit-deepseek-coder`.
+2. PlatformInit DeepSeek Coder MUST request native switch to `platforminit-openai-reviewer`.
+3. PlatformInit OpenAI Reviewer:
+   - on `APPROVE`, MUST request native switch to `platforminit-owasp-reviewer`;
+   - on `REQUEST_CHANGES`, MUST request native switch back to `platforminit-deepseek-coder` with the exact requested fix.
+4. PlatformInit OWASP Reviewer:
+   - on `PASS`, MUST request native switch to `platforminit-release-manager`;
+   - on `MUST_FIX`, MUST request native switch back to `platforminit-deepseek-coder` with the exact fix request.
+5. PlatformInit Release Manager MUST prepare the final human commit/PR/merge handoff.
+
+Human approval remains mandatory before:
+
+- CH01-CH05 workflow execution;
+- infrastructure mutation;
+- GitHub secret or environment mutation;
+- production/customer scope;
+- Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, or n8n runtime changes.
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->

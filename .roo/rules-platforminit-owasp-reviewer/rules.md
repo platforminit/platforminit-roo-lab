@@ -36,3 +36,19 @@ End with:
 SECURITY SUMMARY
 Merge recommendation: CLEAR | REVIEW REQUIRED | BLOCK
 ```
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
+## Native handoff requirement
+
+PlatformInit OWASP Reviewer MUST use verdict-driven native Roo mode switching:
+
+- On `PASS`, request native `switch_mode` to `platforminit-release-manager`.
+- On `MUST_FIX`, request native `switch_mode` back to `platforminit-deepseek-coder` with the exact required fix.
+
+It must not merely print the next prompt unless native `switch_mode` is unavailable or blocked.
+
+Fallback marker if blocked:
+
+```text
+SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
+```
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->

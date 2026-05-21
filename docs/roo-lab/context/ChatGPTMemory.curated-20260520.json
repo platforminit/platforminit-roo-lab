@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "project": "PlatformInit / DevOps Homelab 2",
+  "context_type": "curated_agent_context",
+  "generated_for": "platforminit-roo-lab",
+  "active_truth": {
+    "dev_host": "platforminit-dev-01",
+    "forbidden_host_aliases": ["platforminit-development-01"],
+    "default_branch": "dev",
+    "first_validation_branch": "batch/roo-lab-first-validation",
+    "local_repo_root": "/mnt/d/SYSADMIN/platforminit-roo-lab",
+    "stable_recovery_repo": "/mnt/d/SYSADMIN/platforminit-platform",
+    "execution_environment": "WSL Ubuntu only",
+    "github_environments": ["development", "n8n"],
+    "project_tokens": [
+      "HCLOUD_TOKEN_DEVELOPMENT",
+      "HCLOUD_TOKEN_N8N",
+      "HCLOUD_TOKEN_PLATFORMINIT"
+    ],
+    "legacy_tokens": ["INFRA_API_TOKEN"]
+  },
+  "active_architecture": {
+    "platform_model": "single-node, cost-conscious, deterministic rebuild",
+    "cloud": "Hetzner Cloud",
+    "os": "Ubuntu",
+    "kubernetes": "k3s single-node",
+    "gitops": "Argo CD",
+    "ingress": "Traefik",
+    "tls": "cert-manager + Let's Encrypt + Cloudflare DNS-01",
+    "identity": "Authentik",
+    "operations": "Checkmk Community with operator-first WARN/CRIT views",
+    "next_major_chapter": "CH06 Security & Compliance v2 as diagnostics/evidence-first baseline"
+  },
+  "active_tasks": [
+    "Validate Roo custom modes and skills before infrastructure execution",
+    "Keep raw memory out of active agent execution context",
+    "Validate GitHub environments development and n8n",
+    "Validate repo-visible org secret names without printing secret values",
+    "Preserve CH01-CH05 reproducible foundation",
+    "Stabilize CH01 storage/volume-layout behavior including n8n root-disk-only mode",
+    "Document and preserve Checkmk-based CH05 operator model",
+    "Prepare CH06 security/compliance diagnostics design"
+  ],
+  "deprecated_or_superseded": [
+    "Grafana/VictoriaMetrics/Loki/Alloy as primary CH05 operator UI",
+    "Zabbix + Vector + OpenObserve as active CH05 replacement",
+    "Active Zabbix Agent2 model as current CH05 release gate",
+    "OpenObserve SSO as required core default path",
+    "platforminit-development-01 host name",
+    "legacy default Hetzner project for new active work",
+    "INFRA_API_TOKEN as preferred token path",
+    "Windows shell execution for Roo"
+  ],
+  "raw_memory_policy": "Raw uploaded memory is archival only. Use ACTIVE_AGENT_CONTEXT.md and DEPRECATED_COMPONENTS.md for agent execution."
+}

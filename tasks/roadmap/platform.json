@@ -1,7 +1,83 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.1",
   "track": "platform",
   "tasks": [
+    {
+      "id": "P-CH01-T01",
+      "chapter": "CH01",
+      "title": "Validate shared host lifecycle contract",
+      "branch": "batch/platform-ch01-host-lifecycle-contract",
+      "status": "todo",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "description": "Validate reusable CH01 host lifecycle contract for both platform and n8n tracks.",
+      "acceptance": [
+        "development host uses platforminit-dev-01",
+        "n8n host uses platforminit-n8n-01 when n8n track is selected",
+        "project input controls environment and token routing",
+        "volume_layout supports none for n8n and platform-specific layouts for platform"
+      ],
+      "forbidden": [
+        "do not target production/customer scope",
+        "do not expose secret values"
+      ],
+      "goal": "Validate reusable CH01 host lifecycle contract for both platform and n8n tracks."
+    },
+    {
+      "id": "P-CH01-T02",
+      "chapter": "CH01",
+      "title": "Implement shared start/rebuild task contract",
+      "branch": "batch/platform-ch01-shared-start-rebuild-contract",
+      "status": "todo",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "description": "Make CH01 reusable by platform and n8n tracks without duplicating host lifecycle logic.",
+      "goal": "Make CH01 reusable by platform and n8n tracks without duplicating host lifecycle logic."
+    },
+    {
+      "id": "P-CH02-T01",
+      "chapter": "CH02",
+      "title": "Validate shared host baseline contract",
+      "branch": "batch/platform-ch02-host-baseline-contract",
+      "status": "todo",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "description": "Validate CH02 baseline behavior for Kubernetes platform hosts and standalone n8n hosts.",
+      "acceptance": [
+        "baseline works for Kubernetes platform hosts",
+        "baseline works for standalone n8n hosts without requiring k3s",
+        "volume_layout none does not fail mount-dependent checks",
+        "A1 access/sudo grant contract remains non-interactive"
+      ],
+      "goal": "Validate CH02 baseline behavior for Kubernetes platform hosts and standalone n8n hosts."
+    },
+    {
+      "id": "P-CH02-T02",
+      "chapter": "CH02",
+      "title": "Implement baseline profile separation",
+      "branch": "batch/platform-ch02-baseline-profile-separation",
+      "status": "todo",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "description": "Separate platform-k3s and standalone-n8n baseline profiles while preserving shared hardening primitives.",
+      "goal": "Separate platform-k3s and standalone-n8n baseline profiles while preserving shared hardening primitives."
+    },
     {
       "id": "PLATFORM-CH01-T01",
       "chapter": "CH01",
@@ -325,5 +401,20 @@
         "Do not resurrect deprecated CH05 directions as active work."
       ]
     }
-  ]
+  ],
+  "description": "PlatformInit CH01-CH15 roadmap. CH01 host lifecycle and CH02 host baseline are shared foundation capabilities consumed by both platform and n8n tracks.",
+  "current_pointer": "P-CH01-T01",
+  "shared_foundation_exports": {
+    "exported_to_tracks": [
+      "platform",
+      "n8n"
+    ],
+    "tasks": [
+      "P-CH01-T01",
+      "P-CH01-T02",
+      "P-CH02-T01",
+      "P-CH02-T02"
+    ],
+    "meaning": "Reusable host lifecycle and baseline contracts consumed by n8n with project=n8n and standalone profile constraints."
+  }
 }

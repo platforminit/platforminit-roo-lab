@@ -1,82 +1,58 @@
-# Next Active Task: PLATFORM-CH01-T01 - Validate host lifecycle source of truth
+# NEXT TASK — platform
 
-## Track
+## Task
 
-`platform`
-
-## Chapter
-
-`CH01`
-
-## Branch
-
-`platform/ch01-validate-host-lifecycle-source-of-truth`
-
-## Preferred mode
-
-`PlatformInit Architect`
+- Track: `platform`
+- Task ID: `P-CH01-T01`
+- Chapter: `CH01`
+- Title: Validate shared host lifecycle contract
+- Branch: `batch/platform-ch01-host-lifecycle-contract`
+- Scope: `shared-foundation`
 
 ## Goal
 
-Normalize host lifecycle contracts, project routing, host naming, volume layout, and rebuild assumptions before mutable workflows.
+Validate reusable CH01 host lifecycle contract for both platform and n8n tracks.
 
-## Human entrypoint
+## Shared foundation model
+
+This task does not consume a shared platform dependency.
+
+No same-track dependency is declared for this current pointer.
+
+## Acceptance criteria
+
+- development host uses platforminit-dev-01
+- n8n host uses platforminit-n8n-01 when n8n track is selected
+- project input controls environment and token routing
+- volume_layout supports none for n8n and platform-specific layouts for platform
+
+## Forbidden actions
+
+- Do not resurrect deprecated CH05 directions as active work.
+- Do not expose secret values.
+- Do not use Windows shell, PowerShell, CMD, Git Bash, or MobaXterm for Roo execution.
+- do not target production/customer scope
+- do not expose secret values
+
+## Required startup
 
 ```bash
 cd /mnt/d/SYSADMIN/platforminit-roo-lab
 ./scripts/orchestrator/start-next-task.sh --track platform
-code .
 ```
 
-Then in Roo:
+## Roo entrypoint
 
 ```text
 Read tasks/active/platform/NEXT_TASK.md and execute the active task exactly as described.
 ```
 
-## Required startup checks
+## Native role handoff
 
-```bash
-cd /mnt/d/SYSADMIN/platforminit-roo-lab
-./scripts/lib/require-wsl-runtime.sh
-git branch --show-current
-git status --short
-```
+PlatformInit roles must use native Roo `switch_mode` handoff.
 
-Expected branch:
-
-```text
-platform/ch01-validate-host-lifecycle-source-of-truth
-```
-
-## Allowed files / paths
-
-- `tasks/roadmap/platform.json`
-- `tasks/active/platform/NEXT_TASK.md`
-- `docs/roo-lab/TASK_ORCHESTRATION_MODEL.md`
-
-## Forbidden actions
-
-- Do not run CH01-CH05 workflows unless the task explicitly grants runtime approval.
-- Do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments.
-- Do not resurrect deprecated CH05 directions as active work.
-
-## Native Roo role handoff
-
-Use the native Roo `switch_mode` contract.
-
-Manual next-prompt printing is allowed only when native `switch_mode` is unavailable or blocked. If fallback is used, explicitly report:
+Manual next-prompt printing is allowed only if native `switch_mode` is unavailable or blocked, and the role must explicitly report:
 
 ```text
 SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
 ```
-
-## Completion rule
-
-At closeout, Release Manager must run:
-
-```bash
-./scripts/orchestrator/close-current-task.sh --track platform --task PLATFORM-CH01-T01
-```
-
-This marks the task complete and regenerates the next task for this track.

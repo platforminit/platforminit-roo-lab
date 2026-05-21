@@ -1,37 +1,18 @@
-# Active Task Index
+# NEXT TASK INDEX
 
-PlatformInit Roo Lab now uses separate active task tracks.
+PlatformInit Roo Lab uses multi-track task orchestration.
 
-## Platform track
+## Tracks
 
-Read:
+- Platform: `tasks/active/platform/NEXT_TASK.md`
+- n8n: `tasks/active/n8n/NEXT_TASK.md`
 
-```text
-tasks/active/platform/NEXT_TASK.md
-```
+## Key rule
 
-Start:
+The n8n roadmap has its own NEXT_TASK, but consumes shared PlatformInit CH01/CH02 foundation tasks.
 
-```bash
-./scripts/orchestrator/start-next-task.sh --track platform
-```
+n8n needs:
+- CH01 host lifecycle
+- CH02 host baseline
 
-## n8n track
-
-Read:
-
-```text
-tasks/active/n8n/NEXT_TASK.md
-```
-
-Start:
-
-```bash
-./scripts/orchestrator/start-next-task.sh --track n8n
-```
-
-## Rule
-
-Do not mix PlatformInit platform tasks and n8n standalone runtime tasks in the same branch.
-
-Each track has its own roadmap, status file, and NEXT_TASK.
+n8n does not need platform CH03-CH05 as local runtime prerequisites.

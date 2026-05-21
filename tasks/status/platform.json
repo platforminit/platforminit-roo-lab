@@ -1,126 +1,271 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.1",
   "track": "platform",
-  "updated_at": "2026-05-21T20:15:42.134767+00:00",
+  "current_pointer": "P-CH01-T01",
   "tasks": [
     {
-      "id": "PLATFORM-CH01-T01",
+      "id": "P-CH01-T01",
+      "title": "Validate shared host lifecycle contract",
+      "status": "todo",
+      "branch": "batch/platform-ch01-host-lifecycle-contract",
       "chapter": "CH01",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
+    },
+    {
+      "id": "P-CH01-T02",
+      "title": "Implement shared start/rebuild task contract",
+      "status": "todo",
+      "branch": "batch/platform-ch01-shared-start-rebuild-contract",
+      "chapter": "CH01",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
+    },
+    {
+      "id": "P-CH02-T01",
+      "title": "Validate shared host baseline contract",
+      "status": "todo",
+      "branch": "batch/platform-ch02-host-baseline-contract",
+      "chapter": "CH02",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
+    },
+    {
+      "id": "P-CH02-T02",
+      "title": "Implement baseline profile separation",
+      "status": "todo",
+      "branch": "batch/platform-ch02-baseline-profile-separation",
+      "chapter": "CH02",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
+    },
+    {
+      "id": "PLATFORM-CH01-T01",
       "title": "Validate host lifecycle source of truth",
+      "status": "todo",
       "branch": "platform/ch01-validate-host-lifecycle-source-of-truth",
-      "is_completed": false
+      "chapter": "CH01",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH02-T01",
-      "chapter": "CH02",
       "title": "Review host baseline and access-elevation task boundaries",
+      "status": "todo",
       "branch": "platform/ch02-review-host-baseline-and-access-elevation-task-boundaries",
-      "is_completed": false
+      "chapter": "CH02",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH03-T01",
-      "chapter": "CH03",
       "title": "Define k3s single-node validation contract",
+      "status": "todo",
       "branch": "platform/ch03-define-k3s-single-node-validation-contract",
-      "is_completed": false
+      "chapter": "CH03",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH04-T01",
-      "chapter": "CH04",
       "title": "Define platform services GitOps boundary",
+      "status": "todo",
       "branch": "platform/ch04-define-platform-services-gitops-boundary",
-      "is_completed": false
+      "chapter": "CH04",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH04-5-T01",
-      "chapter": "CH04.5",
       "title": "Normalize Authentik identity foundation task model",
+      "status": "todo",
       "branch": "platform/ch04-5-normalize-authentik-identity-foundation-task-model",
-      "is_completed": false
+      "chapter": "CH04.5",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH04-6-T01",
-      "chapter": "CH04.6",
       "title": "Normalize Argo CD SSO task model",
+      "status": "todo",
       "branch": "platform/ch04-6-normalize-argo-cd-sso-task-model",
-      "is_completed": false
+      "chapter": "CH04.6",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH05-T01",
-      "chapter": "CH05",
       "title": "Lock Checkmk as active operations direction",
+      "status": "todo",
       "branch": "platform/ch05-lock-checkmk-as-active-operations-direction",
-      "is_completed": false
+      "chapter": "CH05",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH06-T01",
-      "chapter": "CH06",
       "title": "Prepare security diagnostics-first roadmap",
+      "status": "todo",
       "branch": "platform/ch06-prepare-security-diagnostics-first-roadmap",
-      "is_completed": false
+      "chapter": "CH06",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH07-T01",
-      "chapter": "CH07",
       "title": "Define service onboarding template roadmap",
+      "status": "todo",
       "branch": "platform/ch07-define-service-onboarding-template-roadmap",
-      "is_completed": false
+      "chapter": "CH07",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH08-T01",
-      "chapter": "CH08",
       "title": "Define multi-environment promotion roadmap",
+      "status": "todo",
       "branch": "platform/ch08-define-multi-environment-promotion-roadmap",
-      "is_completed": false
+      "chapter": "CH08",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH09-T01",
-      "chapter": "CH09",
       "title": "Define backup and disaster recovery roadmap",
+      "status": "todo",
       "branch": "platform/ch09-define-backup-and-disaster-recovery-roadmap",
-      "is_completed": false
+      "chapter": "CH09",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH10-T01",
-      "chapter": "CH10",
       "title": "Define productization roadmap",
+      "status": "todo",
       "branch": "platform/ch10-define-productization-roadmap",
-      "is_completed": false
+      "chapter": "CH10",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH11-T01",
-      "chapter": "CH11",
       "title": "Define FinOps and governance roadmap",
+      "status": "todo",
       "branch": "platform/ch11-define-finops-and-governance-roadmap",
-      "is_completed": false
+      "chapter": "CH11",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH12-T01",
-      "chapter": "CH12",
       "title": "Define advanced identity and access roadmap",
+      "status": "todo",
       "branch": "platform/ch12-define-advanced-identity-and-access-roadmap",
-      "is_completed": false
+      "chapter": "CH12",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH13-T01",
-      "chapter": "CH13",
       "title": "Define AIOps roadmap",
+      "status": "todo",
       "branch": "platform/ch13-define-aiops-roadmap",
-      "is_completed": false
+      "chapter": "CH13",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH14-T01",
-      "chapter": "CH14",
       "title": "Define internal developer platform roadmap",
+      "status": "todo",
       "branch": "platform/ch14-define-internal-developer-platform-roadmap",
-      "is_completed": false
+      "chapter": "CH14",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     },
     {
       "id": "PLATFORM-CH15-T01",
-      "chapter": "CH15",
       "title": "Define customer-facing PlatformInit roadmap",
+      "status": "todo",
       "branch": "platform/ch15-define-customer-facing-platforminit-roadmap",
-      "is_completed": false
+      "chapter": "CH15",
+      "scope": null,
+      "shared_foundation": false,
+      "consumers": [],
+      "depends_on": [],
+      "depends_on_platform_tasks": []
     }
   ]
 }

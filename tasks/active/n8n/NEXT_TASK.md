@@ -1,83 +1,60 @@
-# Next Active Task: N8N-CH01-T01 - Validate n8n root-disk-only host lifecycle
+# NEXT TASK — n8n
 
-## Track
+## Task
 
-`n8n`
-
-## Chapter
-
-`N8N-CH01`
-
-## Branch
-
-`n8n/ch01-root-disk-only-host-lifecycle`
-
-## Preferred mode
-
-`PlatformInit Architect`
+- Track: `n8n`
+- Task ID: `N8N-CH01-T01`
+- Chapter: `N8N-CH01`
+- Title: Validate n8n consumption of shared CH01 host lifecycle
+- Branch: `batch/n8n-ch01-shared-host-lifecycle`
+- Scope: `shared-foundation`
 
 ## Goal
 
 Validate n8n as a separate standalone host track using the n8n Hetzner project, low-cost host assumptions, no attached volume by default, and /srv/n8n root-disk persistence.
 
-## Human entrypoint
+## Shared foundation model
+
+This task consumes shared PlatformInit foundation task(s): P-CH01-T01, P-CH01-T02
+
+No same-track dependency is declared for this current pointer.
+
+## Acceptance criteria
+
+- n8n host lifecycle uses shared CH01 workflow/contracts
+- project=n8n resolves n8n environment and token
+- host naming resolves platforminit-n8n-01
+- effective volume layout is none
+- no attached Hetzner volume is required for standalone n8n baseline
+
+## Forbidden actions
+
+- Do not resurrect deprecated CH05 directions as active work.
+- Do not expose secret values.
+- Do not use Windows shell, PowerShell, CMD, Git Bash, or MobaXterm for Roo execution.
+- do not create k3s for n8n host
+- do not use platform CH03-CH05 as n8n prerequisites
+- do not target production/customer scope
+
+## Required startup
 
 ```bash
 cd /mnt/d/SYSADMIN/platforminit-roo-lab
 ./scripts/orchestrator/start-next-task.sh --track n8n
-code .
 ```
 
-Then in Roo:
+## Roo entrypoint
 
 ```text
 Read tasks/active/n8n/NEXT_TASK.md and execute the active task exactly as described.
 ```
 
-## Required startup checks
+## Native role handoff
 
-```bash
-cd /mnt/d/SYSADMIN/platforminit-roo-lab
-./scripts/lib/require-wsl-runtime.sh
-git branch --show-current
-git status --short
-```
+PlatformInit roles must use native Roo `switch_mode` handoff.
 
-Expected branch:
-
-```text
-n8n/ch01-root-disk-only-host-lifecycle
-```
-
-## Allowed files / paths
-
-- `tasks/roadmap/n8n.json`
-- `tasks/active/n8n/NEXT_TASK.md`
-- `docs/roo-lab/N8N_ROADMAP.md`
-- `.roo/skills/platforminit-n8n-standalone/SKILL.md`
-
-## Forbidden actions
-
-- Do not mutate the n8n host unless the task explicitly grants runtime approval.
-- Do not run main PlatformInit CH01-CH05 workflows for n8n roadmap planning.
-- Do not modify n8n runtime, Gmail labels, OAuth apps, Canva assets, secrets, or GitHub environments without explicit approval.
-
-## Native Roo role handoff
-
-Use the native Roo `switch_mode` contract.
-
-Manual next-prompt printing is allowed only when native `switch_mode` is unavailable or blocked. If fallback is used, explicitly report:
+Manual next-prompt printing is allowed only if native `switch_mode` is unavailable or blocked, and the role must explicitly report:
 
 ```text
 SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
 ```
-
-## Completion rule
-
-At closeout, Release Manager must run:
-
-```bash
-./scripts/orchestrator/close-current-task.sh --track n8n --task N8N-CH01-T01
-```
-
-This marks the task complete and regenerates the next task for this track.

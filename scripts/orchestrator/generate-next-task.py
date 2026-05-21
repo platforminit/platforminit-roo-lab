@@ -1,143 +1,134 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 from pathlib import Path
-from datetime import datetime, timezone
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def load_json(path):
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+def load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def save_json(path, data):
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+def write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content.rstrip() + "\n", encoding="utf-8")
 
 
-def render_next_task(track, task):
-    allowed = "\n".join(f"- `{p}`" for p in task.get("allowed_files", []))
-    forbidden = "\n".join(f"- {x}" for x in task.get("forbidden", []))
-    return f"""# Next Active Task: {task['id']} - {task['title']}
-
-## Track
-
-`{track}`
-
-## Chapter
-
-`{task['chapter']}`
-
-## Branch
-
-`{task['branch']}`
-
-## Preferred mode
-
-`{task.get('mode', 'PlatformInit Orchestrator')}`
-
-## Goal
-
-{task['goal']}
-
-## Human entrypoint
-
-```bash
-cd /mnt/d/SYSADMIN/platforminit-roo-lab
-./scripts/orchestrator/start-next-task.sh --track {track}
-code .
-```
-
-Then in Roo:
-
-```text
-Read tasks/active/{track}/NEXT_TASK.md and execute the active task exactly as described.
-```
-
-## Required startup checks
-
-```bash
-cd /mnt/d/SYSADMIN/platforminit-roo-lab
-./scripts/lib/require-wsl-runtime.sh
-git branch --show-current
-git status --short
-```
-
-Expected branch:
-
-```text
-{task['branch']}
-```
-
-## Allowed files / paths
-
-{allowed if allowed else '- No file allowlist declared; stop and ask for task update.'}
-
-## Forbidden actions
-
-{forbidden if forbidden else '- Do not perform destructive or infrastructure-mutating actions unless explicitly approved.'}
-
-## Native Roo role handoff
-
-Use the native Roo `switch_mode` contract.
-
-Manual next-prompt printing is allowed only when native `switch_mode` is unavailable or blocked. If fallback is used, explicitly report:
-
-```text
-SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
-```
-
-## Completion rule
-
-At closeout, Release Manager must run:
-
-```bash
-./scripts/orchestrator/close-current-task.sh --track {track} --task {task['id']}
-```
-
-This marks the task complete and regenerates the next task for this track.
-"""
+def bullet(items: list[str]) -> str:
+    if not items:
+        return "- Not specified yet."
+    return "\n".join(f"- {item}" for item in items)
 
 
-def find_next(track):
-    roadmap = load_json(f"tasks/roadmap/{track}.json")
-    status_path = Path(f"tasks/status/{track}.json")
-    if not status_path.exists():
-        save_json(status_path, {
-            "schema_version": "1.0",
-            "track": track,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "tasks": [{"id": t["id"], "chapter": t["chapter"], "title": t["title"], "branch": t["branch"], "is_completed": False} for t in roadmap["tasks"]],
-        })
-    status = load_json(status_path)
-    completed = {t["id"] for t in status["tasks"] if t.get("is_completed")}
-    for task in roadmap["tasks"]:
-        if task["id"] not in completed:
-            return task
-    return None
+def task_goal(task: dict[str, Any]) -> str:
+    return (
+        task.get("goal")
+        or task.get("description")
+        or task.get("title")
+        or task.get("id")
+        or "No goal defined."
+    )
 
 
-def main():
+def render_next(track: str, task: dict[str, Any]) -> str:
+    deps = task.get("depends_on_platform_tasks", [])
+    same_track_deps = task.get("depends_on", [])
+    acceptance = task.get("acceptance", ["Acceptance criteria must be refined during task execution."])
+    forbidden = task.get("forbidden", ["Do not target production/customer scope unless explicitly approved."])
+
+    if deps:
+        shared_foundation = "This task consumes shared PlatformInit foundation task(s): " + ", ".join(deps)
+    else:
+        shared_foundation = "This task does not consume a shared platform dependency."
+
+    if same_track_deps:
+        dependency_line = "Same-track dependency: " + ", ".join(same_track_deps)
+    else:
+        dependency_line = "No same-track dependency is declared for this current pointer."
+
+    lines = [
+        f"# NEXT TASK — {track}",
+        "",
+        "## Task",
+        "",
+        f"- Track: `{track}`",
+        f"- Task ID: `{task.get('id', '')}`",
+        f"- Chapter: `{task.get('chapter', '')}`",
+        f"- Title: {task.get('title', '')}",
+        f"- Branch: `{task.get('branch', '')}`",
+        f"- Scope: `{task.get('scope', '')}`",
+        "",
+        "## Goal",
+        "",
+        task_goal(task),
+        "",
+        "## Shared foundation model",
+        "",
+        shared_foundation,
+        "",
+        dependency_line,
+        "",
+        "## Acceptance criteria",
+        "",
+        bullet(acceptance),
+        "",
+        "## Forbidden actions",
+        "",
+        "- Do not resurrect deprecated CH05 directions as active work.",
+        "- Do not expose secret values.",
+        "- Do not use Windows shell, PowerShell, CMD, Git Bash, or MobaXterm for Roo execution.",
+        bullet(forbidden),
+        "",
+        "## Required startup",
+        "",
+        "```bash",
+        "cd /mnt/d/SYSADMIN/platforminit-roo-lab",
+        f"./scripts/orchestrator/start-next-task.sh --track {track}",
+        "```",
+        "",
+        "## Roo entrypoint",
+        "",
+        "```text",
+        f"Read tasks/active/{track}/NEXT_TASK.md and execute the active task exactly as described.",
+        "```",
+        "",
+        "## Native role handoff",
+        "",
+        "PlatformInit roles must use native Roo `switch_mode` handoff.",
+        "",
+        "Manual next-prompt printing is allowed only if native `switch_mode` is unavailable or blocked, and the role must explicitly report:",
+        "",
+        "```text",
+        "SWITCH_MODE_UNAVAILABLE_FALLBACK_USED",
+        "```",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--track", required=True, choices=["platform", "n8n"])
-    parser.add_argument("--print-branch", action="store_true")
+    parser.add_argument("--track", choices=["platform", "n8n"], required=True)
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
-    task = find_next(args.track)
-    if task is None:
-        if args.print_branch:
-            print("")
-        else:
-            print(f"No remaining tasks for track: {args.track}")
-        return
-    if args.print_branch:
-        print(task["branch"])
-        return
-    content = render_next_task(args.track, task)
-    out = Path(f"tasks/active/{args.track}/NEXT_TASK.md")
+
+    roadmap = load_json(ROOT / "tasks" / "roadmap" / f"{args.track}.json")
+    status = load_json(ROOT / "tasks" / "status" / f"{args.track}.json")
+
+    current = status["current_pointer"]
+    tasks = {task["id"]: task for task in roadmap["tasks"]}
+    if current not in tasks:
+        raise SystemExit(f"current_pointer not found in roadmap: {current}")
+
+    content = render_next(args.track, tasks[current])
+    out = ROOT / "tasks" / "active" / args.track / "NEXT_TASK.md"
+
     if args.write:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(content, encoding="utf-8")
-        print(f"wrote {out}")
+        write_text(out, content)
+        print(f"wrote {out.relative_to(ROOT)}")
     else:
         print(content)
 

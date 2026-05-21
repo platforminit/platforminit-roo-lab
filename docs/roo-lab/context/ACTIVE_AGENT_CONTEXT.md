@@ -29,7 +29,7 @@ It may modify or break the development environment, especially `platforminit-dev
 ## Current host and environment facts
 
 - Active dev host: `platforminit-dev-01`.
-- Forbidden stale name: `platforminit-development-01`.
+- Forbidden stale name: `deprecated long-form development host alias`.
 - Main/default branch convention: `dev`.
 - Lab validation branch: `batch/roo-lab-first-validation`.
 - WSL root: `/mnt/d/SYSADMIN/platforminit-roo-lab`.

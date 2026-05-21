@@ -19,7 +19,7 @@ Agents must not blindly treat every raw memory task as active. Older CH05 Zabbix
 ## Stable facts to preserve
 
 - Active dev host: `platforminit-dev-01`.
-- Do not use `platforminit-development-01`.
+- Do not use `deprecated long-form development host alias`.
 - Hetzner project model:
   - `development` is active dev/test.
   - `n8n` is reserved for self-hosted n8n.

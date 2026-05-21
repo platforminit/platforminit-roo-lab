@@ -64,3 +64,16 @@ Stop and report when:
 - validation is stale/running/unavailable;
 - the requested action would mix unrelated roadmap chapters;
 - Roo is in a non-WSL context.
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
+## Native handoff requirement
+
+When orchestration preparation is complete, PlatformInit Orchestrator MUST request native Roo `switch_mode` to `platforminit-deepseek-coder`.
+
+It must not merely print the next prompt unless native `switch_mode` is unavailable or blocked.
+
+Fallback marker if blocked:
+
+```text
+SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
+```
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->

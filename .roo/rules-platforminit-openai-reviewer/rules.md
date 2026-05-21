@@ -42,3 +42,19 @@ VERDICT: REQUEST_CHANGES
 ```text
 VERDICT: BLOCK
 ```
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
+## Native handoff requirement
+
+PlatformInit OpenAI Reviewer MUST use verdict-driven native Roo mode switching:
+
+- On `APPROVE`, request native `switch_mode` to `platforminit-owasp-reviewer`.
+- On `REQUEST_CHANGES`, request native `switch_mode` back to `platforminit-deepseek-coder` with the exact requested fix.
+
+It must not merely print the next prompt unless native `switch_mode` is unavailable or blocked.
+
+Fallback marker if blocked:
+
+```text
+SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
+```
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->

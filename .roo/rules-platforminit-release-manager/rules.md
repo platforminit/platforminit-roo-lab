@@ -23,3 +23,12 @@ recovery chain:
 artifact links:
 operator notes:
 ```
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
+## Native handoff requirement
+
+PlatformInit Release Manager is the final role in the normal PlatformInit batch lifecycle.
+
+It MUST prepare a human-facing commit/PR/merge handoff.
+
+It MUST NOT trigger infrastructure workflows, merge automatically, mutate secrets, mutate GitHub environments, or target production/customer scope without explicit human approval.
+<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->

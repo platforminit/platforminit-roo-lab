@@ -6,29 +6,27 @@ This file is the active task source for PlatformInit Roo Lab.
 
 - Repository: `platforminit-roo-lab`
 - Primary branch: `dev`
-- Current work branch: `batch/roo-lab-first-validation`
+- Current work branch: `batch/roo-workflow-rehearsal-no-infra`
 - Target role: full-access dev workflow rehearsal repository
 - Disposable target host: `platforminit-dev-01`
 - Stable recovery source: `platforminit-platform`
 
 ## Active work package
 
-### B00 - Clean PlatformInit Agent Operating Layer
+### B01 - Roo Workflow Rehearsal Without Infrastructure Mutation
 
-Goal: prepare Roo Code custom modes, project skills, current context, branch rules, review rules, and recovery rules before allowing any infrastructure workflow rehearsal.
+Goal: rehearse the Roo batch lifecycle with task/docs-only changes before allowing any infrastructure mutation.
 
 Active tasks:
 
-1. Validate `.roomodes` custom modes.
-2. Validate `.roo/rules.md` and mode-specific rules.
-3. Validate project skills under `.roo/skills/*/SKILL.md`.
-4. Validate clean active context files.
-5. Validate GitHub workflow environment bindings for `development` and `n8n`.
-6. Validate organization secret names are visible to the repository.
-7. Validate WSL runtime guard.
-8. Validate current branch is `batch/roo-lab-first-validation` before Roo work.
-9. Validate no production/customer scope is targeted.
-10. Prepare review handoff after agent-layer validation.
+1. Update `tasks/active/NEXT_TASK.md` for B01.
+2. Create `tasks/batches/B01-roo-workflow-rehearsal-no-infra/README.md`.
+3. Create or update `docs/roo-lab/VALIDATION_REPORT_TEMPLATE.md`.
+4. Preserve clean active context and deprecated component guardrails.
+5. Prepare a changed-files-only reviewer handoff.
+6. Validate changed files are limited to task/docs paths.
+7. Validate no production/customer scope is targeted.
+8. Validate no infrastructure workflows or runtime mutation commands are included.
 
 ## Current active architectural direction
 
@@ -50,10 +48,11 @@ Historical or superseded directions are documented only under:
 
 Agents must not resurrect deprecated work from archived memory unless explicitly instructed by the human operator.
 
-## First Roo execution rule
+## Current Roo execution rule
 
-The first Roo execution cycle must validate the agent operating layer only.
+The current Roo execution cycle must rehearse workflow coordination only through task/docs changes.
 
 Do not trigger infrastructure workflows.
 Do not run CH01-CH05.
-Do not modify Hetzner, Cloudflare, Kubernetes, Authentik, or Checkmk.
+Do not modify Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, or n8n runtime.
+Do not modify GitHub secrets or environments.

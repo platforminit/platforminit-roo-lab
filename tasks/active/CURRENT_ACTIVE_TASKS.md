@@ -6,27 +6,46 @@ This file is the active task source for PlatformInit Roo Lab.
 
 - Repository: `platforminit-roo-lab`
 - Primary branch: `dev`
-- Current work branch: `batch/roo-workflow-rehearsal-no-infra`
+- Current work branch: `batch/roo-role-handoff-rehearsal-v2`
 - Target role: full-access dev workflow rehearsal repository
 - Disposable target host: `platforminit-dev-01`
 - Stable recovery source: `platforminit-platform`
 
 ## Active work package
 
-### B01 - Roo Workflow Rehearsal Without Infrastructure Mutation
+### B02 — Native Role Handoff Rehearsal Without Infrastructure Mutation
 
-Goal: rehearse the Roo batch lifecycle with task/docs-only changes before allowing any infrastructure mutation.
+Goal: rehearse the full PlatformInit native Roo `switch_mode` role handoff lifecycle with docs/task-only changes. Validate that each role can hand off to the next via native `switch_mode` without printing manual prompts, without triggering infrastructure workflows, and without mutating runtime infrastructure.
 
 Active tasks:
 
-1. Update `tasks/active/NEXT_TASK.md` for B01.
-2. Create `tasks/batches/B01-roo-workflow-rehearsal-no-infra/README.md`.
-3. Create or update `docs/roo-lab/VALIDATION_REPORT_TEMPLATE.md`.
-4. Preserve clean active context and deprecated component guardrails.
-5. Prepare a changed-files-only reviewer handoff.
-6. Validate changed files are limited to task/docs paths.
-7. Validate no production/customer scope is targeted.
-8. Validate no infrastructure workflows or runtime mutation commands are included.
+1. Create `tasks/batches/B02-roo-role-handoff-rehearsal-v2/README.md` with full batch definition.
+2. Create `docs/roo-lab/ROLE_HANDOFF_REHEARSAL_V2.md` with handoff contract and validation checks.
+3. Update `tasks/active/NEXT_TASK.md` to B02.
+4. Update `tasks/active/CURRENT_ACTIVE_TASKS.md` to B02.
+5. Validate changed files are limited to allowed task/docs paths.
+6. Request native `switch_mode` to `platforminit-openai-reviewer`.
+
+## Role sequence
+
+```text
+PlatformInit Orchestrator
+  -> switch_mode: platforminit-deepseek-coder
+
+PlatformInit DeepSeek Coder
+  -> switch_mode: platforminit-openai-reviewer
+
+PlatformInit OpenAI Reviewer
+  APPROVE -> switch_mode: platforminit-owasp-reviewer
+  REQUEST_CHANGES -> switch_mode: platforminit-deepseek-coder
+
+PlatformInit OWASP Reviewer
+  PASS -> switch_mode: platforminit-release-manager
+  MUST_FIX -> switch_mode: platforminit-deepseek-coder
+
+PlatformInit Release Manager
+  -> final human commit/PR/merge handoff
+```
 
 ## Current active architectural direction
 
@@ -50,9 +69,11 @@ Agents must not resurrect deprecated work from archived memory unless explicitly
 
 ## Current Roo execution rule
 
-The current Roo execution cycle must rehearse workflow coordination only through task/docs changes.
+The current Roo execution cycle must rehearse native role handoff through docs/task-only changes.
 
 Do not trigger infrastructure workflows.
 Do not run CH01-CH05.
 Do not modify Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, or n8n runtime.
 Do not modify GitHub secrets or environments.
+Do not modify GitHub Actions workflows.
+Do not resurrect deprecated CH05 directions as active work.

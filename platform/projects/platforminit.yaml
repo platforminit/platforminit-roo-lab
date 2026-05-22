@@ -1,3 +1,6 @@
+# Current example — platforminit project registry entry (production scope).
+# server_prefix + default server index (-01) currently derives platforminit-prod-01.
+# This is a resolver-derived value, not a permanent invariant.
 project_id: platforminit
 hetzner:
   token_secret: HCLOUD_TOKEN_PLATFORMINIT

@@ -16,8 +16,8 @@
       ],
       "description": "Validate reusable CH01 host lifecycle contract for both platform and n8n tracks.",
       "acceptance": [
-        "development host uses platforminit-dev-01",
-        "n8n host uses platforminit-n8n-01 when n8n track is selected",
+        "development host currently derives platforminit-dev-01 (current example — resolver-derived from server_prefix + default index)",
+        "n8n host currently derives platforminit-n8n-01 when n8n track is selected (current example — resolver-derived)",
         "project input controls environment and token routing",
         "volume_layout supports none for n8n and platform-specific layouts for platform"
       ],
@@ -26,6 +26,37 @@
         "do not expose secret values"
       ],
       "goal": "Validate reusable CH01 host lifecycle contract for both platform and n8n tracks."
+    },
+    {
+      "id": "P-CH01-T01A",
+      "chapter": "CH01",
+      "title": "Derive CH01 hostname validation from registry resolver",
+      "branch": "fix/ch01-derived-hostname-validation",
+      "status": "completed",
+      "scope": "shared-foundation",
+      "shared_foundation": true,
+      "consumers": [
+        "platform",
+        "n8n"
+      ],
+      "description": "Audit and refactor hardcoded hostnames so CH01 validators, orchestrator scripts, roadmap tasks, and task acceptance criteria treat platforminit-dev-01 and platforminit-n8n-01 as current registry/resolver-derived examples, not immutable global constants.",
+      "acceptance": [
+        "audit repository references to platforminit-dev-01, platforminit-n8n-01, platforminit-dev, and platforminit-n8n",
+        "documentation/examples remain only where clearly marked as current examples rather than invariants",
+        "executable validators/scripts derive expected hostnames from platform/projects/*.yaml, server_prefix, default server index/resolver defaults, tools/platforminit_ops/hcloud_resolve.py output, or equivalent resolver logic",
+        "CH01 validation may assert today's effective default hostnames only as registry/resolver-derived output",
+        "future explicit hostname override support is not blocked by validator design",
+        "regression checks fail only when resolver output and registry contract disagree",
+        "current default validation still passes for development and n8n",
+        "shell syntax, JSON, and YAML validation pass where relevant",
+        "git diff --check passes"
+      ],
+      "forbidden": [
+        "do not run infrastructure workflows",
+        "do not mutate secrets, GitHub environments, tags, releases, or production/customer scope",
+        "do not treat platforminit-dev-01 or platforminit-n8n-01 as permanent hostname truth"
+      ],
+      "goal": "Ensure no validator, orchestrator script, roadmap task, or task acceptance criterion treats current development or n8n hostnames as immutable global constants."
     },
     {
       "id": "P-CH01-T02",
@@ -411,6 +442,7 @@
     ],
     "tasks": [
       "P-CH01-T01",
+      "P-CH01-T01A",
       "P-CH01-T02",
       "P-CH02-T01",
       "P-CH02-T02"

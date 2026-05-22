@@ -23,7 +23,7 @@ No same-track dependency is declared for this current pointer.
 
 - n8n host lifecycle uses shared CH01 workflow/contracts
 - project=n8n resolves n8n environment and token
-- host naming resolves platforminit-n8n-01
+- host naming resolves platforminit-n8n-01 (current example — derived from platform/projects/n8n.yaml server_prefix + default index)
 - effective volume layout is none
 - no attached Hetzner volume is required for standalone n8n baseline
 

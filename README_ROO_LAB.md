@@ -4,7 +4,7 @@ This repository is a full-access development rehearsal repository for PlatformIn
 
 It may modify, break, rebuild, or replace the development environment:
 
-- Target host: platforminit-dev-01
+- Target host: platforminit-dev-01 (current example — derived from platform/projects/development.yaml server_prefix + default index)
 - Scope: development only
 - Stable recovery source of truth: platforminit-platform
 - Production/customer environments: out of scope

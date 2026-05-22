@@ -74,7 +74,7 @@ Use the existing host lifecycle workflow:
 ```text
 01 - Create or Rebuild Host
 project = n8n
-host_name = platforminit-n8n-01
+host_name = platforminit-n8n-01   # current example — derived from platform/projects/n8n.yaml server_prefix + default index
 server_type = cx23
 region = hel1
 volume_layout = none
@@ -97,7 +97,7 @@ Recommended inputs:
 ```text
 action = deploy
 project = n8n
-host_name = platforminit-n8n-01
+host_name = platforminit-n8n-01   # current example — derived from platform/projects/n8n.yaml server_prefix + default index
 n8n_domain = n8n.sysadminhomelab.hu
 ```
 

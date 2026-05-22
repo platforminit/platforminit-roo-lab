@@ -104,6 +104,20 @@ check_mount(){
 case "$PLATFORMINIT_VOLUME_LAYOUT" in
   none)
     [[ -d "$PLATFORMINIT_SRV_PATH" ]] && res PASS VOLUME_LAYOUT_NONE "no persistent volume layout selected" "$PLATFORMINIT_SRV_PATH exists" || res FAIL VOLUME_LAYOUT_NONE "$PLATFORMINIT_SRV_PATH missing"
+    # Verify no unexpected Hetzner volume is mounted under /srv for root-disk-only hosts
+    if mountpoint -q /srv 2>/dev/null; then
+      srv_src="$(findmnt -n -o SOURCE /srv 2>/dev/null || true)"
+      res FAIL VOLUME_LAYOUT_NONE_UNEXPECTED_MOUNT "volume_layout=none but /srv is a mountpoint" "source=${srv_src}" "no mount expected"
+    else
+      res PASS VOLUME_LAYOUT_NONE_NO_MOUNT "volume_layout=none: /srv is not a mountpoint (root-disk-only)"
+    fi
+    # Check lsblk for unexpected attached volumes (non-root disks)
+    unexpected_disks="$(lsblk -pnro NAME,TYPE,MOUNTPOINT 2>/dev/null | awk -F' ' '$2=="disk" && $3=="" {print $1}' | grep -v "$(lsblk -nlo PKNAME "$(findmnt -n -o SOURCE / 2>/dev/null)" 2>/dev/null)" || true)"
+    if [[ -n "$unexpected_disks" ]]; then
+      res WARN VOLUME_LAYOUT_NONE_UNEXPECTED_DISK "volume_layout=none but unattached disk(s) detected" "$(echo "$unexpected_disks" | tr '\n' ' ')" "no unattached disks"
+    else
+      res PASS VOLUME_LAYOUT_NONE_NO_UNEXPECTED_DISK "volume_layout=none: no unattached disks detected"
+    fi
     ;;
   single)
     check_mount VOLUME_SRV_MOUNT "$PLATFORMINIT_SRV_PATH"

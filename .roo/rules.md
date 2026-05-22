@@ -108,7 +108,7 @@ Required role flow:
 4. PlatformInit OWASP Reviewer:
    - on `PASS`, MUST request native switch to `platforminit-release-manager`;
    - on `MUST_FIX`, MUST request native switch back to `platforminit-deepseek-coder` with the exact fix request.
-5. PlatformInit Release Manager MUST prepare the final human commit/PR/merge handoff.
+5. PlatformInit Release Manager MUST execute the full lifecycle: detect active task ID, verify changed files and validation evidence, create a scoped implementation commit, push the branch, and open a PR via `gh` CLI. If `gh` is unavailable or the PR cannot be created, it MUST produce manual PR instructions and mark the handoff `BLOCKED_BY_TOOLING`. After merge, it MUST run `close-current-task.sh`, verify status/roadmap/NEXT_TASK agreement, commit/push closure metadata, and start or prepare the next task. It MUST NOT stop at "human commit pending" unless the blocker is explicitly marked `BLOCKED_BY_PERMISSION` or `BLOCKED_BY_TOOLING`.
 
 Human approval remains mandatory before:
 

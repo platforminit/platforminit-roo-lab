@@ -450,6 +450,200 @@ else
 fi
 
 # --------------------------------------------------
+# Section 12: CH02 baseline profile separation contract
+# --------------------------------------------------
+section "CH02 baseline profile separation contract"
+
+BASELINE_POLICY="${REPO_ROOT}/platform/host-baseline/policy/baseline.yaml"
+if [[ -f "$BASELINE_POLICY" ]]; then
+  # Check that baseline.yaml has a shared section
+  if grep -qE '^shared:' "$BASELINE_POLICY"; then
+    res PASS BASELINE_SHARED_SECTION "baseline.yaml has shared hardening primitives section" "shared: present" "shared: required"
+  else
+    res FAIL BASELINE_SHARED_SECTION "baseline.yaml missing shared hardening primitives section"
+  fi
+  # Check that baseline.yaml has a profiles section
+  if grep -qE '^profiles:' "$BASELINE_POLICY"; then
+    res PASS BASELINE_PROFILES_SECTION "baseline.yaml has profiles section" "profiles: present" "profiles: required"
+  else
+    res FAIL BASELINE_PROFILES_SECTION "baseline.yaml missing profiles section"
+  fi
+  # Check that platform-k3s profile exists
+  if grep -qE 'platform-k3s:' "$BASELINE_POLICY"; then
+    res PASS BASELINE_PROFILE_PLATFORM_K3S "baseline.yaml defines platform-k3s profile" "platform-k3s present" "platform-k3s required"
+  else
+    res FAIL BASELINE_PROFILE_PLATFORM_K3S "baseline.yaml missing platform-k3s profile"
+  fi
+  # Check that standalone-n8n profile exists
+  if grep -qE 'standalone-n8n:' "$BASELINE_POLICY"; then
+    res PASS BASELINE_PROFILE_STANDALONE_N8N "baseline.yaml defines standalone-n8n profile" "standalone-n8n present" "standalone-n8n required"
+  else
+    res FAIL BASELINE_PROFILE_STANDALONE_N8N "baseline.yaml missing standalone-n8n profile"
+  fi
+else
+  res FAIL BASELINE_POLICY_EXISTS "baseline.yaml not found at ${BASELINE_POLICY}"
+fi
+
+DEPENDENCY_POLICY="${REPO_ROOT}/platform/host-baseline/policy/dependencies.yaml"
+if [[ -f "$DEPENDENCY_POLICY" ]]; then
+  # Check that dependencies.yaml has a shared section
+  if grep -qE '^shared:' "$DEPENDENCY_POLICY"; then
+    res PASS DEPENDENCY_SHARED_SECTION "dependencies.yaml has shared apt section" "shared: present" "shared: required"
+  else
+    res FAIL DEPENDENCY_SHARED_SECTION "dependencies.yaml missing shared apt section"
+  fi
+  # Check that dependencies.yaml has a profiles section
+  if grep -qE '^profiles:' "$DEPENDENCY_POLICY"; then
+    res PASS DEPENDENCY_PROFILES_SECTION "dependencies.yaml has profiles section" "profiles: present" "profiles: required"
+  else
+    res FAIL DEPENDENCY_PROFILES_SECTION "dependencies.yaml missing profiles section"
+  fi
+else
+  res FAIL DEPENDENCY_POLICY_EXISTS "dependencies.yaml not found at ${DEPENDENCY_POLICY}"
+fi
+
+# Check that lib-policy.sh has resolve_baseline_profile function
+LIB_POLICY="${REPO_ROOT}/platform/host-baseline/scripts/lib-policy.sh"
+if [[ -f "$LIB_POLICY" ]]; then
+  if grep -qE 'resolve_baseline_profile' "$LIB_POLICY"; then
+    res PASS LIB_POLICY_PROFILE_RESOLVER "lib-policy.sh has resolve_baseline_profile function" "resolve_baseline_profile present" "profile resolver required"
+  else
+    res FAIL LIB_POLICY_PROFILE_RESOLVER "lib-policy.sh missing resolve_baseline_profile function"
+  fi
+  if grep -qE 'validate_baseline_profile' "$LIB_POLICY"; then
+    res PASS LIB_POLICY_PROFILE_VALIDATOR "lib-policy.sh has validate_baseline_profile function" "validate_baseline_profile present" "profile validator required"
+  else
+    res FAIL LIB_POLICY_PROFILE_VALIDATOR "lib-policy.sh missing validate_baseline_profile function"
+  fi
+else
+  res FAIL LIB_POLICY_EXISTS "lib-policy.sh not found at ${LIB_POLICY}"
+fi
+
+# Check that apply-policy-baseline.sh uses profile-aware package resolution
+APPLY_POLICY="${REPO_ROOT}/platform/host-baseline/scripts/apply-policy-baseline.sh"
+if [[ -f "$APPLY_POLICY" ]]; then
+  if grep -qE 'resolve_baseline_profile' "$APPLY_POLICY"; then
+    res PASS APPLY_POLICY_PROFILE_AWARE "apply-policy-baseline.sh resolves baseline profile" "resolve_baseline_profile used" "profile-aware required"
+  else
+    res FAIL APPLY_POLICY_PROFILE_AWARE "apply-policy-baseline.sh missing profile resolution"
+  fi
+  if grep -qE 'profiles\.\$\{BASELINE_PROFILE\}' "$APPLY_POLICY"; then
+    res PASS APPLY_POLICY_PROFILE_PACKAGES "apply-policy-baseline.sh resolves profile-specific packages" "profiles.\${BASELINE_PROFILE} used" "profile-aware packages required"
+  else
+    res FAIL APPLY_POLICY_PROFILE_PACKAGES "apply-policy-baseline.sh missing profile-specific package resolution"
+  fi
+else
+  res FAIL APPLY_POLICY_EXISTS "apply-policy-baseline.sh not found at ${APPLY_POLICY}"
+fi
+
+# Check that fim-check.sh is profile-aware
+FIM_CHECK="${REPO_ROOT}/platform/host-baseline/scripts/fim-check.sh"
+if [[ -f "$FIM_CHECK" ]]; then
+  if grep -qE 'resolve_baseline_profile' "$FIM_CHECK"; then
+    res PASS FIM_CHECK_PROFILE_AWARE "fim-check.sh resolves baseline profile" "resolve_baseline_profile used" "profile-aware required"
+  else
+    res FAIL FIM_CHECK_PROFILE_AWARE "fim-check.sh missing profile resolution"
+  fi
+  if grep -qE 'extra_required_paths' "$FIM_CHECK"; then
+    res PASS FIM_CHECK_EXTRA_PATHS "fim-check.sh checks profile-specific extra_required_paths" "extra_required_paths used" "profile-aware FIM paths required"
+  else
+    res FAIL FIM_CHECK_EXTRA_PATHS "fim-check.sh missing profile-specific FIM path checks"
+  fi
+else
+  res FAIL FIM_CHECK_EXISTS "fim-check.sh not found at ${FIM_CHECK}"
+fi
+
+# Check that install-dependencies.sh is profile-aware
+INSTALL_DEPS="${REPO_ROOT}/platform/host-baseline/scripts/install-dependencies.sh"
+if [[ -f "$INSTALL_DEPS" ]]; then
+  if grep -qE 'resolve_baseline_profile' "$INSTALL_DEPS"; then
+    res PASS INSTALL_DEPS_PROFILE_AWARE "install-dependencies.sh resolves baseline profile" "resolve_baseline_profile used" "profile-aware required"
+  else
+    res FAIL INSTALL_DEPS_PROFILE_AWARE "install-dependencies.sh missing profile resolution"
+  fi
+  if grep -qE 'apt_extra' "$INSTALL_DEPS"; then
+    res PASS INSTALL_DEPS_APT_EXTRA "install-dependencies.sh installs profile-specific apt_extra packages" "apt_extra used" "profile-aware apt required"
+  else
+    res FAIL INSTALL_DEPS_APT_EXTRA "install-dependencies.sh missing profile-specific apt package installation"
+  fi
+else
+  res FAIL INSTALL_DEPS_EXISTS "install-dependencies.sh not found at ${INSTALL_DEPS}"
+fi
+
+# Check that ch01-validate-host.sh is profile-aware
+CH01_VALIDATE="${CH01_CODE_ROOT}/validate/ch01-validate-host.sh"
+if [[ -f "$CH01_VALIDATE" ]]; then
+  if grep -qE 'PLATFORMINIT_BASELINE_PROFILE' "$CH01_VALIDATE"; then
+    res PASS CH01_VALIDATE_PROFILE_AWARE "ch01-validate-host.sh resolves baseline profile" "PLATFORMINIT_BASELINE_PROFILE used" "profile-aware required"
+  else
+    res FAIL CH01_VALIDATE_PROFILE_AWARE "ch01-validate-host.sh missing profile resolution"
+  fi
+  if grep -qE 'platform-k3s\)' "$CH01_VALIDATE"; then
+    res PASS CH01_VALIDATE_PROFILE_PLATFORM_K3S "ch01-validate-host.sh handles platform-k3s profile" "platform-k3s case present" "platform-k3s validation required"
+  else
+    res FAIL CH01_VALIDATE_PROFILE_PLATFORM_K3S "ch01-validate-host.sh missing platform-k3s profile handling"
+  fi
+  if grep -qE 'standalone-n8n\)' "$CH01_VALIDATE"; then
+    res PASS CH01_VALIDATE_PROFILE_N8N "ch01-validate-host.sh handles standalone-n8n profile" "standalone-n8n case present" "standalone-n8n validation required"
+  else
+    res FAIL CH01_VALIDATE_PROFILE_N8N "ch01-validate-host.sh missing standalone-n8n profile handling"
+  fi
+else
+  res FAIL CH01_VALIDATE_EXISTS "ch01-validate-host.sh not found at ${CH01_VALIDATE}"
+fi
+
+# --- Contract: lib-policy.sh must NOT eagerly default PLATFORMINIT_BASELINE_PROFILE ---
+# The resolve_baseline_profile() function handles the full resolution chain:
+#   env var -> host-context.env -> default(platform-k3s)
+# Defaulting at library source time would pre-empt the host-context.env lookup.
+# This check MUST fail if ANY top-level PLATFORMINIT_BASELINE_PROFILE= assignment
+# exists before resolve_baseline_profile(), even if the resolver also has a default.
+# That would reintroduce the ordering regression.
+LIB_POLICY="${REPO_ROOT}/platform/host-baseline/scripts/lib-policy.sh"
+if [[ -f "$LIB_POLICY" ]]; then
+  # Check 1: No top-level PLATFORMINIT_BASELINE_PROFILE= assignment before resolve_baseline_profile()
+  # Extract lines before resolve_baseline_profile definition (excluding comments/blank lines)
+  top_level_assign="$(sed -n '1,/^resolve_baseline_profile/p' "$LIB_POLICY" | grep -cE '^PLATFORMINIT_BASELINE_PROFILE=' || true)"
+  if (( top_level_assign > 0 )); then
+    res FAIL LIB_POLICY_NO_EAGER_DEFAULT "lib-policy.sh has ${top_level_assign} top-level PLATFORMINIT_BASELINE_PROFILE= assignment(s) before resolve_baseline_profile() — pre-empts host-context.env lookup" "eager default(s) found" "no top-level assignment before resolve_baseline_profile()"
+  else
+    # Check 2: Verify the default exists inside resolve_baseline_profile()
+    if grep -qE 'profile:-platform-k3s' < <(sed -n '/^resolve_baseline_profile/,/^}/p' "$LIB_POLICY"); then
+      res PASS LIB_POLICY_NO_EAGER_DEFAULT "lib-policy.sh does NOT eagerly default PLATFORMINIT_BASELINE_PROFILE at library source time — default only inside resolve_baseline_profile()" "no eager default" "default deferred to resolve_baseline_profile()"
+    else
+      res FAIL LIB_POLICY_NO_EAGER_DEFAULT "lib-policy.sh missing platform-k3s default inside resolve_baseline_profile()" "no default found" "default inside resolve_baseline_profile()"
+    fi
+  fi
+else
+  res FAIL LIB_POLICY_EXISTS "lib-policy.sh not found at ${LIB_POLICY}"
+fi
+
+# --- Contract: baseline FIM extra_required_paths must not reference post-baseline runtime files ---
+# Runtime-layer files (k3s.yaml, Caddyfile) are owned by later chapters (CH03, n8n runtime)
+# and must NOT be required during CH02 baseline application.
+BASELINE_POLICY="${REPO_ROOT}/platform/host-baseline/policy/baseline.yaml"
+if [[ -f "$BASELINE_POLICY" ]]; then
+  # Check platform-k3s profile extra_required_paths
+  k3s_paths="$(yq -r '.profiles["platform-k3s"].fim.extra_required_paths[]? // ""' "$BASELINE_POLICY" 2>/dev/null || true)"
+  n8n_paths="$(yq -r '.profiles["standalone-n8n"].fim.extra_required_paths[]? // ""' "$BASELINE_POLICY" 2>/dev/null || true)"
+  runtime_refs=""
+  for p in $k3s_paths $n8n_paths; do
+    case "$p" in
+      */k3s.yaml|*/Caddyfile)
+        runtime_refs+="$p "
+        ;;
+    esac
+  done
+  if [[ -n "$runtime_refs" ]]; then
+    res FAIL BASELINE_FIM_NO_RUNTIME_REFS "baseline.yaml extra_required_paths reference post-baseline runtime files: ${runtime_refs}" "runtime refs found: ${runtime_refs}" "no k3s/Caddy runtime paths in baseline FIM"
+  else
+    res PASS BASELINE_FIM_NO_RUNTIME_REFS "baseline.yaml extra_required_paths do NOT reference post-baseline runtime files (k3s.yaml, Caddyfile)" "no runtime refs" "no k3s/Caddy paths in baseline FIM"
+  fi
+else
+  res FAIL BASELINE_POLICY_EXISTS "baseline.yaml not found at ${BASELINE_POLICY}"
+fi
+
+# --------------------------------------------------
 # Summary
 # --------------------------------------------------
 section "Summary"

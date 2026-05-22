@@ -9,6 +9,14 @@ REPORT_JSON="${REPORT_JSON:-$REPORT_DIR/validate-host-${TS}.json}"
 EXPECTED_USER="${EXPECTED_USER:-devops}"
 BROKER_USER="${BROKER_USER:-itadmin}"
 
+# Resolve baseline profile
+PLATFORMINIT_BASELINE_PROFILE="${PLATFORMINIT_BASELINE_PROFILE:-}"
+if [[ -z "$PLATFORMINIT_BASELINE_PROFILE" && -f /etc/platforminit/host-context.env ]]; then
+  # shellcheck disable=SC1091
+  source /etc/platforminit/host-context.env
+fi
+PLATFORMINIT_BASELINE_PROFILE="${PLATFORMINIT_BASELINE_PROFILE:-platform-k3s}"
+
 mkdir -p "$REPORT_DIR"
 PASS=0; WARN=0; FAIL=0; CHECKS_JSON=""
 json_escape(){ local s=${1:-}; s=${s//\\/\\\\}; s=${s//"/\\"}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}; printf '%s' "$s"; }
@@ -21,6 +29,7 @@ res(){ local sev="$1" id="$2" msg="$3" obs="${4:-}" exp="${5:-}"; case "$sev" in
 md "# CH01 Host validation report"
 md "- Generated: $(date -u +%FT%TZ)"
 md "- Host: $(hostname -f 2>/dev/null || hostname)"
+md "- Baseline profile: ${PLATFORMINIT_BASELINE_PROFILE}"
 
 section "## Users"
 id "$EXPECTED_USER" >/dev/null 2>&1 && res PASS USER_DEVOPS "$EXPECTED_USER exists" || res FAIL USER_DEVOPS "$EXPECTED_USER missing"
@@ -74,7 +83,6 @@ else
   fi
 fi
 
-
 section "## Volume layout"
 if [[ -f /etc/platforminit/host-context.env ]]; then
   # shellcheck disable=SC1091
@@ -104,14 +112,12 @@ check_mount(){
 case "$PLATFORMINIT_VOLUME_LAYOUT" in
   none)
     [[ -d "$PLATFORMINIT_SRV_PATH" ]] && res PASS VOLUME_LAYOUT_NONE "no persistent volume layout selected" "$PLATFORMINIT_SRV_PATH exists" || res FAIL VOLUME_LAYOUT_NONE "$PLATFORMINIT_SRV_PATH missing"
-    # Verify no unexpected Hetzner volume is mounted under /srv for root-disk-only hosts
     if mountpoint -q /srv 2>/dev/null; then
       srv_src="$(findmnt -n -o SOURCE /srv 2>/dev/null || true)"
       res FAIL VOLUME_LAYOUT_NONE_UNEXPECTED_MOUNT "volume_layout=none but /srv is a mountpoint" "source=${srv_src}" "no mount expected"
     else
       res PASS VOLUME_LAYOUT_NONE_NO_MOUNT "volume_layout=none: /srv is not a mountpoint (root-disk-only)"
     fi
-    # Check lsblk for unexpected attached volumes (non-root disks)
     unexpected_disks="$(lsblk -pnro NAME,TYPE,MOUNTPOINT 2>/dev/null | awk -F' ' '$2=="disk" && $3=="" {print $1}' | grep -v "$(lsblk -nlo PKNAME "$(findmnt -n -o SOURCE / 2>/dev/null)" 2>/dev/null)" || true)"
     if [[ -n "$unexpected_disks" ]]; then
       res WARN VOLUME_LAYOUT_NONE_UNEXPECTED_DISK "volume_layout=none but unattached disk(s) detected" "$(echo "$unexpected_disks" | tr '\n' ' ')" "no unattached disks"
@@ -137,6 +143,31 @@ case "$PLATFORMINIT_VOLUME_LAYOUT" in
     ;;
 esac
 
+section "## Baseline profile"
+case "$PLATFORMINIT_BASELINE_PROFILE" in
+  platform-k3s)
+    res PASS BASELINE_PROFILE_VALID "baseline profile: ${PLATFORMINIT_BASELINE_PROFILE} (full k3s host)" "${PLATFORMINIT_BASELINE_PROFILE}" "known profile"
+    # platform-k3s expects k3s-related paths
+    if [[ -f /etc/rancher/k3s/k3s.yaml ]]; then
+      res PASS PROFILE_K3S_CONFIG "k3s config present (expected for platform-k3s profile)"
+    else
+      res WARN PROFILE_K3S_CONFIG "k3s config not present (may not be installed yet)"
+    fi
+    ;;
+  standalone-n8n)
+    res PASS BASELINE_PROFILE_VALID "baseline profile: ${PLATFORMINIT_BASELINE_PROFILE} (standalone n8n, no k3s)" "${PLATFORMINIT_BASELINE_PROFILE}" "known profile"
+    # standalone-n8n should NOT have k3s
+    if [[ -f /etc/rancher/k3s/k3s.yaml ]]; then
+      res WARN PROFILE_N8N_K3S_UNEXPECTED "k3s config present but profile is standalone-n8n (unexpected)"
+    else
+      res PASS PROFILE_N8N_NO_K3S "no k3s config (expected for standalone-n8n profile)"
+    fi
+    ;;
+  *)
+    res FAIL BASELINE_PROFILE_VALID "unknown baseline profile: ${PLATFORMINIT_BASELINE_PROFILE}" "${PLATFORMINIT_BASELINE_PROFILE}" "platform-k3s or standalone-n8n"
+    ;;
+esac
+
 section "## Baseline evidence"
 AUDIT_DIR="${PLATFORMINIT_AUDIT_DIR:-/srv/platforminit/audit}"
 LEGACY_AUDIT_DIR="/var/lib/platforminit/audit"
@@ -158,6 +189,7 @@ cat > "$REPORT_JSON" <<EOFJSON
   "generated_at": "$(date -u +%FT%TZ)",
   "host": "$(hostname -f 2>/dev/null || hostname)",
   "profile": "ch01-host-validator-v2",
+  "baseline_profile": "$(json_escape "$PLATFORMINIT_BASELINE_PROFILE")",
   "checks": [
 $CHECKS_JSON
   ],

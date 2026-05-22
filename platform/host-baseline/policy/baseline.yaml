@@ -1,64 +1,104 @@
 version: 2
-profile: ch01-policy-driven
-packages:
-  common:
-    - ca-certificates
-    - curl
-    - git
-    - jq
-    - unzip
-    - vim-tiny
-  security:
-    - auditd
-    - fail2ban
-    - unattended-upgrades
+profile: ch02-profile-separation
 
-users:
-  devops:
-    shell: /bin/bash
-    groups: [sudo]
-    sudo_mode: grant_only
-    ssh_authorized_keys_from: runtime_secret
-  itadmin:
-    shell: /bin/bash
-    groups: [sudo]
-    sudo_mode: grant_only
-    ssh_authorized_keys_from: runtime_secret
+# Shared hardening primitives — applied to ALL profiles.
+# Profile-specific overrides are in the profiles section below.
+shared:
+  packages:
+    common:
+      - ca-certificates
+      - curl
+      - git
+      - jq
+      - unzip
+      - vim-tiny
+    security:
+      - auditd
+      - fail2ban
+      - unattended-upgrades
 
-ssh:
-  password_authentication: "no"
-  permit_root_login: "no"
-  pubkey_authentication: "yes"
-  max_auth_tries: 3
-  x11_forwarding: "no"
-  login_grace_time: 20
-  max_startups: "50:30:200"
+  users:
+    devops:
+      shell: /bin/bash
+      groups: [sudo]
+      sudo_mode: grant_only
+      ssh_authorized_keys_from: runtime_secret
+    itadmin:
+      shell: /bin/bash
+      groups: [sudo]
+      sudo_mode: grant_only
+      ssh_authorized_keys_from: runtime_secret
 
-firewall:
-  default_incoming: deny
-  default_outgoing: allow
-  allow_tcp:
-    - 22
-    - 80
-    - 443
+  ssh:
+    password_authentication: "no"
+    permit_root_login: "no"
+    pubkey_authentication: "yes"
+    max_auth_tries: 3
+    x11_forwarding: "no"
+    login_grace_time: 20
+    max_startups: "50:30:200"
 
-filesystem:
-  srv_mount: /srv
+  firewall:
+    default_incoming: deny
+    default_outgoing: allow
+    allow_tcp:
+      - 22
 
+  filesystem:
+    srv_mount: /srv
 
-fim:
-  required_paths:
-    - /etc/ssh/sshd_config.d/99-platforminit-hardening.conf
-    - /etc/sudoers.d/itadmin-platforminit
-  file_contains:
-    - path: /etc/ssh/sshd_config.d/99-platforminit-hardening.conf
-      contains:
-        - "PermitRootLogin no"
-        - "PasswordAuthentication no"
-        - "PubkeyAuthentication yes"
-        - "AuthorizedKeysFile .ssh/authorized_keys"
-        - "LoginGraceTime 20"
-        - "MaxStartups 50:30:200"
-    - path: /etc/sudoers.d/itadmin-platforminit
-      contains:
-        - "itadmin ALL=(root) NOPASSWD: /usr/local/sbin/platforminit-grant-sudo *"
+  fim:
+    required_paths:
+      - /etc/ssh/sshd_config.d/99-platforminit-hardening.conf
+      - /etc/sudoers.d/itadmin-platforminit
+    file_contains:
+      - path: /etc/ssh/sshd_config.d/99-platforminit-hardening.conf
+        contains:
+          - "PermitRootLogin no"
+          - "PasswordAuthentication no"
+          - "PubkeyAuthentication yes"
+          - "AuthorizedKeysFile .ssh/authorized_keys"
+          - "LoginGraceTime 20"
+          - "MaxStartups 50:30:200"
+      - path: /etc/sudoers.d/itadmin-platforminit
+        contains:
+          - "itadmin ALL=(root) NOPASSWD: /usr/local/sbin/platforminit-grant-sudo *"
+
+# Profile definitions — each profile inherits shared primitives
+# and adds profile-specific packages, firewall rules, and FIM paths.
+profiles:
+  platform-k3s:
+    description: "Full PlatformInit k3s host — Kubernetes, ingress, identity, observability"
+    packages:
+      extra:
+        - containerd
+        - nfs-common
+        - open-iscsi
+    firewall:
+      allow_tcp_extra:
+        - 80
+        - 443
+        - 6443
+    fim:
+      # NOTE: extra_required_paths intentionally empty for baseline FIM.
+      # Runtime-layer files (k3s.yaml, Caddyfile) are owned by later chapters
+      # and must NOT be required during CH02 baseline application.
+      extra_required_paths: []
+      extra_file_contains: []
+
+  standalone-n8n:
+    description: "Standalone n8n host — Docker Compose, Caddy, no Kubernetes"
+    packages:
+      extra:
+        - docker.io
+        - docker-compose-v2
+    firewall:
+      allow_tcp_extra:
+        - 80
+        - 443
+    fim:
+      # NOTE: extra_required_paths intentionally empty for baseline FIM.
+      # Runtime-layer files (k3s.yaml, Caddyfile) are owned by later chapters
+      # and must NOT be required during CH02 baseline application.
+      extra_required_paths: []
+      extra_file_contains: []

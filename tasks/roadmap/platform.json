@@ -63,7 +63,7 @@
       "chapter": "CH01",
       "title": "Implement shared start/rebuild task contract",
       "branch": "batch/platform-ch01-shared-start-rebuild-contract",
-      "status": "todo",
+      "status": "completed",
       "scope": "shared-foundation",
       "shared_foundation": true,
       "consumers": [
@@ -71,7 +71,17 @@
         "n8n"
       ],
       "description": "Make CH01 reusable by platform and n8n tracks without duplicating host lifecycle logic.",
-      "goal": "Make CH01 reusable by platform and n8n tracks without duplicating host lifecycle logic."
+      "goal": "Make CH01 reusable by platform and n8n tracks without duplicating host lifecycle logic.",
+      "acceptance": [
+        "platform track declares P-CH01-T02 as shared foundation in tasks/status/platform.json",
+        "n8n track declares P-CH01-T02 as shared foundation in tasks/status/n8n.json",
+        "Both tracks have project YAML with required fields (project_id, token_secret, server_prefix, layout)",
+        "Track-specific volume layouts are valid per contract (development=split, n8n=none, platforminit=split)",
+        "No duplicate host lifecycle logic exists across tracks (n8n and platform-services must not duplicate CH01 scripts)",
+        "Shared contract document exists at docs/ch01-shared-start-rebuild-contract.md",
+        "Orchestrator scripts are track-aware (--track flag support)",
+        "Shared contract validation script exists and passes"
+      ]
     },
     {
       "id": "P-CH02-T01",

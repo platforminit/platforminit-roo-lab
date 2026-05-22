@@ -92,7 +92,15 @@ for pf in "${PROJECT_FILES[@]}"; do
   layout="$(grep -E 'layout:' "$pf" | awk '{print $2}' || true)"
 
   [[ -n "$pid" ]] && res PASS "PROJECT_ID_${pname^^}" "${pname}: project_id=${pid}" || res FAIL "PROJECT_ID_${pname^^}" "${pname}: project_id missing"
-  [[ -n "$token" ]] && res PASS "TOKEN_SECRET_${pname^^}" "${pname}: token_secret=${token}" || res FAIL "TOKEN_SECRET_${pname^^}" "${pname}: token_secret missing"
+  if [[ -n "$token" ]]; then
+    if [[ "$token" =~ ^HCLOUD_TOKEN_ ]]; then
+      res PASS "TOKEN_SECRET_${pname^^}" "${pname}: token_secret=HCLOUD_TOKEN_*** (valid pattern)" "secret-name-valid"
+    else
+      res FAIL "TOKEN_SECRET_${pname^^}" "${pname}: token_secret does not match HCLOUD_TOKEN_* pattern" "secret-name-invalid"
+    fi
+  else
+    res FAIL "TOKEN_SECRET_${pname^^}" "${pname}: token_secret missing"
+  fi
   [[ -n "$prefix" ]] && res PASS "SERVER_PREFIX_${pname^^}" "${pname}: server_prefix=${prefix}" || res FAIL "SERVER_PREFIX_${pname^^}" "${pname}: server_prefix missing"
   [[ -n "$layout" ]] && res PASS "VOLUME_LAYOUT_${pname^^}" "${pname}: layout=${layout}" || res FAIL "VOLUME_LAYOUT_${pname^^}" "${pname}: layout missing"
 done
@@ -186,21 +194,21 @@ n8n_token="$(grep -E 'token_secret:' "${PROJECTS_DIR}/n8n.yaml" 2>/dev/null | aw
 plat_token="$(grep -E 'token_secret:' "${PROJECTS_DIR}/platforminit.yaml" 2>/dev/null | awk '{print $2}' || true)"
 
 if [[ "$dev_token" == "HCLOUD_TOKEN_DEVELOPMENT" ]]; then
-  res PASS DEV_TOKEN_ROUTING "development token: ${dev_token}" "${dev_token}" "HCLOUD_TOKEN_DEVELOPMENT"
+  res PASS DEV_TOKEN_ROUTING "development token: HCLOUD_TOKEN_DEVELOPMENT (valid)" "HCLOUD_TOKEN_DEVELOPMENT"
 else
-  res FAIL DEV_TOKEN_ROUTING "development token: ${dev_token:-missing}" "${dev_token:-}" "HCLOUD_TOKEN_DEVELOPMENT"
+  res FAIL DEV_TOKEN_ROUTING "development token: unexpected value (expected HCLOUD_TOKEN_DEVELOPMENT)" "secret-name-invalid" "HCLOUD_TOKEN_DEVELOPMENT"
 fi
 
 if [[ "$n8n_token" == "HCLOUD_TOKEN_N8N" ]]; then
-  res PASS N8N_TOKEN_ROUTING "n8n token: ${n8n_token}" "${n8n_token}" "HCLOUD_TOKEN_N8N"
+  res PASS N8N_TOKEN_ROUTING "n8n token: HCLOUD_TOKEN_N8N (valid)" "HCLOUD_TOKEN_N8N"
 else
-  res FAIL N8N_TOKEN_ROUTING "n8n token: ${n8n_token:-missing}" "${n8n_token:-}" "HCLOUD_TOKEN_N8N"
+  res FAIL N8N_TOKEN_ROUTING "n8n token: unexpected value (expected HCLOUD_TOKEN_N8N)" "secret-name-invalid" "HCLOUD_TOKEN_N8N"
 fi
 
 if [[ "$plat_token" == "HCLOUD_TOKEN_PLATFORMINIT" ]]; then
-  res PASS PLATFORMINIT_TOKEN_ROUTING "platforminit token: ${plat_token}" "${plat_token}" "HCLOUD_TOKEN_PLATFORMINIT"
+  res PASS PLATFORMINIT_TOKEN_ROUTING "platforminit token: HCLOUD_TOKEN_PLATFORMINIT (valid)" "HCLOUD_TOKEN_PLATFORMINIT"
 else
-  res FAIL PLATFORMINIT_TOKEN_ROUTING "platforminit token: ${plat_token:-missing}" "${plat_token:-}" "HCLOUD_TOKEN_PLATFORMINIT"
+  res FAIL PLATFORMINIT_TOKEN_ROUTING "platforminit token: unexpected value (expected HCLOUD_TOKEN_PLATFORMINIT)" "secret-name-invalid" "HCLOUD_TOKEN_PLATFORMINIT"
 fi
 
 # --------------------------------------------------
@@ -284,6 +292,12 @@ fi
 section "Documentation contract coverage"
 
 DOCS_DIR="${REPO_ROOT}/docs"
+
+if [[ -f "${DOCS_DIR}/ch01-shared-start-rebuild-contract.md" ]]; then
+  res PASS DOC_SHARED_START_REBUILD "ch01-shared-start-rebuild-contract doc exists"
+else
+  res FAIL DOC_SHARED_START_REBUILD "ch01-shared-start-rebuild-contract doc missing"
+fi
 if [[ -f "${DOCS_DIR}/multi-project-host-discovery-and-volume-layout.md" ]]; then
   res PASS DOC_HOST_DISCOVERY "multi-project-host-discovery doc exists"
 else

@@ -1,6 +1,14 @@
 {
   "schema_version": "2.1",
   "track": "platform",
+  "roadmap_order": [
+    "P-CH01-T01",
+    "P-CH01-T01A",
+    "P-CH01-T02",
+    "P-CH02-T01",
+    "P-CH02-T02",
+    "P-CH03-T01"
+  ],
   "tasks": [
     {
       "id": "P-CH01-T01",
@@ -109,7 +117,7 @@
       "chapter": "CH02",
       "title": "Implement baseline profile separation",
       "branch": "batch/platform-ch02-baseline-profile-separation",
-      "status": "todo",
+      "status": "completed",
       "scope": "shared-foundation",
       "shared_foundation": true,
       "consumers": [
@@ -118,6 +126,33 @@
       ],
       "description": "Separate platform-k3s and standalone-n8n baseline profiles while preserving shared hardening primitives.",
       "goal": "Separate platform-k3s and standalone-n8n baseline profiles while preserving shared hardening primitives."
+    },
+    {
+      "id": "P-CH03-T01",
+      "chapter": "CH03",
+      "title": "Define k3s single-node install and validation contract",
+      "branch": "batch/platform-ch03-k3s-install-validation",
+      "status": "todo",
+      "scope": "platform",
+      "shared_foundation": false,
+      "consumers": [
+        "platform"
+      ],
+      "description": "Define and implement single-node k3s install, kubeconfig, data-dir, service exposure, and reboot survival validation for the platform track.",
+      "acceptance": [
+        "k3s install script exists and is idempotent",
+        "kubeconfig is accessible post-install",
+        "data-dir follows /srv contract",
+        "service exposure works via Traefik",
+        "reboot survival is validated",
+        "validation script exists and passes"
+      ],
+      "forbidden": [
+        "do not run infrastructure workflows",
+        "do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments",
+        "do not expose secret values"
+      ],
+      "goal": "Define and implement single-node k3s install and validation contract for the platform track."
     },
     {
       "id": "PLATFORM-CH01-T01",
@@ -444,7 +479,7 @@
     }
   ],
   "description": "PlatformInit CH01-CH15 roadmap. CH01 host lifecycle and CH02 host baseline are shared foundation capabilities consumed by both platform and n8n tracks.",
-  "current_pointer": "P-CH02-T02",
+  "current_pointer": "P-CH03-T01",
   "shared_foundation_exports": {
     "exported_to_tracks": [
       "platform",
@@ -459,5 +494,5 @@
     ],
     "meaning": "Reusable host lifecycle and baseline contracts consumed by n8n with project=n8n and standalone profile constraints."
   },
-  "updated_at": "2026-05-22T19:09:08.201797+00:00"
+  "updated_at": "2026-05-22T21:30:38.264133+00:00"
 }

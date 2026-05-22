@@ -107,28 +107,74 @@ else
 fi
 
 # ----------------------------
-# /srv volume
+# /srv volume (layout-aware)
 # ----------------------------
 
 hr "## /srv volume"
 
-if mountpoint -q /srv; then
-  res PASS "/srv is mountpoint"
-else
-  res FAIL "/srv is NOT mountpoint"
+# Resolve volume layout from host context if available
+if [[ -f /etc/platforminit/host-context.env ]]; then
+  # shellcheck disable=SC1091
+  source /etc/platforminit/host-context.env
 fi
+PLATFORMINIT_VOLUME_LAYOUT="${PLATFORMINIT_VOLUME_LAYOUT:-single}"
 
-srv_src="$(findmnt -n -o SOURCE /srv 2>/dev/null || true)"
-
-if [[ -n "${srv_src:-}" ]]; then
-  res PASS "/srv source: $srv_src"
-else
-  res WARN "Cannot determine /srv source"
-fi
-
-grep -Eq '^[^#].*[[:space:]]/srv[[:space:]]' /etc/fstab \
-    && res PASS "/srv entry present in fstab" \
-    || res FAIL "/srv entry missing in fstab"
+case "$PLATFORMINIT_VOLUME_LAYOUT" in
+  none)
+    # Root-disk-only host: /srv is a directory, not a mountpoint
+    if [[ -d /srv ]]; then
+      res PASS "/srv exists (volume_layout=none)"
+    else
+      res FAIL "/srv missing (volume_layout=none)"
+    fi
+    # Verify no unexpected Hetzner volume is mounted under /srv
+    unexpected_mounts="$(findmnt -n -o TARGET /srv 2>/dev/null || true)"
+    if [[ -z "$unexpected_mounts" ]]; then
+      res PASS "/srv is not a mountpoint (expected for volume_layout=none)"
+    else
+      res WARN "/srv is unexpectedly a mountpoint for volume_layout=none: $unexpected_mounts"
+    fi
+    ;;
+  single)
+    if mountpoint -q /srv; then
+      res PASS "/srv is mountpoint (volume_layout=single)"
+    else
+      res FAIL "/srv is NOT mountpoint (volume_layout=single)"
+    fi
+    srv_src="$(findmnt -n -o SOURCE /srv 2>/dev/null || true)"
+    if [[ -n "${srv_src:-}" ]]; then
+      res PASS "/srv source: $srv_src"
+    else
+      res WARN "Cannot determine /srv source"
+    fi
+    grep -Eq '^[^#].*[[:space:]]/srv[[:space:]]' /etc/fstab \
+        && res PASS "/srv entry present in fstab" \
+        || res FAIL "/srv entry missing in fstab"
+    ;;
+  split)
+    # Split layout: /srv itself should NOT be a mountpoint
+    if mountpoint -q /srv; then
+      res WARN "/srv is a mountpoint but volume_layout=split expects subdirectory mounts"
+    else
+      res PASS "/srv is not a mountpoint (volume_layout=split)"
+    fi
+    for sub in /srv/data /srv/db /srv/observability; do
+      if mountpoint -q "$sub"; then
+        res PASS "${sub} is mountpoint (volume_layout=split)"
+      else
+        res FAIL "${sub} is NOT mountpoint (volume_layout=split)"
+      fi
+    done
+    ;;
+  *)
+    res WARN "Unknown volume_layout: $PLATFORMINIT_VOLUME_LAYOUT"
+    if mountpoint -q /srv; then
+      res PASS "/srv is mountpoint (unknown layout)"
+    else
+      res FAIL "/srv is NOT mountpoint"
+    fi
+    ;;
+esac
 
 # ----------------------------
 # SSH

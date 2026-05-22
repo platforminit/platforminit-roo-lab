@@ -22,7 +22,16 @@ PlatformInit OWASP Reviewer
   MUST_FIX -> switch_mode: platforminit-deepseek-coder
 
 PlatformInit Release Manager
-  -> final human commit/PR/merge handoff
+  -> detect active task ID
+  -> verify changed files and validation evidence
+  -> create scoped implementation commit
+  -> push branch
+  -> open PR via gh CLI (or BLOCKED_BY_TOOLING if unavailable)
+  -> after merge: run close-current-task.sh
+  -> verify status/roadmap/NEXT_TASK agreement
+  -> commit/push closure metadata
+  -> start or prepare next task
+  -> never stop at "human commit pending" unless BLOCKED_BY_PERMISSION or BLOCKED_BY_TOOLING
 ```
 
 ## Contract rules

@@ -3,15 +3,15 @@
 ## Task
 
 - Track: `platform`
-- Task ID: `P-CH02-T01`
+- Task ID: `P-CH02-T02`
 - Chapter: `CH02`
-- Title: Validate shared host baseline contract
-- Branch: `batch/platform-ch02-host-baseline-contract`
+- Title: Implement baseline profile separation
+- Branch: `batch/platform-ch02-baseline-profile-separation`
 - Scope: `shared-foundation`
 
 ## Goal
 
-Validate CH02 baseline behavior for Kubernetes platform hosts and standalone n8n hosts.
+Separate platform-k3s and standalone-n8n baseline profiles while preserving shared hardening primitives.
 
 ## Shared foundation model
 
@@ -21,10 +21,7 @@ No same-track dependency is declared for this current pointer.
 
 ## Acceptance criteria
 
-- baseline works for Kubernetes platform hosts
-- baseline works for standalone n8n hosts without requiring k3s
-- volume_layout none does not fail mount-dependent checks
-- A1 access/sudo grant contract remains non-interactive
+- Acceptance criteria must be refined during task execution.
 
 ## Forbidden actions
 

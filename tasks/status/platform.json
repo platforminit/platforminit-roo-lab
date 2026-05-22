@@ -1,7 +1,7 @@
 {
   "schema_version": "2.1",
   "track": "platform",
-  "current_pointer": "P-CH01-T02",
+  "current_pointer": "P-CH02-T01",
   "tasks": [
     {
       "id": "P-CH01-T01",
@@ -21,7 +21,7 @@
     {
       "id": "P-CH01-T02",
       "title": "Implement shared start/rebuild task contract",
-      "status": "todo",
+      "status": "completed",
       "branch": "batch/platform-ch01-shared-start-rebuild-contract",
       "chapter": "CH01",
       "scope": "shared-foundation",
@@ -31,7 +31,8 @@
         "n8n"
       ],
       "depends_on": [],
-      "depends_on_platform_tasks": []
+      "depends_on_platform_tasks": [],
+      "completed_at": "2026-05-22T11:49:04.841495+00:00"
     },
     {
       "id": "P-CH02-T01",
@@ -267,5 +268,6 @@
       "depends_on": [],
       "depends_on_platform_tasks": []
     }
-  ]
+  ],
+  "updated_at": "2026-05-22T11:49:04.841562+00:00"
 }

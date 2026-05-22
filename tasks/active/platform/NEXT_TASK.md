@@ -3,15 +3,15 @@
 ## Task
 
 - Track: `platform`
-- Task ID: `P-CH01-T02`
-- Chapter: `CH01`
-- Title: Implement shared start/rebuild task contract
-- Branch: `batch/platform-ch01-shared-start-rebuild-contract`
+- Task ID: `P-CH02-T01`
+- Chapter: `CH02`
+- Title: Validate shared host baseline contract
+- Branch: `batch/platform-ch02-host-baseline-contract`
 - Scope: `shared-foundation`
 
 ## Goal
 
-Make CH01 reusable by platform and n8n tracks without duplicating host lifecycle logic.
+Validate CH02 baseline behavior for Kubernetes platform hosts and standalone n8n hosts.
 
 ## Shared foundation model
 
@@ -21,7 +21,10 @@ No same-track dependency is declared for this current pointer.
 
 ## Acceptance criteria
 
-- Acceptance criteria must be refined during task execution.
+- baseline works for Kubernetes platform hosts
+- baseline works for standalone n8n hosts without requiring k3s
+- volume_layout none does not fail mount-dependent checks
+- A1 access/sudo grant contract remains non-interactive
 
 ## Forbidden actions
 

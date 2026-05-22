@@ -8,7 +8,7 @@ This file is the active task source for PlatformInit Roo Lab.
 - Primary branch: `dev`
 - Current work branch: `batch/roo-role-handoff-rehearsal-v2`
 - Target role: full-access dev workflow rehearsal repository
-- Disposable target host: `platforminit-dev-01`
+- Disposable target host: `platforminit-dev-01` (current example — derived from platform/projects/development.yaml server_prefix + default index)
 - Stable recovery source: `platforminit-platform`
 
 ## Active work package

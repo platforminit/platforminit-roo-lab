@@ -49,13 +49,13 @@ Only two CH05 workflow files remain in `.github/workflows/`: `05 - Operations Mo
 |---|---|
 | Provider | Hetzner Cloud |
 | Active project | `development` |
-| Development host | `platforminit-dev-01` |
+| Development host (current example) | `platforminit-dev-01` |
 | Base domain | `sysadminhomelab.hu` |
 | Kubernetes | single-node k3s |
 | Public operational UI | Checkmk Community |
 | Public identity UI | Authentik |
 
-Deprecated development host aliases must not be used; the only valid development host contract is `platforminit-dev-01`.
+Deprecated development host aliases must not be used. The current resolver-derived development hostname is `platforminit-dev-01` (current example — derived from `platform/projects/development.yaml` `server_prefix` + default index).
 
 ## CH05 operations monitoring
 

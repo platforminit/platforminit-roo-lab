@@ -1,3 +1,6 @@
+# Current example — development project registry entry.
+# server_prefix + default server index (-01) currently derives platforminit-dev-01.
+# This is a resolver-derived value, not a permanent invariant.
 project_id: development
 hetzner:
   token_secret: HCLOUD_TOKEN_DEVELOPMENT

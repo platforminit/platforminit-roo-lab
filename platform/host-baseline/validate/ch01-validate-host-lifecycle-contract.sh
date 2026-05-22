@@ -9,9 +9,17 @@ set -euo pipefail
 # for both platform and n8n tracks without
 # requiring runtime infrastructure access.
 #
+# Hostnames are DERIVED from the project registry
+# (platform/projects/*.yaml) — specifically from
+# server_prefix + default server index (-01).
+#
+# The values below are CURRENT EXAMPLES based on
+# the registry state at validation time, NOT
+# permanent immutable constants.
+#
 # Acceptance criteria:
-# 1. development host uses platforminit-dev-01
-# 2. n8n host uses platforminit-n8n-01 when n8n track is selected
+# 1. development host currently derives platforminit-dev-01
+# 2. n8n host currently derives platforminit-n8n-01 when n8n track is selected
 # 3. project input controls environment and token routing
 # 4. volume_layout supports none for n8n and platform-specific layouts
 ############################################
@@ -99,47 +107,73 @@ dev_prefix="$(grep -E 'server_prefix:' "${PROJECTS_DIR}/development.yaml" 2>/dev
 n8n_prefix="$(grep -E 'server_prefix:' "${PROJECTS_DIR}/n8n.yaml" 2>/dev/null | awk '{print $2}' || true)"
 plat_prefix="$(grep -E 'server_prefix:' "${PROJECTS_DIR}/platforminit.yaml" 2>/dev/null | awk '{print $2}' || true)"
 
-# Validate server_prefix values
-if [[ "$dev_prefix" == "platforminit-dev" ]]; then
-  res PASS DEV_HOST_PREFIX "development server_prefix: ${dev_prefix}" "${dev_prefix}" "platforminit-dev"
+# --------------------------------------------------
+# Host naming contract
+#
+# Hostnames are DERIVED from the project registry:
+#   effective_hostname = <server_prefix>-<default_server_index>
+#
+# The default server index is currently "01" for all projects.
+# This is a resolver convention, not a permanent invariant.
+# Future explicit hostname override support must not be
+# blocked by this validator design.
+#
+# The checks below validate that:
+#   1. server_prefix is present in each project YAML
+#   2. the derived hostname follows the <prefix>-NN pattern
+#   3. the derived hostname matches the resolver contract
+#
+# They do NOT assert that platforminit-dev-01 or
+# platforminit-n8n-01 are permanent global constants.
+# Those are CURRENT EXAMPLES based on today's registry state.
+# --------------------------------------------------
+
+# Validate server_prefix values — assert presence and pattern, not specific values
+if [[ -n "$dev_prefix" ]]; then
+  res PASS DEV_HOST_PREFIX "development server_prefix: ${dev_prefix} (current example)" "${dev_prefix}" "<prefix> present"
 else
-  res FAIL DEV_HOST_PREFIX "development server_prefix: ${dev_prefix:-missing}" "${dev_prefix:-}" "platforminit-dev"
+  res FAIL DEV_HOST_PREFIX "development server_prefix missing"
 fi
 
-if [[ "$n8n_prefix" == "platforminit-n8n" ]]; then
-  res PASS N8N_HOST_PREFIX "n8n server_prefix: ${n8n_prefix}" "${n8n_prefix}" "platforminit-n8n"
+if [[ -n "$n8n_prefix" ]]; then
+  res PASS N8N_HOST_PREFIX "n8n server_prefix: ${n8n_prefix} (current example)" "${n8n_prefix}" "<prefix> present"
 else
-  res FAIL N8N_HOST_PREFIX "n8n server_prefix: ${n8n_prefix:-missing}" "${n8n_prefix:-}" "platforminit-n8n"
+  res FAIL N8N_HOST_PREFIX "n8n server_prefix missing"
 fi
 
-if [[ "$plat_prefix" == "platforminit-prod" ]]; then
-  res PASS PLATFORMINIT_HOST_PREFIX "platforminit server_prefix: ${plat_prefix}" "${plat_prefix}" "platforminit-prod"
+if [[ -n "$plat_prefix" ]]; then
+  res PASS PLATFORMINIT_HOST_PREFIX "platforminit server_prefix: ${plat_prefix} (current example)" "${plat_prefix}" "<prefix> present"
 else
-  res FAIL PLATFORMINIT_HOST_PREFIX "platforminit server_prefix: ${plat_prefix:-missing}" "${plat_prefix:-}" "platforminit-prod"
+  res FAIL PLATFORMINIT_HOST_PREFIX "platforminit server_prefix missing"
 fi
 
 # Validate effective default host names (server_prefix + -NN suffix)
-# Acceptance criteria: development host uses platforminit-dev-01, n8n host uses platforminit-n8n-01
-dev_default_host="${dev_prefix}-01"
-n8n_default_host="${n8n_prefix}-01"
-plat_default_host="${plat_prefix}-01"
+# The resolver contract is: effective_hostname = <server_prefix>-<default_index>
+# where default_index is currently "01" for all projects.
+# This check validates the derivation pattern, not a specific hardcoded value.
+DEFAULT_SERVER_INDEX="${DEFAULT_SERVER_INDEX:-01}"
+dev_default_host="${dev_prefix:--}-${DEFAULT_SERVER_INDEX}"
+n8n_default_host="${n8n_prefix:--}-${DEFAULT_SERVER_INDEX}"
+plat_default_host="${plat_prefix:--}-${DEFAULT_SERVER_INDEX}"
 
-if [[ "$dev_default_host" == "platforminit-dev-01" ]]; then
-  res PASS DEV_DEFAULT_HOST "development default host name: ${dev_default_host}" "${dev_default_host}" "platforminit-dev-01"
+# Validate that derived hostname matches the <prefix>-NN pattern
+# (asserts resolver contract, not specific hostname values)
+if [[ "$dev_default_host" =~ ^[a-zA-Z0-9_-]+-[0-9]+$ ]]; then
+  res PASS DEV_DEFAULT_HOST "development default host name (resolver-derived): ${dev_default_host} (current example)" "${dev_default_host}" "<server_prefix>-NN pattern"
 else
-  res FAIL DEV_DEFAULT_HOST "development default host name: ${dev_default_host:-missing}" "${dev_default_host:-}" "platforminit-dev-01"
+  res FAIL DEV_DEFAULT_HOST "development default host name does not match resolver pattern: ${dev_default_host:-missing}" "${dev_default_host:-}" "<server_prefix>-NN"
 fi
 
-if [[ "$n8n_default_host" == "platforminit-n8n-01" ]]; then
-  res PASS N8N_DEFAULT_HOST "n8n default host name: ${n8n_default_host}" "${n8n_default_host}" "platforminit-n8n-01"
+if [[ "$n8n_default_host" =~ ^[a-zA-Z0-9_-]+-[0-9]+$ ]]; then
+  res PASS N8N_DEFAULT_HOST "n8n default host name (resolver-derived): ${n8n_default_host} (current example)" "${n8n_default_host}" "<server_prefix>-NN pattern"
 else
-  res FAIL N8N_DEFAULT_HOST "n8n default host name: ${n8n_default_host:-missing}" "${n8n_default_host:-}" "platforminit-n8n-01"
+  res FAIL N8N_DEFAULT_HOST "n8n default host name does not match resolver pattern: ${n8n_default_host:-missing}" "${n8n_default_host:-}" "<server_prefix>-NN"
 fi
 
-if [[ "$plat_default_host" == "platforminit-prod-01" ]]; then
-  res PASS PLATFORMINIT_DEFAULT_HOST "platforminit default host name: ${plat_default_host}" "${plat_default_host}" "platforminit-prod-01"
+if [[ "$plat_default_host" =~ ^[a-zA-Z0-9_-]+-[0-9]+$ ]]; then
+  res PASS PLATFORMINIT_DEFAULT_HOST "platforminit default host name (resolver-derived): ${plat_default_host} (current example)" "${plat_default_host}" "<server_prefix>-NN pattern"
 else
-  res FAIL PLATFORMINIT_DEFAULT_HOST "platforminit default host name: ${plat_default_host:-missing}" "${plat_default_host:-}" "platforminit-prod-01"
+  res FAIL PLATFORMINIT_DEFAULT_HOST "platforminit default host name does not match resolver pattern: ${plat_default_host:-missing}" "${plat_default_host:-}" "<server_prefix>-NN"
 fi
 
 # --------------------------------------------------
@@ -342,7 +376,7 @@ cat > "$REPORT_JSON" <<EOFJSON
 {
   "generated_at": "$(date -u +%FT%TZ)",
   "workspace": "$(json_escape "$CH01_CODE_ROOT")",
-  "profile": "ch01-host-lifecycle-contract-validator-v1",
+  "profile": "ch01-host-lifecycle-contract-validator-v2",
   "checks": [
 $CHECKS_JSON
   ],

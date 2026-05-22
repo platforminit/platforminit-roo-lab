@@ -230,96 +230,101 @@ else
 fi
 
 # ----------------------------
-# k3s core
+# k3s core (layout-aware)
 # ----------------------------
 
-hr "## k3s"
-
-systemctl is-active --quiet k3s \
-  && res PASS "k3s service active" \
-  || res FAIL "k3s service NOT active"
-
-dd="$(k3s_data_dir)"
-
-if [[ -d "$dd" ]]; then
-  res PASS "k3s data-dir: $dd"
+if [[ "${PLATFORMINIT_VOLUME_LAYOUT}" == "none" ]]; then
+  hr "## k3s (skipped — volume_layout=none, standalone host)"
+  res PASS "K3S_SKIPPED" "k3s checks skipped (volume_layout=none, standalone n8n host)"
 else
-  res WARN "k3s data-dir not found: $dd"
-fi
+  hr "## k3s"
 
-# Legacy /srv/k3s and /var/lib/rancher/k3s are not valid target paths for PlatformInit.
-# k3s_data_dir() validates the configured layout-aware data-dir.
+  systemctl is-active --quiet k3s \
+    && res PASS "k3s service active" \
+    || res FAIL "k3s service NOT active"
 
-# ----------------------------
-# kubectl
-# ----------------------------
+  dd="$(k3s_data_dir)"
 
-if cmd_ok kubectl; then
-  if kubectl get nodes >/dev/null 2>&1; then
-      res PASS "kubectl can access cluster"
+  if [[ -d "$dd" ]]; then
+    res PASS "k3s data-dir: $dd"
   else
-      res FAIL "kubectl cannot access cluster"
-  fi
-else
-  res FAIL "kubectl not installed"
-fi
-
-# ----------------------------
-# Host ports (Traefik truth)
-# ----------------------------
-
-hr "## Host ports"
-
-if cmd_ok kubectl && kubectl -n kube-system get svc traefik >/dev/null 2>&1; then
-
-  T_TYPE="$(kubectl -n kube-system get svc traefik -o jsonpath='{.spec.type}')"
-  T_PORTS="$(kubectl -n kube-system get svc traefik -o jsonpath='{range .spec.ports[*]}{.port}{" "}{end}')"
-
-  if echo " $T_PORTS " | grep -q " 80 " && echo " $T_PORTS " | grep -q " 443 "; then
-      res PASS "Ingress ports 80/443 via traefik svc ($T_TYPE)"
-  else
-      res WARN "traefik svc present but ports not 80/443: $T_PORTS"
+    res WARN "k3s data-dir not found: $dd"
   fi
 
-else
+  # Legacy /srv/k3s and /var/lib/rancher/k3s are not valid target paths for PlatformInit.
+  # k3s_data_dir() validates the configured layout-aware data-dir.
 
-  if ss -lnt 2>/dev/null | grep -qE ':(80|443)'; then
-      ss -lnt | grep -q ':80' \
-          && res PASS "port 80 listening" \
-          || res WARN "port 80 not detected"
+  # ----------------------------
+  # kubectl
+  # ----------------------------
 
-      ss -lnt | grep -q ':443' \
-          && res PASS "port 443 listening" \
-          || res WARN "port 443 not detected"
+  if cmd_ok kubectl; then
+    if kubectl get nodes >/dev/null 2>&1; then
+        res PASS "kubectl can access cluster"
+    else
+        res FAIL "kubectl cannot access cluster"
+    fi
   else
-      res WARN "ports 80/443 not visible (k8s/iptables/LB may be used)"
+    res FAIL "kubectl not installed"
   fi
 
-fi
+  # ----------------------------
+  # Host ports (Traefik truth)
+  # ----------------------------
 
-# ----------------------------
-# DNS
-# ----------------------------
+  hr "## Host ports"
 
-hr "## DNS"
+  if cmd_ok kubectl && kubectl -n kube-system get svc traefik >/dev/null 2>&1; then
 
-hostname_dns="k3s.sysadminhomelab.hu"
+    T_TYPE="$(kubectl -n kube-system get svc traefik -o jsonpath='{.spec.type}')"
+    T_PORTS="$(kubectl -n kube-system get svc traefik -o jsonpath='{range .spec.ports[*]}{.port}{" "}{end}')"
 
-dns_ip="$(getent ahostsv4 "$hostname_dns" 2>/dev/null | awk '{print $1; exit}' || true)"
-pub_ip="$(get_public_ipv4)"
+    if echo " $T_PORTS " | grep -q " 80 " && echo " $T_PORTS " | grep -q " 443 "; then
+        res PASS "Ingress ports 80/443 via traefik svc ($T_TYPE)"
+    else
+        res WARN "traefik svc present but ports not 80/443: $T_PORTS"
+    fi
 
-if [[ -n "${dns_ip:-}" ]]; then
-
-  res PASS "DNS A record: $dns_ip"
-
-  if [[ -n "${pub_ip:-}" && "$dns_ip" == "$pub_ip" ]]; then
-      res PASS "DNS matches public IP"
   else
-      res WARN "DNS does not match public IP"
+
+    if ss -lnt 2>/dev/null | grep -qE ':(80|443)'; then
+        ss -lnt | grep -q ':80' \
+            && res PASS "port 80 listening" \
+            || res WARN "port 80 not detected"
+
+        ss -lnt | grep -q ':443' \
+            && res PASS "port 443 listening" \
+            || res WARN "port 443 not detected"
+    else
+        res WARN "ports 80/443 not visible (k8s/iptables/LB may be used)"
+    fi
+
   fi
 
-else
-  res WARN "DNS resolution failed"
+  # ----------------------------
+  # DNS
+  # ----------------------------
+
+  hr "## DNS"
+
+  hostname_dns="k3s.sysadminhomelab.hu"
+
+  dns_ip="$(getent ahostsv4 "$hostname_dns" 2>/dev/null | awk '{print $1; exit}' || true)"
+  pub_ip="$(get_public_ipv4)"
+
+  if [[ -n "${dns_ip:-}" ]]; then
+
+    res PASS "DNS A record: $dns_ip"
+
+    if [[ -n "${pub_ip:-}" && "$dns_ip" == "$pub_ip" ]]; then
+        res PASS "DNS matches public IP"
+    else
+        res WARN "DNS does not match public IP"
+    fi
+
+  else
+    res WARN "DNS resolution failed"
+  fi
 fi
 
 # ----------------------------

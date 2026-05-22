@@ -363,6 +363,93 @@ else
 fi
 
 # --------------------------------------------------
+# Section 9: CH02 baseline contract — volume_layout=none handling
+# --------------------------------------------------
+section "CH02 baseline contract — volume_layout=none handling"
+
+CH02_VALIDATE_HOST="${REPO_ROOT}/platform/cluster/validate/validate-host.sh"
+if [[ -f "$CH02_VALIDATE_HOST" ]]; then
+  # Check that k3s checks are guarded by volume_layout=none
+  if grep -qE 'k3s.*skipped.*volume_layout=none|K3S_SKIPPED' "$CH02_VALIDATE_HOST"; then
+    res PASS CH02_VALIDATE_NONE_K3S_SKIP "validate-host.sh skips k3s checks for volume_layout=none" "skip logic present" "skip logic required"
+  else
+    res FAIL CH02_VALIDATE_NONE_K3S_SKIP "validate-host.sh missing volume_layout=none k3s skip logic"
+  fi
+  # Check that the volume_layout=none case does not call kubectl
+  if grep -qE 'if.*PLATFORMINIT_VOLUME_LAYOUT.*none' "$CH02_VALIDATE_HOST"; then
+    res PASS CH02_VALIDATE_NONE_GUARD "validate-host.sh guards k3s/kubectl behind volume_layout=none check" "guard present" "guard required"
+  else
+    res FAIL CH02_VALIDATE_NONE_GUARD "validate-host.sh missing volume_layout=none guard for k3s/kubectl"
+  fi
+else
+  res FAIL CH02_VALIDATE_HOST_EXISTS "validate-host.sh not found at ${CH02_VALIDATE_HOST}"
+fi
+
+# --------------------------------------------------
+# Section 10: CH02 baseline contract — A1 access/sudo grant non-interactive
+# --------------------------------------------------
+section "CH02 baseline contract — A1 access/sudo grant non-interactive"
+
+GRANT_SCRIPT="${REPO_ROOT}/platform/host-baseline/scripts/grant-temporary-sudo.sh"
+if [[ -f "$GRANT_SCRIPT" ]]; then
+  # Check that grant-temporary-sudo.sh does not require interactive input
+  if grep -qE 'read\s+(-p|-r|-s)?\s' "$GRANT_SCRIPT"; then
+    res FAIL GRANT_NON_INTERACTIVE "grant-temporary-sudo.sh uses interactive read — violates A1 non-interactive contract" "interactive read found" "no interactive input"
+  else
+    res PASS GRANT_NON_INTERACTIVE "grant-temporary-sudo.sh is non-interactive (no read calls)" "non-interactive" "non-interactive required"
+  fi
+  # Check that grant-temporary-sudo.sh accepts positional args (non-interactive contract)
+  if grep -qE '^USER_NAME="\$\{1:-devops\}"' "$GRANT_SCRIPT"; then
+    res PASS GRANT_POSITIONAL_ARGS "grant-temporary-sudo.sh accepts positional args (non-interactive contract)" "positional args" "positional args required"
+  else
+    res FAIL GRANT_POSITIONAL_ARGS "grant-temporary-sudo.sh missing positional arg handling for non-interactive contract"
+  fi
+  # Check that the sudoers drop-in is scoped (not NOPASSWD:ALL for baseline scope)
+  if grep -qE 'scope_sudoers_content\s+"\$SCOPE"' "$GRANT_SCRIPT"; then
+    res PASS GRANT_SCOPED_SUDOERS "grant-temporary-sudo.sh uses scoped sudoers content per SCOPE" "scoped" "scoped required"
+  else
+    res FAIL GRANT_SCOPED_SUDOERS "grant-temporary-sudo.sh missing scoped sudoers content"
+  fi
+  # Check that interactive-elevation scope verifies with runuser (non-interactive verification)
+  if grep -qE 'runuser.*sudo -n true' "$GRANT_SCRIPT"; then
+    res PASS GRANT_INTERACTIVE_VERIFICATION "interactive-elevation scope verifies with runuser (non-interactive verification)" "runuser verification" "runuser verification required"
+  else
+    res FAIL GRANT_INTERACTIVE_VERIFICATION "interactive-elevation scope missing runuser verification"
+  fi
+else
+  res FAIL GRANT_SCRIPT_EXISTS "grant-temporary-sudo.sh not found at ${GRANT_SCRIPT}"
+fi
+
+# --------------------------------------------------
+# Section 11: CH02 baseline contract — apply-baseline-remote.sh layout awareness
+# --------------------------------------------------
+section "CH02 baseline contract — apply-baseline-remote.sh layout awareness"
+
+APPLY_REMOTE="${REPO_ROOT}/platform/host-baseline/remote/apply-baseline-remote.sh"
+if [[ -f "$APPLY_REMOTE" ]]; then
+  # Check that apply-baseline-remote.sh handles volume_layout=none
+  if grep -qE 'none\)' "$APPLY_REMOTE"; then
+    res PASS APPLY_REMOTE_NONE_CASE "apply-baseline-remote.sh handles volume_layout=none" "none case present" "none case required"
+  else
+    res FAIL APPLY_REMOTE_NONE_CASE "apply-baseline-remote.sh missing volume_layout=none case"
+  fi
+  # Check that apply-baseline-remote.sh resolves runtime root per layout
+  if grep -qE 'resolve_runtime_root' "$APPLY_REMOTE"; then
+    res PASS APPLY_REMOTE_RUNTIME_ROOT "apply-baseline-remote.sh resolves runtime root per layout" "resolve_runtime_root present" "layout-aware runtime root required"
+  else
+    res FAIL APPLY_REMOTE_RUNTIME_ROOT "apply-baseline-remote.sh missing layout-aware runtime root resolution"
+  fi
+  # Check that apply-baseline-remote.sh resolves audit dir per layout
+  if grep -qE 'resolve_audit_dir' "$APPLY_REMOTE"; then
+    res PASS APPLY_REMOTE_AUDIT_DIR "apply-baseline-remote.sh resolves audit dir per layout" "resolve_audit_dir present" "layout-aware audit dir required"
+  else
+    res FAIL APPLY_REMOTE_AUDIT_DIR "apply-baseline-remote.sh missing layout-aware audit dir resolution"
+  fi
+else
+  res FAIL APPLY_REMOTE_EXISTS "apply-baseline-remote.sh not found at ${APPLY_REMOTE}"
+fi
+
+# --------------------------------------------------
 # Summary
 # --------------------------------------------------
 section "Summary"

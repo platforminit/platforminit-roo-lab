@@ -94,6 +94,48 @@ To add a new track that consumes CH01:
 3. Run the shared contract validation to confirm the new track is compatible.
 4. No CH01 lifecycle code changes should be needed — the contract is generic.
 
+## CH02 baseline contract extension
+
+The CH02 host baseline contract extends the shared foundation with layout-aware
+validation that works for both Kubernetes platform hosts and standalone n8n hosts.
+
+### Layout-aware validation
+
+| Layout | Host type | k3s checks | Volume checks |
+|---|---|---|---|
+| `split` | Kubernetes platform host | Required (k3s, kubectl, Traefik, cert-manager, Argo CD) | `/srv/data`, `/srv/db`, `/srv/observability` mountpoints |
+| `single` | Single-volume host | Required | `/srv` mountpoint |
+| `none` | Standalone n8n host | Skipped (no k3s dependency) | `/srv` directory exists, no unexpected mounts |
+
+### Acceptance criteria (P-CH02-T01)
+
+1. **Baseline works for Kubernetes platform hosts** — `volume_layout=split` or `single`
+   runs full k3s, kubectl, Traefik, cert-manager, and Argo CD validation.
+2. **Baseline works for standalone n8n hosts without requiring k3s** —
+   `volume_layout=none` skips all k3s-dependent checks and reports them as SKIP,
+   not FAIL.
+3. **`volume_layout=none` does not fail mount-dependent checks** — The `/srv`
+   volume section validates that `/srv` exists as a directory and is not an
+   unexpected mountpoint. No mountpoint assertion fails for `none` layout.
+4. **A1 access/sudo grant contract remains non-interactive** — The
+   [`grant-temporary-sudo.sh`](../platform/host-baseline/scripts/grant-temporary-sudo.sh)
+   script accepts positional arguments, uses scoped sudoers content, and does not
+   require interactive input. The `interactive-elevation` scope verifies with
+   `runuser` (non-interactive verification).
+
+### Validation
+
+Run the lifecycle contract validation to confirm CH02 baseline contract compliance:
+
+```bash
+./platform/host-baseline/validate/ch01-validate-host-lifecycle-contract.sh
+```
+
+This validates:
+- `validate-host.sh` skips k3s checks for `volume_layout=none`
+- `grant-temporary-sudo.sh` is non-interactive (no `read` calls, positional args)
+- `apply-baseline-remote.sh` handles `volume_layout=none` and resolves runtime root/audit dir per layout
+
 ## Failure modes
 
 | Failure | Impact | Recovery |

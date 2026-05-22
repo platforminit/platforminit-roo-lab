@@ -1,7 +1,7 @@
 {
   "schema_version": "2.1",
   "track": "platform",
-  "current_pointer": "P-CH02-T02",
+  "current_pointer": "P-CH03-T01",
   "tasks": [
     {
       "id": "P-CH01-T01",
@@ -53,7 +53,7 @@
     {
       "id": "P-CH02-T02",
       "title": "Implement baseline profile separation",
-      "status": "todo",
+      "status": "completed",
       "branch": "batch/platform-ch02-baseline-profile-separation",
       "chapter": "CH02",
       "scope": "shared-foundation",
@@ -61,6 +61,21 @@
       "consumers": [
         "platform",
         "n8n"
+      ],
+      "depends_on": [],
+      "depends_on_platform_tasks": [],
+      "completed_at": "2026-05-22T21:30:38.263997+00:00"
+    },
+    {
+      "id": "P-CH03-T01",
+      "title": "Define k3s single-node install and validation contract",
+      "status": "todo",
+      "branch": "batch/platform-ch03-k3s-install-validation",
+      "chapter": "CH03",
+      "scope": "platform",
+      "shared_foundation": false,
+      "consumers": [
+        "platform"
       ],
       "depends_on": [],
       "depends_on_platform_tasks": []
@@ -270,5 +285,5 @@
       "depends_on_platform_tasks": []
     }
   ],
-  "updated_at": "2026-05-22T19:09:08.201797+00:00"
+  "updated_at": "2026-05-22T21:30:38.264133+00:00"
 }

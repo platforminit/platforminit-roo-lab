@@ -3,15 +3,15 @@
 ## Task
 
 - Track: `platform`
-- Task ID: `P-CH02-T02`
-- Chapter: `CH02`
-- Title: Implement baseline profile separation
-- Branch: `batch/platform-ch02-baseline-profile-separation`
-- Scope: `shared-foundation`
+- Task ID: `P-CH03-T01`
+- Chapter: `CH03`
+- Title: Define k3s single-node install and validation contract
+- Branch: `batch/platform-ch03-k3s-install-validation`
+- Scope: `platform`
 
 ## Goal
 
-Separate platform-k3s and standalone-n8n baseline profiles while preserving shared hardening primitives.
+Define and implement single-node k3s install and validation contract for the platform track.
 
 ## Shared foundation model
 
@@ -21,14 +21,21 @@ No same-track dependency is declared for this current pointer.
 
 ## Acceptance criteria
 
-- Acceptance criteria must be refined during task execution.
+- k3s install script exists and is idempotent
+- kubeconfig is accessible post-install
+- data-dir follows /srv contract
+- service exposure works via Traefik
+- reboot survival is validated
+- validation script exists and passes
 
 ## Forbidden actions
 
 - Do not resurrect deprecated CH05 directions as active work.
 - Do not expose secret values.
 - Do not use Windows shell, PowerShell, CMD, Git Bash, or MobaXterm for Roo execution.
-- Do not target production/customer scope unless explicitly approved.
+- do not run infrastructure workflows
+- do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments
+- do not expose secret values
 
 ## Required startup
 

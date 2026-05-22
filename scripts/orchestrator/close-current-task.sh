@@ -52,20 +52,59 @@ if not found_roadmap:
     raise SystemExit(f"[error] task not found in roadmap: {task_id}")
 
 # --- advance current_pointer in both status and roadmap ---
-def advance_pointer(data: dict) -> str | None:
-    """Return the next non-completed task id, or None if all completed."""
-    for task in data["tasks"]:
-        if task.get("status") != "completed":
-            return task["id"]
-    return None
+def advance_pointer_ordered(status_data: dict, roadmap_data: dict, closed_task_id: str) -> str:
+    """
+    Return the next eligible task id after closed_task_id using roadmap_order.
+    Rules:
+    1. Only tasks listed in roadmap_order are eligible.
+    2. Legacy PLATFORM-* tasks are never selected unless roadmap_order is absent.
+    3. Missing status (None or absent) is treated as ineligible, not as todo.
+    4. Raises SystemExit if no valid ordered next task can be determined.
+    """
+    roadmap_order = roadmap_data.get("roadmap_order")
+    if not roadmap_order:
+        # Fallback: insertion-order iteration with same eligibility rules
+        status_map = {t["id"]: t.get("status") for t in status_data["tasks"]}
+        for task in status_data["tasks"]:
+            tid = task["id"]
+            task_status = status_map.get(tid)
+            if task_status is None:
+                # Missing status is not eligible
+                continue
+            if tid.startswith("PLATFORM-"):
+                # Legacy PLATFORM-* tasks are not eligible without roadmap_order
+                continue
+            if task_status != "completed":
+                return tid
+        raise SystemExit(f"[error] no eligible next task found in {track} track (all completed or ineligible)")
 
-next_pointer = advance_pointer(status_data)
-if next_pointer is None:
-    print(f"[warn] all tasks in {track} track are completed; current_pointer unchanged")
-else:
-    status_data["current_pointer"] = next_pointer
-    roadmap_data["current_pointer"] = next_pointer
-    print(f"[ok] advanced current_pointer to {next_pointer}")
+    # Build lookup: task id -> status
+    status_map = {t["id"]: t.get("status") for t in status_data["tasks"]}
+
+    # Find closed_task_id in roadmap_order
+    try:
+        closed_idx = roadmap_order.index(closed_task_id)
+    except ValueError:
+        raise SystemExit(f"[error] closed task {closed_task_id} not found in roadmap_order")
+
+    # Scan forward from closed_idx + 1
+    for tid in roadmap_order[closed_idx + 1:]:
+        task_status = status_map.get(tid)
+        if task_status is None:
+            # Missing status is not eligible
+            continue
+        if task_status != "completed":
+            return tid
+
+    raise SystemExit(f"[error] no eligible next task after {closed_task_id} in roadmap_order for {track} track")
+
+next_pointer = advance_pointer_ordered(status_data, roadmap_data, task_id)
+# Regression guard: never advance to a legacy PLATFORM-* task unless roadmap_order explicitly includes it
+if next_pointer.startswith("PLATFORM-") and "PLATFORM-" not in str(roadmap_data.get("roadmap_order", [])):
+    raise SystemExit(f"[error] advance would select legacy PLATFORM-* task {next_pointer} which is not in roadmap_order")
+status_data["current_pointer"] = next_pointer
+roadmap_data["current_pointer"] = next_pointer
+print(f"[ok] advanced current_pointer to {next_pointer}")
 
 # --- atomic write via temp file + rename ---
 now_iso = datetime.now(timezone.utc).isoformat()
@@ -113,6 +152,26 @@ if [ "$NEXT_TASK_ID" != "$ROADMAP_POINTER" ]; then
 fi
 if [ "$NEXT_TASK_ID" = "$TASK_ID" ]; then
   echo "[error] regression guard: NEXT_TASK.md still points at closed task ${TASK_ID}" >&2
+  FAILED_GUARD=1
+fi
+# --- regression guard: closing a P-* task must not advance to PLATFORM-* ---
+if echo "$TASK_ID" | grep -q '^P-'; then
+  if echo "$NEXT_TASK_ID" | grep -q '^PLATFORM-'; then
+    echo "[error] regression guard: closing P-* task ${TASK_ID} advanced to legacy PLATFORM-* task ${NEXT_TASK_ID}" >&2
+    FAILED_GUARD=1
+  fi
+fi
+# --- regression guard: missing-status tasks are not eligible next tasks ---
+NEXT_TASK_STATUS="$(python3 -c "
+import json
+s = json.load(open('tasks/status/${TRACK}.json'))
+for t in s['tasks']:
+    if t['id'] == s['current_pointer']:
+        print(t.get('status', 'MISSING'))
+        break
+")"
+if [ "$NEXT_TASK_STATUS" = "MISSING" ] || [ -z "$NEXT_TASK_STATUS" ]; then
+  echo "[error] regression guard: next task ${NEXT_TASK_ID} has missing status (ineligible)" >&2
   FAILED_GUARD=1
 fi
 if [ "$FAILED_GUARD" -ne 0 ]; then

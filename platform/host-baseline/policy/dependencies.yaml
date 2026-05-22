@@ -1,35 +1,38 @@
-version: 1
+version: 2
 os:
   family: ubuntu
   release: "24.04"
 
-apt:
-  common:
-    - ca-certificates
-    - curl
-    - git
-    - jq
-    - unzip
-    - vim-tiny
-    - sudo
-    - openssh-server
-    - ufw
-    - rsync
-    - tar
-    - gzip
-    - coreutils
-    - findutils
-    - gawk
-    - grep
-    - sed
-    - util-linux
-    - procps
-    - passwd
-  security:
-    - auditd
-    - fail2ban
-    - unattended-upgrades
-    - aide
+# Shared apt packages — applied to ALL profiles.
+# Profile-specific extras are in the profiles section below.
+shared:
+  apt:
+    common:
+      - ca-certificates
+      - curl
+      - git
+      - jq
+      - unzip
+      - vim-tiny
+      - sudo
+      - openssh-server
+      - ufw
+      - rsync
+      - tar
+      - gzip
+      - coreutils
+      - findutils
+      - gawk
+      - grep
+      - sed
+      - util-linux
+      - procps
+      - passwd
+    security:
+      - auditd
+      - fail2ban
+      - unattended-upgrades
+      - aide
 
 external_binaries:
   yq:
@@ -38,3 +41,17 @@ external_binaries:
       x86_64: yq_linux_amd64
       aarch64: yq_linux_arm64
       arm64: yq_linux_arm64
+
+# Profile-specific package extras.
+# These are merged with shared.apt when the profile is active.
+profiles:
+  platform-k3s:
+    apt_extra:
+      - containerd
+      - nfs-common
+      - open-iscsi
+
+  standalone-n8n:
+    apt_extra:
+      - docker.io
+      - docker-compose-v2

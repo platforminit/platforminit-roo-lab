@@ -10,15 +10,13 @@ resolve_existing_file() {
   local explicit="${1:-}"
   shift || true
   if [[ -n "$explicit" && -f "$explicit" ]]; then
-    printf '%s
-' "$explicit"
+    printf '%s\n' "$explicit"
     return 0
   fi
   local candidate
   for candidate in "$@"; do
     if [[ -f "$candidate" ]]; then
-      printf '%s
-' "$candidate"
+      printf '%s\n' "$candidate"
       return 0
     fi
   done
@@ -36,6 +34,10 @@ LIB_POLICY_FILE="$(resolve_existing_file "${PLATFORMINIT_LIB_POLICY:-}"   "$SCRI
 }
 source "$LIB_POLICY_FILE"
 
+# Resolve and validate the active baseline profile
+BASELINE_PROFILE="$(resolve_baseline_profile)"
+validate_baseline_profile "$BASELINE_PROFILE"
+
 install_yq() {
   local arch asset url tmp expected_sha current
   arch="$(uname -m)"
@@ -48,7 +50,7 @@ install_yq() {
   if command -v yq >/dev/null 2>&1; then
     current="$(yq --version 2>/dev/null || true)"
     if grep -q "$YQ_VERSION" <<<"$current"; then
-      baseline_event "dependency_external_install" "ok" "yq already present $current"
+      baseline_event "dependency_external_install" "ok" "yq already present $current profile=${BASELINE_PROFILE}"
       return
     fi
   fi
@@ -61,18 +63,22 @@ install_yq() {
   fi
   install -m 0755 "$tmp" /usr/local/bin/yq
   rm -f "$tmp"
-  baseline_event "dependency_external_install" "ok" "yq ${YQ_VERSION} ${arch}"
+  baseline_event "dependency_external_install" "ok" "yq ${YQ_VERSION} ${arch} profile=${BASELINE_PROFILE}"
 }
 
 apt_install() {
-  mapfile -t pkgs < <(yq -r '.apt.common[] , .apt.security[]' "$DEPENDENCY_FILE")
+  # Shared packages
+  mapfile -t pkgs < <(yq -r '.shared.apt.common[] , .shared.apt.security[]' "$DEPENDENCY_FILE")
+  # Profile-specific extra packages
+  mapfile -t extra_pkgs < <(yq -r ".profiles.${BASELINE_PROFILE}.apt_extra[]?" "$DEPENDENCY_FILE")
+  pkgs+=("${extra_pkgs[@]}")
   if (( ${#pkgs[@]} == 0 )); then
     echo "No apt packages resolved from $DEPENDENCY_FILE" >&2
     exit 1
   fi
   DEBIAN_FRONTEND=noninteractive apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
-  baseline_event "dependency_apt_install" "ok" "$(printf '%s ' "${pkgs[@]}")"
+  baseline_event "dependency_apt_install" "ok" "$(printf '%s ' "${pkgs[@]}") profile=${BASELINE_PROFILE}"
 }
 
 main() {

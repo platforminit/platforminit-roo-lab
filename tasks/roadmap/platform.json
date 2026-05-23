@@ -7,7 +7,8 @@
     "P-CH01-T02",
     "P-CH02-T01",
     "P-CH02-T02",
-    "P-CH03-T01"
+    "P-CH03-T01",
+    "P-CH04-T01"
   ],
   "tasks": [
     {
@@ -132,7 +133,7 @@
       "chapter": "CH03",
       "title": "Define k3s single-node install and validation contract",
       "branch": "batch/platform-ch03-k3s-install-validation",
-      "status": "todo",
+      "status": "completed",
       "scope": "platform",
       "shared_foundation": false,
       "consumers": [
@@ -153,6 +154,32 @@
         "do not expose secret values"
       ],
       "goal": "Define and implement single-node k3s install and validation contract for the platform track."
+    },
+    {
+      "id": "P-CH04-T01",
+      "chapter": "CH04",
+      "title": "Define platform services GitOps contract (Traefik, cert-manager, Argo CD)",
+      "branch": "batch/platform-ch04-platform-services-gitops-contract",
+      "status": "todo",
+      "scope": "platform",
+      "shared_foundation": false,
+      "consumers": [
+        "platform"
+      ],
+      "description": "Define and implement Traefik LoadBalancer exposure, cert-manager with Cloudflare DNS-01, and Argo CD bootstrap as the GitOps control plane for the platform track.",
+      "acceptance": [
+        "Traefik LoadBalancer exposes services on ports 80/443",
+        "cert-manager issues Let's Encrypt certificates via Cloudflare DNS-01",
+        "Argo CD is bootstrapped and manages its own ApplicationSet",
+        "Platform services are deployed via Argo CD, not manual kubectl",
+        "Validation scripts exist for each component"
+      ],
+      "forbidden": [
+        "do not run infrastructure workflows",
+        "do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments",
+        "do not expose secret values"
+      ],
+      "goal": "Define and implement Traefik, cert-manager, and Argo CD GitOps contract for the platform track."
     },
     {
       "id": "PLATFORM-CH01-T01",
@@ -479,7 +506,7 @@
     }
   ],
   "description": "PlatformInit CH01-CH15 roadmap. CH01 host lifecycle and CH02 host baseline are shared foundation capabilities consumed by both platform and n8n tracks.",
-  "current_pointer": "P-CH03-T01",
+  "current_pointer": "P-CH04-T01",
   "shared_foundation_exports": {
     "exported_to_tracks": [
       "platform",
@@ -494,5 +521,5 @@
     ],
     "meaning": "Reusable host lifecycle and baseline contracts consumed by n8n with project=n8n and standalone profile constraints."
   },
-  "updated_at": "2026-05-22T21:30:38.264133+00:00"
+  "updated_at": "2026-05-23T15:14:09.913238+00:00"
 }

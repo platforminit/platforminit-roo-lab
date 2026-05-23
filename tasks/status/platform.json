@@ -1,7 +1,7 @@
 {
   "schema_version": "2.1",
   "track": "platform",
-  "current_pointer": "P-CH03-T01",
+  "current_pointer": "P-CH04-T01",
   "tasks": [
     {
       "id": "P-CH01-T01",
@@ -69,9 +69,24 @@
     {
       "id": "P-CH03-T01",
       "title": "Define k3s single-node install and validation contract",
-      "status": "todo",
+      "status": "completed",
       "branch": "batch/platform-ch03-k3s-install-validation",
       "chapter": "CH03",
+      "scope": "platform",
+      "shared_foundation": false,
+      "consumers": [
+        "platform"
+      ],
+      "depends_on": [],
+      "depends_on_platform_tasks": [],
+      "completed_at": "2026-05-23T15:14:09.913180+00:00"
+    },
+    {
+      "id": "P-CH04-T01",
+      "title": "Define platform services GitOps contract (Traefik, cert-manager, Argo CD)",
+      "status": "todo",
+      "branch": "batch/platform-ch04-platform-services-gitops-contract",
+      "chapter": "CH04",
       "scope": "platform",
       "shared_foundation": false,
       "consumers": [
@@ -285,5 +300,5 @@
       "depends_on_platform_tasks": []
     }
   ],
-  "updated_at": "2026-05-22T21:30:38.264133+00:00"
+  "updated_at": "2026-05-23T15:14:09.913238+00:00"
 }

@@ -2,28 +2,39 @@
 set -euo pipefail
 
 ############################################
-# CH02-01 - k3s Single Node Baseline
+# CH03-01 - k3s Single Node Install
+# PlatformInit k3s install and validation contract
 ############################################
 
-K3S_VERSION="v1.29.3+k3s1"
+K3S_VERSION="${K3S_VERSION:-v1.29.3+k3s1}"
 if [[ -f /etc/platforminit/host-context.env ]]; then
   # shellcheck disable=SC1091
   source /etc/platforminit/host-context.env
 fi
+
 # PlatformInit k3s storage contract:
 # k3s data must live under /srv/data/k3s so local-path PVC storage does not
 # silently grow on the wrong filesystem/partition.
+# See docs/k3s-data-dir-storage-contract.md
 PLATFORMINIT_DATA_PATH="${PLATFORMINIT_DATA_PATH:-/srv/data}"
 DATA_DIR="${K3S_DATA_DIR:-${PLATFORMINIT_DATA_PATH}/k3s}"
-TLS_DOMAIN="k3s.sysadminhomelab.hu"
+TLS_DOMAIN="${TLS_DOMAIN:-k3s.sysadminhomelab.hu}"
 K3S_CONFIG="/etc/rancher/k3s/config.yaml"
 K3S_DROPIN_DIR="/etc/systemd/system/k3s.service.d"
 K3S_DROPIN_FILE="${K3S_DROPIN_DIR}/10-args.conf"
 
+# Guard: validate required env vars that must not be empty
+: "${K3S_VERSION:?}"
+: "${PLATFORMINIT_DATA_PATH:?}"
+: "${TLS_DOMAIN:?}"
+
+log()  { echo "[$(date -u +%FT%TZ)] [INFO] $*"; }
+warn() { echo "[$(date -u +%FT%TZ)] [WARN] $*" >&2; }
+die()  { echo "[$(date -u +%FT%TZ)] [ERROR] $*" >&2; exit 1; }
+
 need_root() {
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-    echo "[ERROR] This script must run as root (use sudo)." >&2
-    exit 1
+    die "This script must run as root (use sudo)."
   fi
 }
 
@@ -83,16 +94,16 @@ restart_k3s() {
 need_root
 ensure_pkg
 
-echo "[INFO] Detecting public IP..."
-PUBLIC_IP=$(curl -fsS https://api.ipify.org || true)
+log "Detecting public IP..."
+PUBLIC_IP=$(curl -fsS --max-time 5 https://api.ipify.org || true)
 
 if is_k3s_installed; then
   INSTALLED_VER="$(current_k3s_version)"
   if [[ "${INSTALLED_VER}" == "${K3S_VERSION}" ]]; then
-    echo "[INFO] k3s already installed (${INSTALLED_VER}). Ensuring config and service state..."
+    log "k3s already installed (${INSTALLED_VER}). Ensuring config and service state..."
   else
-    echo "[WARN] k3s installed but version mismatch (installed=${INSTALLED_VER}, desired=${K3S_VERSION})."
-    echo "[WARN] Not auto-upgrading. If you want to upgrade, run /srv/ch02/uninstall-k3s.sh then re-run."
+    warn "k3s installed but version mismatch (installed=${INSTALLED_VER}, desired=${K3S_VERSION})."
+    warn "Not auto-upgrading. To upgrade, run uninstall-k3s.sh then re-run this installer."
   fi
 
   write_k3s_config
@@ -100,12 +111,17 @@ if is_k3s_installed; then
   restart_k3s
   ensure_kubectl_link
 else
-  echo "[INFO] Creating data directory..."
+  # Supply-chain guard: live curl | sh installer requires explicit opt-in
+  if [[ "${PLATFORMINIT_ALLOW_LIVE_K3S_INSTALLER:-false}" != "true" ]]; then
+    die "Live k3s installer requires PLATFORMINIT_ALLOW_LIVE_K3S_INSTALLER=true. See platform/cluster/README.md for supply-chain notes."
+  fi
+
+  log "Creating data directory at ${DATA_DIR}..."
   mkdir -p "${DATA_DIR}"
 
   write_k3s_config
 
-  echo "[INFO] Installing k3s ${K3S_VERSION} ..."
+  log "Installing k3s ${K3S_VERSION} ..."
   curl -sfL https://get.k3s.io | \
     INSTALL_K3S_VERSION="${K3S_VERSION}" \
     INSTALL_K3S_EXEC="server" \
@@ -118,8 +134,8 @@ fi
 sleep 10
 ensure_kubectl_link
 
-echo "[INFO] Waiting for node to become Ready..."
+log "Waiting for node to become Ready..."
 kubectl wait --for=condition=Ready node --all --timeout=180s
 kubectl get nodes -o wide
 
-echo "[SUCCESS] k3s installation complete."
+log "k3s installation complete."

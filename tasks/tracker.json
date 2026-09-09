@@ -57,12 +57,24 @@
       "implementationMode": "platforminit-deepseek-coder", "reviewMode": "platforminit-openai-reviewer", "securityMode": "platforminit-owasp-reviewer", "releaseMode": "platforminit-release-manager"
     },
     {
-      "id": "P-CH03-T01", "track": "platform", "order": 60, "status": "pending",
+      "id": "P-CH03-T01", "track": "platform", "order": 60, "status": "done",
       "title": "Define k3s single-node install and validation contract",
       "description": "Define and implement single-node k3s install, kubeconfig, data-dir, service exposure, and reboot survival validation for the platform track.",
       "scope": "platform", "branch": "batch/platform-ch03-k3s-install-validation", "dependsOn": ["P-CH02-T02"],
       "acceptanceCriteria": ["k3s install script exists and is idempotent", "kubeconfig is accessible post-install", "data-dir follows /srv contract", "service exposure works via Traefik", "reboot survival is validated", "validation script exists and passes"],
       "allowedFiles": ["platform/cluster/**", "docs/k3s-*.md", "tasks/**"], "requiredValidators": [["git", "diff", "--check"]],
+      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments", "do not expose secret values"],
+      "implementationMode": "platforminit-deepseek-coder", "reviewMode": "platforminit-openai-reviewer", "securityMode": "platforminit-owasp-reviewer", "releaseMode": "platforminit-release-manager",
+      "migrationNote": "Marked done by merged PR #21 before the canonical tracker migration."
+    },
+    {
+      "id": "P-CH04-T01", "track": "platform", "order": 70, "status": "pending",
+      "title": "Define platform services GitOps contract (Traefik, cert-manager, Argo CD)",
+      "description": "Define and implement Traefik LoadBalancer exposure, cert-manager with Cloudflare DNS-01, and Argo CD bootstrap as the GitOps control plane for the platform track.",
+      "scope": "platform", "branch": "batch/platform-ch04-platform-services-gitops-contract", "dependsOn": ["P-CH03-T01"],
+      "acceptanceCriteria": ["Traefik LoadBalancer exposes services on ports 80/443", "cert-manager issues Let's Encrypt certificates via Cloudflare DNS-01", "Argo CD is bootstrapped and manages its own ApplicationSet", "Platform services are deployed via Argo CD, not manual kubectl", "Validation scripts exist for each component"],
+      "allowedFiles": ["platform/cluster/addons/**", "platform/cluster/manifests/**", "platform/cluster/validate/**", "platform/cluster/README.md", "docs/**", "tasks/**"],
+      "requiredValidators": [["git", "diff", "--check"]],
       "forbiddenActions": ["do not run infrastructure workflows", "do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments", "do not expose secret values"],
       "implementationMode": "platforminit-deepseek-coder", "reviewMode": "platforminit-openai-reviewer", "securityMode": "platforminit-owasp-reviewer", "releaseMode": "platforminit-release-manager"
     },

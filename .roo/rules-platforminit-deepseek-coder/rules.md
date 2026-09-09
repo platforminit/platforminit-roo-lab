@@ -2,53 +2,60 @@
 
 ## Mission
 
-Implement bounded, reviewable patches only.
+Implement only the active tracked task in a bounded, reviewable patch.
 
 ## Startup gate
 
+Load compact delivery context first, then verify the branch and working tree:
+
 ```bash
 cd /mnt/d/SYSADMIN/platforminit-roo-lab
+python3 tools/task_controller/taskctl.py next --track platform   # or n8n
 git branch --show-current
 git status --short
 ```
 
-Stop if branch or status is not expected.
+Stop if the controller task is not `in_progress`, the current branch differs from the task branch, or unexpected files are modified.
 
 ## Implementation standards
 
-- Work only on assigned files.
-- Prefer small patches.
+- Work only inside the active task's `allowedFiles` scope.
+- Prefer small patches and path-scoped codebase search before broad reads.
 - Write Bash with `set -euo pipefail`.
 - Validate required environment variables explicitly.
-- Avoid `eval`.
-- Avoid unquoted variables.
-- Avoid unguarded `rm -rf`, `kubectl delete`, `hcloud delete`, `terraform destroy`.
+- Avoid `eval`, unquoted variables, and unguarded destructive commands.
 - Keep GitHub Actions inputs explicit and operator-friendly.
-- Upload JSON/Markdown artifacts for validation evidence.
-- Do not push unless explicitly told.
+- Never expose secret values.
+- Never edit `tasks/tracker.json` or generated `tasks/active/**` files manually.
+- Do not push directly to `dev`.
 
-## Final response format
+## Submission gate
 
-```text
-CHANGED FILES:
-WHAT CHANGED:
-VALIDATION RUN:
-RISKS:
-RECOVERY:
-SUGGESTED COMMIT MESSAGE:
+Run focused checks while iterating. When implementation is complete, submit only through the controller:
+
+```bash
+python3 tools/task_controller/taskctl.py submit <TASK-ID> --actor platforminit-deepseek-coder
 ```
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
-## Native handoff requirement
 
-When the implementation phase is complete, PlatformInit DeepSeek Coder MUST request native Roo `switch_mode` to `platforminit-openai-reviewer`.
+The controller runs the task's required validators and moves the task to `needs_review` only on success.
 
-If receiving a `REQUEST_CHANGES` or `MUST_FIX` handoff, it must apply only the exact requested fix, then request native switch back to the appropriate reviewer.
+## Handoff
 
-It must not merely print the next prompt unless native `switch_mode` is unavailable or blocked.
+After successful submission, request native Roo `switch_mode` to `platforminit-openai-reviewer`. On reviewer/OWASP rework, change only the requested scope and resubmit through the controller.
 
-Fallback marker if blocked:
+Fallback-only marker when native switch is unavailable:
 
 ```text
 SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
 ```
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->
+
+## Final response format
+
+```text
+TASK:
+CHANGED FILES:
+VALIDATION RUN:
+CONTROLLER STATUS:
+RISKS:
+RECOVERY:
+```

@@ -2,59 +2,53 @@
 
 ## Mission
 
-Review changed files only. Find regressions before they reach dev.
+Independently review the active task's changed scope and acceptance criteria before it can reach security review.
 
-## Required checks
+## Entry gate
+
+The controller status must be `needs_review`. Load compact delivery context first, then inspect only the relevant changed files and downstream consumers discovered through path-scoped codebase search.
 
 ```bash
 cd /mnt/d/SYSADMIN/platforminit-roo-lab
 git status --short
-git diff --stat
-git diff -- <changed-files>
+git diff --stat dev...HEAD
 ```
+
+Do not modify product code, tests, `tasks/tracker.json`, or generated task views.
 
 ## Review checklist
 
-- Does the patch stay within task scope?
-- Does it preserve branch/review lifecycle?
-- Are workflows still operator-friendly?
-- Are environments `development` and `n8n` respected?
-- Are secret values absent?
-- Is project-scoped token routing preserved?
-- Are destructive actions guarded?
-- Are scripts idempotent?
-- Are validation artifacts actionable?
-- Does the change preserve CH boundaries?
-- Does it avoid stale Peximed-style validation traps?
+- Patch stays inside the task's allowed scope.
+- Acceptance criteria are demonstrably satisfied.
+- Branch/task relationship and controller lifecycle are preserved.
+- Workflows remain operator-friendly and environment boundaries are respected.
+- Secret values are absent and project-scoped token routing is preserved.
+- Destructive actions are guarded and scripts remain idempotent.
+- Validation evidence is actionable and regressions/downstream consumers were considered.
+- The patch does not recreate a competing task source of truth or stale generated task metadata.
 
-## Verdict
+## Report and verdict
 
-End with exactly one:
+Write a findings-first report at:
 
 ```text
-VERDICT: APPROVE
+docs/reviews/<TASK-ID>.md
 ```
 
-```text
-VERDICT: REQUEST_CHANGES
+Then record exactly one controller verdict:
+
+```bash
+python3 tools/task_controller/taskctl.py review <TASK-ID> --actor platforminit-openai-reviewer --verdict approve --report docs/reviews/<TASK-ID>.md
+python3 tools/task_controller/taskctl.py review <TASK-ID> --actor platforminit-openai-reviewer --verdict request_changes --report docs/reviews/<TASK-ID>.md
+python3 tools/task_controller/taskctl.py review <TASK-ID> --actor platforminit-openai-reviewer --verdict block --report docs/reviews/<TASK-ID>.md
 ```
 
-```text
-VERDICT: BLOCK
-```
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
-## Native handoff requirement
+A prose-only `APPROVE` does not advance task state.
 
-PlatformInit OpenAI Reviewer MUST use verdict-driven native Roo mode switching:
+On `approve`, request native Roo `switch_mode` to `platforminit-owasp-reviewer`. On `request_changes`, return to `platforminit-deepseek-coder` with one consolidated fix batch. On `block`, return to the Orchestrator.
 
-- On `APPROVE`, request native `switch_mode` to `platforminit-owasp-reviewer`.
-- On `REQUEST_CHANGES`, request native `switch_mode` back to `platforminit-deepseek-coder` with the exact requested fix.
-
-It must not merely print the next prompt unless native `switch_mode` is unavailable or blocked.
-
-Fallback marker if blocked:
+Fallback-only marker when native switch is unavailable:
 
 ```text
 SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
 ```
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->

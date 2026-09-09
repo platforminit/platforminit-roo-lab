@@ -1,0 +1,30 @@
+# Generated/task-state files are accessed through the controller/MCP, not semantic indexing
+tasks/tracker.json
+tasks/active/
+
+# Historical task-state material is not active retrieval context
+tasks/archive/
+
+# Local secrets and transient evidence must never be indexed
+.local_secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Common generated/cache/build content
+node_modules/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+coverage/
+dist/
+out/
+build/
+*.log
+
+# Large/transient operator outputs
+artifacts/
+reports/generated/

@@ -1,83 +1,45 @@
-# NEXT TASK — platform
+# platform task view
 
-## Task
+Generated from `tasks/tracker.json`. Do not edit manually.
 
-- Track: `platform`
-- Task ID: `P-CH03-T01`
-- Chapter: `CH03`
-- Title: Define k3s single-node install and validation contract
-- Branch: `batch/platform-ch03-k3s-install-validation`
-- Scope: `platform`
+## P-CH03-T01 — Define k3s single-node install and validation contract
 
-## Goal
+| Field | Value |
+|---|---|
+| Status | `pending` |
+| Track | `platform` |
+| Branch | `batch/platform-ch03-k3s-install-validation` |
+| Scope | `platform` |
+| Dependencies | P-CH02-T02 |
+| Next actor | `platforminit-orchestrator` |
 
-Define and implement single-node k3s install and validation contract for the platform track.
+Define and implement single-node k3s install, kubeconfig, data-dir, service exposure, and reboot survival validation for the platform track.
 
-## Shared foundation model
+### Acceptance criteria
 
-This task does not consume a shared platform dependency.
+- [ ] k3s install script exists and is idempotent
+- [ ] kubeconfig is accessible post-install
+- [ ] data-dir follows /srv contract
+- [ ] service exposure works via Traefik
+- [ ] reboot survival is validated
+- [ ] validation script exists and passes
 
-No same-track dependency is declared for this current pointer.
+### Allowed files
 
-## Acceptance criteria
+- `platform/cluster/**`
+- `docs/k3s-*.md`
+- `tasks/**`
 
-- k3s install script exists and is idempotent
-- kubeconfig is accessible post-install
-- data-dir follows /srv contract
-- service exposure works via Traefik
-- reboot survival is validated
-- validation script exists and passes
+### Required validators
 
-## Forbidden actions
+- `git diff --check`
 
-- Do not resurrect deprecated CH05 directions as active work.
-- Do not expose secret values.
-- Do not use Windows shell, PowerShell, CMD, Git Bash, or MobaXterm for Roo execution.
+### Forbidden actions
+
 - do not run infrastructure workflows
 - do not mutate Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, n8n runtime, GitHub secrets, or GitHub environments
 - do not expose secret values
 
-## Required startup
+### Controller transition
 
-```bash
-cd /mnt/d/SYSADMIN/platforminit-roo-lab
-./scripts/orchestrator/start-next-task.sh --track platform
-```
-
-## Roo entrypoint
-
-```text
-Read tasks/active/platform/NEXT_TASK.md and execute the active task exactly as described.
-```
-
-## Native role handoff
-
-PlatformInit roles must use native Roo `switch_mode` handoff.
-
-Manual next-prompt printing is allowed only if native `switch_mode` is unavailable or blocked, and the role must explicitly report:
-
-```text
-SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
-```
-
-## Release Manager executor requirements
-
-After OWASP review passes, the PlatformInit Release Manager MUST execute the full lifecycle:
-
-1. Detect the active task ID from `tasks/status/platform.json`.
-2. Verify changed files and validation evidence are complete.
-3. Create a scoped implementation commit with a descriptive message.
-4. Push the branch to origin.
-5. Open a PR via `gh` CLI. If `gh` is unavailable, produce manual PR instructions and mark `BLOCKED_BY_TOOLING`.
-6. After merge, run `./scripts/orchestrator/close-current-task.sh`.
-7. Verify status/roadmap/NEXT_TASK agreement.
-8. Commit and push closure metadata.
-9. Start or prepare the next task.
-
-The Release Manager MUST NOT stop at "human commit pending" unless the blocker is explicitly marked `BLOCKED_BY_PERMISSION` or `BLOCKED_BY_TOOLING`.
-
-Forbidden phrases that must NOT appear as active contract wording:
-
-- `final human commit/PR/merge handoff`
-- `human commit pending`
-- `commit recommendation` (when used as a handoff instruction)
+`python3 tools/task_controller/taskctl.py start P-CH03-T01 --actor platforminit-orchestrator`

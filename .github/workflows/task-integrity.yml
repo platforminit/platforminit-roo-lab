@@ -1,0 +1,39 @@
+name: Task integrity
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  task-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python version
+        run: python3 --version
+
+      - name: Task controller unit tests
+        run: python3 -m unittest tools.task_controller.test_taskctl -v
+
+      - name: Task tracker and generated-view integrity
+        run: python3 tools/task_controller/taskctl.py validate --ignore-branch
+
+      - name: Python syntax
+        run: |
+          python3 -m py_compile \
+            tools/task_controller/taskctl.py \
+            tools/task_controller/test_taskctl.py \
+            tools/platforminit_mcp/context.py \
+            tools/platforminit_mcp/server.py
+
+      - name: Diff whitespace check
+        run: git diff --check origin/dev...HEAD

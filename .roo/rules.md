@@ -5,110 +5,86 @@ These rules apply to all PlatformInit custom modes in this repository.
 ## Repository identity
 
 - Repository role: full-access development rehearsal controller.
-- Local root: `/mnt/d/SYSADMIN/platforminit-roo-lab`
-- Stable recovery source: `/mnt/d/SYSADMIN/platforminit-platform`
-- Default branch: `dev`
-- First working branch: `batch/roo-lab-first-validation`
-- Active dev host: `platforminit-dev-01`
-- Forbidden host name: `deprecated long-form development host alias`
-- Downloads path: `/mnt/c/Users/hattila/Downloads`
+- Local root: `/mnt/d/SYSADMIN/platforminit-roo-lab`.
+- Stable recovery source: `/mnt/d/SYSADMIN/platforminit-platform`.
+- Default branch: `dev`.
 - Shell: WSL Ubuntu only.
+
+## Task source of truth
+
+1. Current human instruction in the active chat/task.
+2. `tasks/tracker.json` — the only authoritative task registry and mutable task state.
+3. Generated task views under `tasks/active/`.
+4. Current repository files, workflow definitions, architecture docs, and runbooks.
+5. Archived/historical material only when explicitly referenced.
+
+Generated Markdown is read-only. Never edit task state in `tasks/active/*.md`.
+Never recreate `tasks/status/*.json`, `tasks/roadmap/*.json`, `CURRENT_ACTIVE_TASKS.md`, or other competing current/next-task sources.
+
+Use the controller instead of editing task state directly:
+
+```bash
+python3 tools/task_controller/taskctl.py list
+python3 tools/task_controller/taskctl.py next --track platform
+python3 tools/task_controller/taskctl.py next --track n8n
+python3 tools/task_controller/taskctl.py validate
+```
 
 ## Non-negotiable execution rules
 
-1. Start from `tasks/active/NEXT_TASK.md` or an explicitly assigned batch README.
-2. Verify WSL, repo root, branch, and working tree before changing files.
-3. Never use Windows CMD, PowerShell, Git Bash, MobaXterm shell, or `vscode-remote://` launchers.
-4. Do not push directly to `dev`.
-5. Do not dump secret values into files, logs, artifacts, markdown, or terminal output.
-6. Treat `platforminit-dev-01` as disposable but protect secrets and production/customer scope.
-7. Prefer small, targeted patches over broad rewrites.
-8. Every implementation must include validation commands and a rollback/recovery note.
-9. Every reviewer must review changed files only unless the task explicitly says full-repo review.
-10. OWASP/security review is read-only unless the human explicitly approves a fix batch.
+1. Load the active task through the controller or the compact delivery-context MCP tool before opening broad repository context.
+2. Verify WSL, repository root, expected task branch, and working tree before changing files.
+3. Never use Windows CMD, PowerShell, Git Bash, MobaXterm shell, or `vscode-remote://` launchers for Roo execution.
+4. Never push directly to `dev`.
+5. Never dump secret values into files, logs, artifacts, Markdown, or terminal output.
+6. Prefer small, bounded patches within the task's `allowedFiles` scope.
+7. Run the task's `requiredValidators` before submission and again before closure.
+8. Reviewer and OWASP verdicts must be recorded through `taskctl`; prose-only approval is not sufficient.
+9. Only the Release Manager may close a `ready_to_close` task, and only through `taskctl complete`.
+10. Generated-view drift, duplicate task IDs, missing dependencies, invalid transitions, stale legacy task artifacts, and active branch/task mismatches are release blockers.
 
-## Source-of-truth order
+## Lifecycle
 
-Agents must resolve conflicts in this order:
+The canonical lifecycle is:
 
-1. Current human instruction in the chat/task.
-2. `tasks/active/NEXT_TASK.md`.
-3. `docs/roo-lab/context/ACTIVE_AGENT_CONTEXT.md`.
-4. Current repository files and workflow definitions.
-5. CH01-CH15 roadmap context.
-6. Archived/historical memory, only if explicitly referenced.
+`pending -> in_progress -> needs_review -> needs_security_review -> ready_to_close -> done`
 
-`DEPRECATED_COMPONENTS.md` is a hard negative context file: if a component is listed there as deprecated or superseded, agents must not resurrect it without an explicit architect decision.
+Failure/rework transitions are controller-owned:
+
+- reviewer `request_changes` -> `in_progress`;
+- OWASP `review_required` -> `in_progress`;
+- reviewer/OWASP `block` or explicit block command -> `blocked`;
+- only the Orchestrator may unblock a task.
+
+Role flow:
+
+1. `platforminit-orchestrator` starts exactly one runnable task for a track.
+2. `platforminit-deepseek-coder` implements only the bounded task scope and submits through the controller.
+3. `platforminit-openai-reviewer` records `approve`, `request_changes`, or `block` with a report under `docs/reviews/`.
+4. `platforminit-owasp-reviewer` records `clear`, `review_required`, or `block` with a report under `docs/security-reviews/`.
+5. `platforminit-release-manager` closes only a fully approved task through the controller.
+
+Use native Roo `switch_mode` handoff whenever the next stage belongs to another PlatformInit role. Manual next-prompt printing is fallback-only and must report `SWITCH_MODE_UNAVAILABLE_FALLBACK_USED`.
+
+## Context and token discipline
+
+Prefer compact context before raw file reads:
+
+- active task and transition;
+- changed files against `dev`;
+- task-specific allowed paths;
+- focused tests/validators;
+- one or two path-scoped codebase searches.
+
+Do not load entire roadmap/history files into context. Use codebase indexing/search for discovery and open only the relevant files. `tools/platforminit_mcp/` provides repository-local context tooling; future RAG must build on this boundary rather than becoming a second task source of truth.
 
 ## Active architecture baseline
 
-PlatformInit is a cost-conscious, single-node, deterministic rebuild platform:
+PlatformInit remains a cost-conscious, deterministic rebuild platform built around Hetzner Cloud, Ubuntu, GitHub Actions, k3s, Argo CD, Traefik, cert-manager/Let's Encrypt, Cloudflare DNS-01, Authentik, and Checkmk Community. The `n8n` track remains standalone and consumes only shared host-lifecycle/baseline capabilities unless a later task explicitly changes that contract.
 
-- Hetzner Cloud
-- Ubuntu
-- GitHub Actions
-- Terraform where applicable
-- k3s single-node Kubernetes
-- Argo CD GitOps ownership for long-running cluster workloads
-- Traefik ingress
-- cert-manager + Let's Encrypt
-- Cloudflare DNS-01
-- Authentik identity/SSO
-- Checkmk Community for operator-first monitoring
-- Separate `development`, `n8n`, and later `platforminit` project scopes
+`DEPRECATED_COMPONENTS.md` remains a hard negative context file. Deprecated or superseded components must not be resurrected without an explicit architect decision.
 
-## Hetzner and secret model
-
-Expected project-scoped token names:
-
-- `HCLOUD_TOKEN_DEVELOPMENT`
-- `HCLOUD_TOKEN_N8N`
-- `HCLOUD_TOKEN_PLATFORMINIT`
-
-`INFRA_API_TOKEN` is legacy fallback only. Do not introduce new code paths that prefer it over project-scoped tokens.
-
-Local raw token bootstrap files, if present, must remain ignored and must never be committed:
-
-- `.local_secrets/development_api_key`
-- `.local_secrets/n8n_api_key`
-- `.local_secrets/platforminit_api_key`
-
-## Batch lifecycle
-
-Preferred lifecycle:
-
-1. Orchestrator reads the active batch.
-2. Architect clarifies decisions if needed.
-3. DeepSeek Coder implements bounded tasks.
-4. OpenAI Reviewer performs changed-files-only review.
-5. OWASP Reviewer performs read-only security/privacy/release review for security-sensitive or batch-end gates.
-6. SRE Diagnostics validates evidence if infrastructure/runtime changed.
-7. Release Manager prepares known-good checkpoint if validation passes.
-8. Docs Operator updates handoff/runbook docs.
-
-## Lessons learned from Peximed failure
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
-## Native Roo mode-switch handoff contract
-
-PlatformInit roles MUST use native Roo `switch_mode` handoff when the next phase belongs to another PlatformInit role.
-
-Manual next-prompt printing is forbidden during normal role flow. It is allowed only when native `switch_mode` is unavailable or blocked. In that case the role must explicitly report:
-
-```text
-SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
-```
-
-Required role flow:
-
-1. PlatformInit Orchestrator MUST request native switch to `platforminit-deepseek-coder`.
-2. PlatformInit DeepSeek Coder MUST request native switch to `platforminit-openai-reviewer`.
-3. PlatformInit OpenAI Reviewer:
-   - on `APPROVE`, MUST request native switch to `platforminit-owasp-reviewer`;
-   - on `REQUEST_CHANGES`, MUST request native switch back to `platforminit-deepseek-coder` with the exact requested fix.
-4. PlatformInit OWASP Reviewer:
-   - on `PASS`, MUST request native switch to `platforminit-release-manager`;
-   - on `MUST_FIX`, MUST request native switch back to `platforminit-deepseek-coder` with the exact fix request.
-5. PlatformInit Release Manager MUST execute the full lifecycle: detect active task ID, verify changed files and validation evidence, create a scoped implementation commit, push the branch, and open a PR via `gh` CLI. If `gh` is unavailable or the PR cannot be created, it MUST produce manual PR instructions and mark the handoff `BLOCKED_BY_TOOLING`. After merge, it MUST run `close-current-task.sh`, verify status/roadmap/NEXT_TASK agreement, commit/push closure metadata, and start or prepare the next task. It MUST NOT stop at "human commit pending" unless the blocker is explicitly marked `BLOCKED_BY_PERMISSION` or `BLOCKED_BY_TOOLING`.
+## Human approval boundary
 
 Human approval remains mandatory before:
 
@@ -117,4 +93,3 @@ Human approval remains mandatory before:
 - GitHub secret or environment mutation;
 - production/customer scope;
 - Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, or n8n runtime changes.
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->

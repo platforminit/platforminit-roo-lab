@@ -2,32 +2,34 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH03-T01 — Define k3s single-node install and validation contract
+## P-CH04-T01 — Define platform services GitOps contract (Traefik, cert-manager, Argo CD)
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch03-k3s-install-validation` |
+| Branch | `batch/platform-ch04-platform-services-gitops-contract` |
 | Scope | `platform` |
-| Dependencies | P-CH02-T02 |
+| Dependencies | P-CH03-T01 |
 | Next actor | `platforminit-orchestrator` |
 
-Define and implement single-node k3s install, kubeconfig, data-dir, service exposure, and reboot survival validation for the platform track.
+Define and implement Traefik LoadBalancer exposure, cert-manager with Cloudflare DNS-01, and Argo CD bootstrap as the GitOps control plane for the platform track.
 
 ### Acceptance criteria
 
-- [ ] k3s install script exists and is idempotent
-- [ ] kubeconfig is accessible post-install
-- [ ] data-dir follows /srv contract
-- [ ] service exposure works via Traefik
-- [ ] reboot survival is validated
-- [ ] validation script exists and passes
+- [ ] Traefik LoadBalancer exposes services on ports 80/443
+- [ ] cert-manager issues Let's Encrypt certificates via Cloudflare DNS-01
+- [ ] Argo CD is bootstrapped and manages its own ApplicationSet
+- [ ] Platform services are deployed via Argo CD, not manual kubectl
+- [ ] Validation scripts exist for each component
 
 ### Allowed files
 
-- `platform/cluster/**`
-- `docs/k3s-*.md`
+- `platform/cluster/addons/**`
+- `platform/cluster/manifests/**`
+- `platform/cluster/validate/**`
+- `platform/cluster/README.md`
+- `docs/**`
 - `tasks/**`
 
 ### Required validators
@@ -42,4 +44,4 @@ Define and implement single-node k3s install, kubeconfig, data-dir, service expo
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH03-T01 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04-T01 --actor platforminit-orchestrator`

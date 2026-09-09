@@ -148,7 +148,6 @@ class TaskctlTests(unittest.TestCase):
         task["status"] = "ready_to_close"
         task["workflow"] = {"startedAt": "2026-01-01T00:00:00+00:00", "submit": {"actor": CODER}}
         self.write_tracker()
-        self.invoke("next")
         result = self.invoke("validate", "--ignore-branch", ok=False)
         self.assertIn("requires approving workflow.review", result.stderr)
         self.assertIn("requires clear workflow.security", result.stderr)

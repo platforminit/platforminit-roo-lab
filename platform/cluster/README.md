@@ -13,14 +13,16 @@ CH03 defines the k3s single-node install and validation contract for the platfor
 - Service exposure via Traefik (ports 80/443)
 - Reboot survival validation
 - Validation scripts
+- CH04: Traefik exposure contract kept in Git and reconciled by Argo CD
+- CH04: cert-manager with Cloudflare DNS-01 ClusterIssuers
+- CH04: Argo CD bootstrap and GitOps ownership (AppProject + ApplicationSet)
+- CH04: one validation script per platform service
 
 ### Out of scope
 
 - Host provisioning (CH01)
 - Host baseline (CH02)
-- cert-manager, ClusterIssuer, Cloudflare DNS (CH04)
-- Argo CD bootstrap (CH04)
-- Identity layer (CH04.5)
+- Identity layer (CH04.5, CH04.6)
 - Operations stack (CH05)
 
 ## Repository layout
@@ -31,19 +33,101 @@ install/
   uninstall-k3s.sh            # CH03-02: guarded k3s uninstall
   kubeconfig-devops.sh        # CH03-03: kubeconfig for devops user
   smoke-k3s.sh                # CH03-04: workload smoke test
+addons/argocd/
+  bootstrap-argocd.sh                 # CH04: Argo CD bootstrap (idempotent, guarded)
+  README.md                           # CH04: Argo CD ownership contract
+addons/cert-manager/
+  install-cert-manager.sh             # CH04: cert-manager bootstrap (idempotent, guarded)
+  clusterissuer-letsencrypt-cloudflare.yaml  # CH04: GitOps-owned ClusterIssuers
+  smoke/demo-cert-smoke.yaml          # CH04: staging issuance smoke manifest (never synced)
+  README.md                           # CH04: DNS-01 contract
+manifests/argocd/
+  appproject-platform-services.yaml   # CH04: AppProject for platform services
+  applicationset-platform-services.yaml  # CH04: platform services ApplicationSet
+  application-argocd-self.yaml        # CH04: Argo CD self-management Application
+manifests/traefik/
+  traefik-helmchartconfig.yaml       # Traefik LoadBalancer config
 validate/
+  ch04-validate-platform-services-gitops-contract.sh  # CH04: repository-only contract check
+  ch04-validate-traefik-exposure.sh                  # CH04: Traefik LoadBalancer exposure
+  ch04-validate-cert-manager-dns01.sh                # CH04: cert-manager + DNS-01
+  ch04-validate-argocd-bootstrap.sh                  # CH04: Argo CD bootstrap/self-management
+  ch04-smoke-staging-certificate.sh                  # CH04: opt-in staging issuance smoke (mutating)
   ch03-validate-k3s-contract.sh      # CH03-05: install contract validation
   ch03-validate-reboot-survival.sh   # CH03-06: reboot survival validation
   ch02-validate.sh                   # CH02 validation (legacy)
   validate-host.sh                   # Host validation (shared)
-manifests/traefik/
-  traefik-helmchartconfig.yaml       # Traefik LoadBalancer config
 scripts/
   ch02-orchestrator.sh               # CH02 orchestrator (legacy)
   ch02-bootstrap.sh                  # CH02 bootstrap (legacy)
   ch02-deploy.sh                     # CH02 deploy (legacy)
   ch02-reset-host.sh                 # CH02 reset (legacy)
 ```
+
+## CH04 platform services (GitOps)
+
+CH04 adds the GitOps contract on top of the CH03 cluster. Full contract:
+[`docs/ch04-platform-services-gitops-contract.md`](../../docs/ch04-platform-services-gitops-contract.md).
+
+```bash
+# 1. cert-manager control plane + Cloudflare DNS-01 token secret
+sudo PLATFORMINIT_ALLOW_LIVE_CERT_MANAGER_INSTALL=true \
+  CF_API_TOKEN="$CF_API_TOKEN" \
+  bash platform/cluster/addons/cert-manager/install-cert-manager.sh
+
+# 2. Argo CD control plane + self-management Application
+#    GitOps source defaults: PLATFORMINIT_GITOPS_REPO_URL (lab repository) and
+#    PLATFORMINIT_GITOPS_TARGET_REVISION (dev). The referenced revision must be
+#    pushed to the remote repository and must already contain
+#    platform/cluster/manifests/argocd, so push and promote the batch branch
+#    into dev before a default bootstrap. Overrides are probed with
+#    git ls-remote before any cluster mutation, because Argo CD fetches from the
+#    remote repository and never from the local workspace:
+sudo PLATFORMINIT_ALLOW_LIVE_ARGOCD_BOOTSTRAP=true \
+  bash platform/cluster/addons/argocd/bootstrap-argocd.sh
+```
+
+`argocd-self` runs in Argo CD's built-in `default` project: the `platform-services` AppProject it
+reconciles lives inside its own source directory, so it cannot be a prerequisite of the Application
+that creates it (fresh-cluster bootstrap ordering).
+
+After bootstrap, Argo CD owns the `platform-services` AppProject and ApplicationSet
+([`manifests/argocd/`](manifests/argocd:1)) and deploys Traefik exposure plus the cert-manager
+ClusterIssuers from Git. Manual `kubectl apply` is limited to bootstrap, the documented
+pre-promotion rehearsal (which requires the revision to be pushed first) and break-glass recovery.
+
+The `platform-services` AppProject grants no wildcard permissions: it allows only the explicitly
+demonstrated kinds (`cert-manager.io/ClusterIssuer`, namespaced `helm.cattle.io/HelmChartConfig`) in
+the `kube-system` and `cert-manager` destinations the generated Applications target. Both bootstrap
+scripts apply only a digest-verified upstream manifest: the manifest URL is a fixed HTTPS origin (not
+an operator override), the version tag must match `vMAJOR.MINOR.PATCH` and have a committed SHA-256 pin
+in the script, and only the verified file is handed to `kubectl apply`. Details and the pin-refresh
+procedure: [`docs/ch04-platform-services-gitops-contract.md`](../../docs/ch04-platform-services-gitops-contract.md).
+
+### CH04 validation
+
+```bash
+# Repository-only contract check (no cluster access required)
+bash platform/cluster/validate/ch04-validate-platform-services-gitops-contract.sh
+
+# Live cluster checks (read-only)
+sudo bash platform/cluster/validate/ch04-validate-traefik-exposure.sh
+sudo bash platform/cluster/validate/ch04-validate-cert-manager-dns01.sh
+sudo bash platform/cluster/validate/ch04-validate-argocd-bootstrap.sh
+
+# Issuance evidence (opt-in, mutating, self-cleaning, staging only)
+sudo PLATFORMINIT_ALLOW_STAGING_CERT_SMOKE=true \
+  bash platform/cluster/validate/ch04-smoke-staging-certificate.sh
+```
+
+The read-only cert-manager check proves the issuer/solver/token wiring; only the smoke check proves
+that a certificate was actually issued. The Traefik validator fails (not warns) when no
+LoadBalancer IP or hostname is bound after `LB_WAIT_TIMEOUT` (default 60s, validated range 15-900s).
+
+Both wait inputs are range-checked before the first cluster call, and the smoke check refuses any
+namespace/object collision instead of adopting it: it creates uniquely named, run-labelled resources
+(`SMOKE_NAMESPACE_PREFIX` + `SMOKE_RUN_ID`, `SMOKE_TIMEOUT` default 300s / range 30-1800s) and deletes
+exactly those resources on exit — success or failure — with no keep-resources bypass.
 
 ## Storage contract
 

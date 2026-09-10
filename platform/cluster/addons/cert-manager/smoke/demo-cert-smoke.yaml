@@ -1,0 +1,35 @@
+# CH04 certificate issuance smoke manifest.
+#
+# NEVER synced by Argo CD: the platform-cert-manager-issuers Application points
+# at addons/cert-manager with directory.recurse=false, so the smoke/ directory is
+# outside the synced tree.
+#
+# Consumed by validate/ch04-smoke-staging-certificate.sh, which is opt-in
+# (PLATFORMINIT_ALLOW_STAGING_CERT_SMOKE=true), bounded (SMOKE_TIMEOUT), staging
+# only, and cleans up the resources it creates.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager-smoke
+  labels:
+    app.kubernetes.io/part-of: platforminit
+    platforminit.io/chapter: ch04
+    platforminit.io/purpose: cert-manager-smoke
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: demo-sysadminhomelab-tls
+  namespace: cert-manager-smoke
+  labels:
+    app.kubernetes.io/part-of: platforminit
+    platforminit.io/chapter: ch04
+    platforminit.io/purpose: cert-manager-smoke
+spec:
+  # Staging issuer only. The smoke validator refuses any other issuer.
+  secretName: demo-tls
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+  - demo.sysadminhomelab.hu

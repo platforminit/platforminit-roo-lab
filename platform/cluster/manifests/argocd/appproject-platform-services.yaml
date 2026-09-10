@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform-services
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: platform-services
+    app.kubernetes.io/part-of: platforminit
+    platforminit.io/chapter: ch04
+    platforminit.io/gitops-mode: owner
+  annotations:
+    platforminit.io/description: "CH04 platform services project: Traefik exposure, cert-manager issuers and Argo CD self-management."
+spec:
+  description: "PlatformInit CH04 platform services (Traefik, cert-manager, Argo CD)."
+
+  # Both repositories share the same file layout. platforminit-platform is the
+  # stable source of truth; platforminit-roo-lab is the rehearsal mirror.
+  sourceRepos:
+    - https://github.com/platforminit/platforminit-platform.git
+    - https://github.com/platforminit/platforminit-roo-lab.git
+
+  destinations:
+    # Least privilege (security review finding 1): only the namespaces the
+    # generated Applications actually target. A new destination must be added
+    # deliberately, together with an update to
+    # validate/ch04-validate-platform-services-gitops-contract.sh, so the blast
+    # radius of a repository-write compromise stays visible in review.
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
+    - server: https://kubernetes.default.svc
+      namespace: cert-manager
+
+  # Resource permissions are an explicit allowlist instead of wildcard group/kind
+  # entries. Every entry below is demonstrated by exactly one manifest in a
+  # directory this project syncs, so nothing has to be granted speculatively:
+  #   - cert-manager.io/ClusterIssuer (cluster-scoped)
+  #     platform/cluster/addons/cert-manager/clusterissuer-letsencrypt-cloudflare.yaml
+  #   - helm.cattle.io/HelmChartConfig (namespaced, kube-system)
+  #     platform/cluster/manifests/traefik/traefik-helmchartconfig.yaml
+  # Argo CD validates every synced object against these lists, so RBAC escalation
+  # primitives (ClusterRole, ClusterRoleBinding, Role, RoleBinding,
+  # ServiceAccount, ...), CRDs, webhooks and arbitrary workloads are rejected
+  # before they can reach the cluster. Add a kind only when a reviewed manifest
+  # in a synced directory needs it, and extend the focused validator in the same
+  # change.
+  clusterResourceWhitelist:
+    - group: cert-manager.io
+      kind: ClusterIssuer
+  namespaceResourceWhitelist:
+    # helm.cattle.io/HelmChartConfig is a namespaced kind (k3s helm controller),
+    # not a cluster-scoped one, despite the cluster-wide effect of the chart
+    # values it carries. Scope is declared in the manifest itself
+    # (metadata.namespace: kube-system).
+    - group: helm.cattle.io
+      kind: HelmChartConfig

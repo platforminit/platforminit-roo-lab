@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-self
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-self
+    app.kubernetes.io/part-of: platforminit
+    platforminit.io/chapter: ch04
+    platforminit.io/gitops-mode: owner
+  annotations:
+    platforminit.io/description: "Argo CD manages its own AppProject and platform-services ApplicationSet from Git."
+    platforminit.io/bootstrap-project-rationale: "Runs in Argo CD's built-in 'default' project: the platform-services AppProject lives inside the source directory this Application reconciles, so it cannot be a prerequisite of it on a fresh cluster."
+    platforminit.io/source-inputs: "repoURL/targetRevision are deployment inputs rendered by addons/argocd/bootstrap-argocd.sh (PLATFORMINIT_GITOPS_REPO_URL, PLATFORMINIT_GITOPS_TARGET_REVISION). The committed defaults below must stay in sync with that script's GITOPS_COMMITTED_* defaults."
+spec:
+  # Bootstrap ordering (fresh cluster): argocd-self must be creatable before the
+  # platform-services AppProject exists, therefore it runs in the built-in
+  # `default` project. The project it reconciles is created by this Application,
+  # not by the imperative bootstrap. See addons/argocd/README.md.
+  project: default
+  source:
+    # Lab repository and its dev revision: this branch's manifests are promoted
+    # to `dev` before bootstrap, so the self-managed revision always contains the
+    # files this Application reconciles. The stable platforminit-platform
+    # repository is only used by the promoted stable copy (guarded by
+    # PLATFORMINIT_ALLOW_STABLE_GITOPS_SOURCE=true).
+    repoURL: https://github.com/platforminit/platforminit-roo-lab.git
+    targetRevision: dev
+    path: platform/cluster/manifests/argocd
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # Self-management must never prune: a pruning loop on its own manifests would
+  # be able to delete the ApplicationSet / AppProject it depends on.
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

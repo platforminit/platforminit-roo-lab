@@ -2,53 +2,30 @@
 
 ## Mission
 
-Independently review the active task's changed scope and acceptance criteria before it can reach security review.
+Independently review the active task's changed scope and acceptance criteria before security review.
 
 ## Entry gate
 
-The controller status must be `needs_review`. Load compact delivery context first, then inspect only the relevant changed files and downstream consumers discovered through path-scoped codebase search.
+Run only as a fresh Zoo child when controller status is `needs_review`. Call MCP `health` then `get_delivery_context`. Do not inherit implementation conversation history and do not reread broad roadmap/history unless compact evidence is missing.
 
-```bash
-cd /mnt/d/SYSADMIN/platforminit-roo-lab
-git status --short
-git diff --stat dev...HEAD
-```
-
-Do not modify product code, tests, `tasks/tracker.json`, or generated task views.
+Inspect only changed files plus directly affected consumers found through path-scoped search. Do not modify product code, tests, tracker state, or generated task views.
 
 ## Review checklist
 
-- Patch stays inside the task's allowed scope.
+- Patch stays inside allowed scope and micro-task budget.
 - Acceptance criteria are demonstrably satisfied.
-- Branch/task relationship and controller lifecycle are preserved.
-- Workflows remain operator-friendly and environment boundaries are respected.
-- Secret values are absent and project-scoped token routing is preserved.
-- Destructive actions are guarded and scripts remain idempotent.
-- Validation evidence is actionable and regressions/downstream consumers were considered.
-- The patch does not recreate a competing task source of truth or stale generated task metadata.
+- Branch/task/controller lifecycle is preserved.
+- Operator UX/environment boundaries remain correct.
+- Secret values are absent and destructive actions are guarded.
+- Scripts remain idempotent where required.
+- Focused validation evidence is sufficient and unchanged PASS evidence is reused.
+- No competing task source of truth or stale generated state is introduced.
+
+Return all defects in one consolidated batch.
 
 ## Report and verdict
 
-Write a findings-first report at:
+Write `docs/reviews/<TASK-ID>.md`, then record exactly one controller verdict with `taskctl review`.
+A prose-only approval does not advance state.
 
-```text
-docs/reviews/<TASK-ID>.md
-```
-
-Then record exactly one controller verdict:
-
-```bash
-python3 tools/task_controller/taskctl.py review <TASK-ID> --actor platforminit-openai-reviewer --verdict approve --report docs/reviews/<TASK-ID>.md
-python3 tools/task_controller/taskctl.py review <TASK-ID> --actor platforminit-openai-reviewer --verdict request_changes --report docs/reviews/<TASK-ID>.md
-python3 tools/task_controller/taskctl.py review <TASK-ID> --actor platforminit-openai-reviewer --verdict block --report docs/reviews/<TASK-ID>.md
-```
-
-A prose-only `APPROVE` does not advance task state.
-
-On `approve`, request native Roo `switch_mode` to `platforminit-owasp-reviewer`. On `request_changes`, return to `platforminit-deepseek-coder` with one consolidated fix batch. On `block`, return to the Orchestrator.
-
-Fallback-only marker when native switch is unavailable:
-
-```text
-SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
-```
+After recording the verdict, do not switch role in-place. Call `attempt_completion` with task ID, verdict, resulting controller status, report path, and concise unresolved risks. The Orchestrator reloads MCP context and starts the next specialist as a fresh child.

@@ -9,34 +9,41 @@ from context import active_task_summary, changed_scope, delivery_context
 
 TOOLS = [
     {
+        "name": "health",
+        "description": "Minimal PlatformInit MCP availability check for Zoo mode-transition smoke tests.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
         "name": "get_delivery_context",
-        "description": "Return active/next task, transition, bounded changed scope, validators, and indexed-search hints in one compact call.",
+        "description": "Return compact PlatformInit task, stage transition, changed scope, and handoff hints.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "track": {"type": "string", "enum": ["platform", "n8n"]},
                 "taskId": {"type": "string"},
                 "base": {"type": "string", "default": "dev"},
-                "maxFiles": {"type": "integer", "minimum": 1, "maximum": 80, "default": 40}
+                "maxFiles": {"type": "integer", "minimum": 1, "maximum": 20, "default": 12}
             },
             "additionalProperties": False
         }
     },
     {
         "name": "get_active_task",
-        "description": "Return only the active or next runnable task from the canonical tracker.",
+        "description": "Return only the active or next runnable PlatformInit task.",
         "inputSchema": {
             "type": "object",
-            "properties": {"track": {"type": "string", "enum": ["platform", "n8n"]}, "taskId": {"type": "string"}},
+            "properties": {"taskId": {"type": "string"}},
             "additionalProperties": False
         }
     },
     {
         "name": "get_changed_scope",
-        "description": "Return changed paths and focused-test hints without loading repository-wide context.",
+        "description": "Return bounded non-state changed paths and focused-test hints.",
         "inputSchema": {
             "type": "object",
-            "properties": {"base": {"type": "string", "default": "dev"}, "maxFiles": {"type": "integer", "minimum": 1, "maximum": 80, "default": 40}},
+            "properties": {
+                "base": {"type": "string", "default": "dev"},
+                "maxFiles": {"type": "integer", "minimum": 1, "maximum": 20, "default": 12}
+            },
             "additionalProperties": False
         }
     }
@@ -44,7 +51,7 @@ TOOLS = [
 
 
 def result_text(value: Any) -> dict:
-    return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]}
+    return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, separators=(",", ":"))}]}
 
 
 def rpc_result(message_id: Any, value: Any) -> dict:
@@ -64,7 +71,7 @@ def handle(message: dict) -> dict | None:
         return rpc_result(message_id, {
             "protocolVersion": params.get("protocolVersion", "2025-06-18"),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "platforminit-roo-lab", "version": "0.1.0"}
+            "serverInfo": {"name": "platforminit-roo-lab", "version": "0.2.0"}
         })
     if method == "notifications/initialized":
         return None
@@ -76,17 +83,18 @@ def handle(message: dict) -> dict | None:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         try:
-            if name == "get_delivery_context":
+            if name == "health":
+                value = {"ok": True, "project": "platforminit", "contextVersion": 2}
+            elif name == "get_delivery_context":
                 value = delivery_context(
-                    track=arguments.get("track"),
                     task_id=arguments.get("taskId"),
                     base=arguments.get("base", "dev"),
-                    max_files=arguments.get("maxFiles", 40),
+                    max_files=arguments.get("maxFiles", 12),
                 )
             elif name == "get_active_task":
-                value = active_task_summary(track=arguments.get("track"), task_id=arguments.get("taskId"))
+                value = active_task_summary(task_id=arguments.get("taskId"))
             elif name == "get_changed_scope":
-                value = changed_scope(base=arguments.get("base", "dev"), max_files=arguments.get("maxFiles", 40))
+                value = changed_scope(base=arguments.get("base", "dev"), max_files=arguments.get("maxFiles", 12))
             else:
                 return rpc_error(message_id, -32602, f"unknown tool: {name}")
             return rpc_result(message_id, result_text(value))

@@ -428,7 +428,7 @@
       "id": "P-CH04.5-T02",
       "track": "platform",
       "order": 90,
-      "status": "pending",
+      "status": "done",
       "title": "Stabilize Authentik core deployment contract",
       "description": "Bound the Authentik core install to pinned chart/image inputs, secret preflight, namespace ownership, and idempotent repository-local deployment behavior.",
       "scope": "platform-identity",
@@ -461,7 +461,52 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-11T13:18:39.188904+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "at": "2026-09-11T13:29:44.095188+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ]
+        },
+        "review": {
+          "at": "2026-09-11T13:31:16.354914+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH04.5-T02.md"
+        },
+        "security": {
+          "at": "2026-09-11T13:32:10.693538+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH04.5-T02.md"
+        },
+        "complete": {
+          "at": "2026-09-11T13:36:14.911226+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ]
+        }
+      }
     },
     {
       "id": "P-CH04.5-T03",
@@ -1059,5 +1104,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-11T12:40:47.232712+00:00"
+  "updatedAt": "2026-09-11T13:36:15.902146+00:00"
 }

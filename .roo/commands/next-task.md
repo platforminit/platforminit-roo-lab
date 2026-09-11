@@ -1,49 +1,52 @@
 ---
 description: Load and drive the next runnable PlatformInit task
-argument-hint: [platform]
 mode: platforminit-orchestrator
 ---
 
-Use the `platform` track. The n8n track is parked and must not be started unless a human explicitly resumes it through roadmap maintenance.
+PlatformInit only. n8n has a separate roadmap/task registry and is not part of this command.
 
-Load PlatformInit MCP `get_delivery_context` for `platform` first. Use `get_active_task` plus
-`get_changed_scope` only if the compound context tool is unavailable. Do not read all of
-`tasks/tracker.json`, historical roadmap material, or unrelated chapters unless the compact context
-is missing or inconsistent.
+Start with PlatformInit MCP `health`, then `get_delivery_context`. Use `get_active_task` plus
+`get_changed_scope` only if the compound tool is unavailable. Do not read all of `tasks/tracker.json`,
+roadmap history, prior child conversations, or unrelated chapters when compact context is sufficient.
 
 If the selected task is `pending`, validate generated state with `taskctl validate --ignore-branch`,
-resolve its exact branch, create/switch that branch from fresh `dev`, then start only through the
-controller:
+create/switch the exact task branch from fresh `dev`, and start only through taskctl.
 
-`python3 tools/task_controller/taskctl.py start <TASK-ID> --actor platforminit-orchestrator`
+## Fresh-child lifecycle contract
 
-Drive exactly one bounded task through the Zoo Code workflow. After every child/handoff returns,
-reload `get_delivery_context` and route only from authoritative controller status:
+Every specialist stage MUST be a native Zoo `new_task` child. Never continue implementation,
+review, security, or release by merely switching mode inside the same accumulated conversation.
 
-- `in_progress` -> `implementationMode`;
-- `needs_review` -> `reviewMode`;
-- `needs_security_review` -> `securityMode`;
-- `ready_to_close` -> `releaseMode`;
-- `blocked` -> report the concrete blocker and stop;
-- `done` -> report the PR/closure result and the next pending platform task, but do not start it
-  before the current PR is merged to `dev`.
+For each stage:
 
-Use a native Zoo Code handoff to the returned mode; never end with only a textual mode suggestion.
-Pass only task ID, current stage, acceptance gaps, changed paths, focused evidence, unresolved risks,
-and the controller transition needed for that stage.
+1. Reload MCP `get_delivery_context`.
+2. Select exactly the controller-returned `nextMode`.
+3. Start one fresh `new_task` child.
+4. Pass only: task ID, current stage, acceptance gaps, changed paths, focused evidence paths,
+   unresolved risks, and the required controller transition.
+5. Require the child to call `attempt_completion` with resulting controller status and concise evidence.
+6. When the child returns, discard stage conversation context and reload MCP before routing again.
 
-## Small-context execution contract
+Route only from authoritative status:
 
-- Target **1-6 primary changed files** per task.
-- If the work would exceed **8 unique non-state files**, cross more than one subsystem/operator
-  contract, or require broad repository rereads, stop with `TASK_TOO_LARGE_SPLIT_REQUIRED` and split
-  the work instead of continuing.
-- Prefer path-scoped codebase indexing/search before raw broad reads.
-- Run only focused changed-scope validation required by the task. Never run full-repository tests or
-  broad quality suites unless the task explicitly requires them or a changed shared dependency
-  invalidates previous evidence.
-- Reuse unchanged passing evidence; do not rerun checks merely for reassurance.
-- Return review/test defects as one consolidated batch.
-- If Zoo Code reaches context exhaustion/API 400, stop the current child and continue in a fresh
-  task/handoff using compact delivery context and evidence paths; do not rebuild context by rereading
-  the repository broadly.
+- `in_progress` -> implementationMode
+- `needs_review` -> reviewMode
+- `needs_security_review` -> securityMode
+- `ready_to_close` -> releaseMode
+- `blocked` -> report blocker and stop
+- `done` -> report closure/PR and stop; do not auto-start the next task before merge to `dev`
+
+## Token and task-size contract
+
+- Target **1-3 primary non-state changed files**.
+- **4-5** primary files is exceptional and should be justified in the handoff.
+- **More than 5 non-state files** or more than one subsystem/operator contract => stop with
+  `TASK_TOO_LARGE_SPLIT_REQUIRED` and split before continuing.
+- Use path-scoped codebase search before raw reads.
+- Run focused changed-scope validation only.
+- Do not run full-repository validation unless the task explicitly requires it or a changed shared
+  dependency invalidates previous evidence.
+- Reuse unchanged passing evidence; never rerun checks only for reassurance.
+- Review/security defects return as one consolidated batch in a new implementation child.
+- On API 400/context exhaustion, terminate the current child and resume in a fresh child from MCP
+  compact context; never rebuild the old conversation by broad rereads.

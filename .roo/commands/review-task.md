@@ -11,6 +11,11 @@ path-scoped codebase search. Do not reread broad history or rerun unchanged full
 Write findings first to `docs/reviews/<TASK-ID>.md`. Record exactly one verdict through `taskctl
 review`: `approve`, `request_changes`, or `block`. A prose-only verdict does not advance state.
 
-On `approve`, use a native Zoo Code handoff to the task's `securityMode`. On `request_changes`, return
-one consolidated fix batch to `implementationMode`. On `block`, return to the orchestrator with the
-concrete blocker.
+Do not switch mode or continue review in-place. Call `attempt_completion` with the resulting controller
+status, the exact next controller transition command, the report path, and unresolved risks; the
+Orchestrator reloads MCP `get_delivery_context` and starts the next stage as a fresh Zoo `new_task`
+child.
+
+- On `approve`, the Orchestrator starts the task's `securityMode` as the fresh child.
+- On `request_changes`, return one consolidated fix batch for a fresh `implementationMode` child.
+- On `block`, return to the orchestrator with the concrete blocker.

@@ -20,4 +20,7 @@ Submit exactly once through:
 success. If it fails, fix the consolidated failure set and resubmit; do not add broad/full-repo tests
 unless the task explicitly requires them.
 
-After success, return concise evidence and use a native Zoo Code handoff to the task's `reviewMode`.
+After success, do not switch mode or continue in-place. Call `attempt_completion` with the resulting
+controller status, the exact next controller transition command, changed/evidence paths, and unresolved
+risks. The Orchestrator reloads MCP `get_delivery_context` and starts the task's `reviewMode` as a fresh
+Zoo `new_task` child.

@@ -24,9 +24,24 @@
         "project input controls environment and token routing",
         "volume layout is resolved from project configuration"
       ],
-      "allowedFiles": ["platform/**", "tools/**", "scripts/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not target production/customer scope", "do not expose secret values"],
+      "allowedFiles": [
+        "platform/**",
+        "tools/**",
+        "scripts/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not target production/customer scope",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -41,11 +56,32 @@
       "description": "Ensure validators and docs treat current hostnames as resolver-derived examples rather than immutable constants.",
       "scope": "shared-foundation",
       "branch": "fix/ch01-derived-hostname-validation",
-      "dependsOn": ["P-CH01-T01"],
-      "acceptanceCriteria": ["hostname references are audited", "validators derive expected hostnames from registry/resolver logic", "current default validation still passes"],
-      "allowedFiles": ["platform/**", "tools/**", "scripts/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not mutate secrets or production/customer scope", "do not treat current hostnames as permanent truth"],
+      "dependsOn": [
+        "P-CH01-T01"
+      ],
+      "acceptanceCriteria": [
+        "hostname references are audited",
+        "validators derive expected hostnames from registry/resolver logic",
+        "current default validation still passes"
+      ],
+      "allowedFiles": [
+        "platform/**",
+        "tools/**",
+        "scripts/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not mutate secrets or production/customer scope",
+        "do not treat current hostnames as permanent truth"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -60,11 +96,31 @@
       "description": "Make CH01 host lifecycle reusable without duplicating host lifecycle logic.",
       "scope": "shared-foundation",
       "branch": "batch/platform-ch01-shared-start-rebuild-contract",
-      "dependsOn": ["P-CH01-T01A"],
-      "acceptanceCriteria": ["project configuration consumes shared CH01 capability", "project YAML remains valid", "host lifecycle logic is not duplicated"],
-      "allowedFiles": ["platform/**", "tools/**", "scripts/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not mutate production/customer scope"],
+      "dependsOn": [
+        "P-CH01-T01A"
+      ],
+      "acceptanceCriteria": [
+        "project configuration consumes shared CH01 capability",
+        "project YAML remains valid",
+        "host lifecycle logic is not duplicated"
+      ],
+      "allowedFiles": [
+        "platform/**",
+        "tools/**",
+        "scripts/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not mutate production/customer scope"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -79,11 +135,31 @@
       "description": "Validate CH02 baseline behavior for PlatformInit hosts.",
       "scope": "shared-foundation",
       "branch": "batch/platform-ch02-host-baseline-contract",
-      "dependsOn": ["P-CH01-T02"],
-      "acceptanceCriteria": ["baseline works for PlatformInit hosts", "mount-dependent checks respect resolved volume layout", "baseline validation remains idempotent"],
-      "allowedFiles": ["platform/**", "tools/**", "scripts/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not mutate production/customer scope"],
+      "dependsOn": [
+        "P-CH01-T02"
+      ],
+      "acceptanceCriteria": [
+        "baseline works for PlatformInit hosts",
+        "mount-dependent checks respect resolved volume layout",
+        "baseline validation remains idempotent"
+      ],
+      "allowedFiles": [
+        "platform/**",
+        "tools/**",
+        "scripts/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not mutate production/customer scope"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -98,11 +174,30 @@
       "description": "Separate baseline profiles while preserving shared hardening primitives.",
       "scope": "shared-foundation",
       "branch": "batch/platform-ch02-baseline-profile-separation",
-      "dependsOn": ["P-CH02-T01"],
-      "acceptanceCriteria": ["platform baseline profile is explicit", "shared hardening primitives remain reusable"],
-      "allowedFiles": ["platform/**", "tools/**", "scripts/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not mutate production/customer scope"],
+      "dependsOn": [
+        "P-CH02-T01"
+      ],
+      "acceptanceCriteria": [
+        "platform baseline profile is explicit",
+        "shared hardening primitives remain reusable"
+      ],
+      "allowedFiles": [
+        "platform/**",
+        "tools/**",
+        "scripts/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not mutate production/customer scope"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -117,11 +212,34 @@
       "description": "Define and implement single-node k3s install, kubeconfig, data-dir, service exposure, and reboot survival validation.",
       "scope": "platform",
       "branch": "batch/platform-ch03-k3s-install-validation",
-      "dependsOn": ["P-CH02-T02"],
-      "acceptanceCriteria": ["k3s install script exists and is idempotent", "kubeconfig is accessible post-install", "data-dir follows /srv contract", "service exposure works via Traefik", "reboot survival is validated", "validation script exists and passes"],
-      "allowedFiles": ["platform/cluster/**", "docs/k3s-*.md", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate infrastructure or secrets without explicit human approval", "do not expose secret values"],
+      "dependsOn": [
+        "P-CH02-T02"
+      ],
+      "acceptanceCriteria": [
+        "k3s install script exists and is idempotent",
+        "kubeconfig is accessible post-install",
+        "data-dir follows /srv contract",
+        "service exposure works via Traefik",
+        "reboot survival is validated",
+        "validation script exists and passes"
+      ],
+      "allowedFiles": [
+        "platform/cluster/**",
+        "docs/k3s-*.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate infrastructure or secrets without explicit human approval",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -136,11 +254,36 @@
       "description": "Define Traefik LoadBalancer exposure, cert-manager DNS-01, and Argo CD bootstrap as the GitOps control plane.",
       "scope": "platform",
       "branch": "batch/platform-ch04-platform-services-gitops-contract",
-      "dependsOn": ["P-CH03-T01"],
-      "acceptanceCriteria": ["Traefik LoadBalancer exposes services on ports 80/443", "cert-manager issues certificates via Cloudflare DNS-01", "Argo CD is bootstrapped and self-managed", "platform services are GitOps-managed", "focused validators exist"],
-      "allowedFiles": ["platform/cluster/addons/**", "platform/cluster/manifests/**", "platform/cluster/validate/**", "platform/cluster/README.md", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate infrastructure or secrets without explicit human approval", "do not expose secret values"],
+      "dependsOn": [
+        "P-CH03-T01"
+      ],
+      "acceptanceCriteria": [
+        "Traefik LoadBalancer exposes services on ports 80/443",
+        "cert-manager issues certificates via Cloudflare DNS-01",
+        "Argo CD is bootstrapped and self-managed",
+        "platform services are GitOps-managed",
+        "focused validators exist"
+      ],
+      "allowedFiles": [
+        "platform/cluster/addons/**",
+        "platform/cluster/manifests/**",
+        "platform/cluster/validate/**",
+        "platform/cluster/README.md",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate infrastructure or secrets without explicit human approval",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -155,11 +298,31 @@
       "description": "Audit existing CH04.5 Authentik assets and deprecated CH06 compatibility paths without runtime mutation.",
       "scope": "platform-identity",
       "branch": "batch/platform-ch04-5-authentik-inventory",
-      "dependsOn": ["P-CH04-T01"],
-      "acceptanceCriteria": ["existing CH04.5 Authentik assets and CH06 compatibility paths are inventoried", "canonical identity ownership and deprecated compatibility boundaries are documented", "no runtime mutation is performed"],
-      "allowedFiles": ["platform/identity/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval", "do not expose secret values"],
+      "dependsOn": [
+        "P-CH04-T01"
+      ],
+      "acceptanceCriteria": [
+        "existing CH04.5 Authentik assets and CH06 compatibility paths are inventoried",
+        "canonical identity ownership and deprecated compatibility boundaries are documented",
+        "no runtime mutation is performed"
+      ],
+      "allowedFiles": [
+        "platform/identity/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -174,11 +337,31 @@
       "description": "Bound the Authentik core install to pinned inputs, fail-safe preflight, namespace ownership, and idempotent behavior.",
       "scope": "platform-identity",
       "branch": "batch/platform-ch04-5-authentik-core-contract",
-      "dependsOn": ["P-CH04.5-T01"],
-      "acceptanceCriteria": ["core deployment inputs are pinned or explicitly bounded", "secret and namespace preflight fails safely before mutation", "repository-local deployment behavior is idempotent and documented"],
-      "allowedFiles": ["platform/identity/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval", "do not expose secret values"],
+      "dependsOn": [
+        "P-CH04.5-T01"
+      ],
+      "acceptanceCriteria": [
+        "core deployment inputs are pinned or explicitly bounded",
+        "secret and namespace preflight fails safely before mutation",
+        "repository-local deployment behavior is idempotent and documented"
+      ],
+      "allowedFiles": [
+        "platform/identity/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -188,20 +371,99 @@
       "id": "P-WF-T01",
       "track": "platform",
       "order": 100,
-      "status": "pending",
+      "status": "done",
       "title": "Enforce fresh-child lifecycle handoffs",
       "description": "Make every implementation, review, security, and release stage a fresh Zoo child task with compact handoff only.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t01-workflow",
-      "dependsOn": ["P-CH04.5-T02"],
-      "acceptanceCriteria": ["all lifecycle stage changes use native Zoo new_task", "child completion returns concise evidence and resulting controller state", "orchestrator reloads MCP delivery context after every child"],
-      "allowedFiles": [".roomodes", ".roo/commands/**", "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-CH04.5-T02"
+      ],
+      "acceptanceCriteria": [
+        "all lifecycle stage changes use native Zoo new_task",
+        "child completion returns concise evidence and resulting controller state",
+        "orchestrator reloads MCP delivery context after every child"
+      ],
+      "allowedFiles": [
+        ".roomodes",
+        ".roo/commands/**",
+        "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-11T18:38:31.626689+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "at": "2026-09-11T19:22:10.169729+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "6c469f80e71c2861ac12468698d8aeb07fc6ec2e5f17a5e131f7311aa147e9d8",
+          "changedFiles": [
+            ".roo/commands/next-task.md",
+            ".roo/commands/review-task.md",
+            ".roo/commands/submit-task.md"
+          ]
+        },
+        "review": {
+          "at": "2026-09-11T19:40:11.051291+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T01.md"
+        },
+        "security": {
+          "at": "2026-09-11T19:42:29.670603+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T01.md"
+        },
+        "complete": {
+          "at": "2026-09-11T19:44:38.259151+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "6c469f80e71c2861ac12468698d8aeb07fc6ec2e5f17a5e131f7311aa147e9d8",
+          "changedFiles": [
+            ".roo/commands/next-task.md",
+            ".roo/commands/review-task.md",
+            ".roo/commands/submit-task.md"
+          ],
+          "reusedSubmitEvidence": true
+        }
+      }
     },
     {
       "id": "P-WF-T02",
@@ -212,11 +474,34 @@
       "description": "Add static and runtime smoke coverage proving every PlatformInit mode can access the PlatformInit MCP after fresh-child mode changes.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t02-workflow",
-      "dependsOn": ["P-WF-T01"],
-      "acceptanceCriteria": ["every PlatformInit mode declares MCP access", "MCP health/get_active_task smoke path is documented and testable", "mode changes do not depend on conversation-carried context"],
-      "allowedFiles": [".roomodes", ".roo/mcp.json", ".roo/commands/**", "tools/platforminit_mcp/**", "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-WF-T01"
+      ],
+      "acceptanceCriteria": [
+        "every PlatformInit mode declares MCP access",
+        "MCP health/get_active_task smoke path is documented and testable",
+        "mode changes do not depend on conversation-carried context"
+      ],
+      "allowedFiles": [
+        ".roomodes",
+        ".roo/mcp.json",
+        ".roo/commands/**",
+        "tools/platforminit_mcp/**",
+        "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -231,11 +516,32 @@
       "description": "Reduce delivery-context payload size and remove cross-project branching from the PlatformInit MCP.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t03-workflow",
-      "dependsOn": ["P-WF-T02"],
-      "acceptanceCriteria": ["PlatformInit MCP is platform-only", "changed-scope default and hard cap are bounded for small tasks", "delivery context returns only stage-critical fields"],
-      "allowedFiles": [".roo/mcp.json", "tools/platforminit_mcp/**", "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-WF-T02"
+      ],
+      "acceptanceCriteria": [
+        "PlatformInit MCP is platform-only",
+        "changed-scope default and hard cap are bounded for small tasks",
+        "delivery context returns only stage-critical fields"
+      ],
+      "allowedFiles": [
+        ".roo/mcp.json",
+        "tools/platforminit_mcp/**",
+        "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -250,11 +556,31 @@
       "description": "Define source/evidence fingerprint reuse so unchanged passing validators are not rerun at release.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t04-workflow",
-      "dependsOn": ["P-WF-T03"],
-      "acceptanceCriteria": ["submit records a deterministic source fingerprint", "release reuses passing validator evidence when the fingerprint is unchanged", "changed source invalidates reuse and runs only required focused validators"],
-      "allowedFiles": ["tools/task_controller/**", "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-WF-T03"
+      ],
+      "acceptanceCriteria": [
+        "submit records a deterministic source fingerprint",
+        "release reuses passing validator evidence when the fingerprint is unchanged",
+        "changed source invalidates reuse and runs only required focused validators"
+      ],
+      "allowedFiles": [
+        "tools/task_controller/**",
+        "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -269,11 +595,32 @@
       "description": "Make the small-context file budget enforceable instead of prompt-only.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t05-workflow",
-      "dependsOn": ["P-WF-T04"],
-      "acceptanceCriteria": ["target is 1-3 primary product files", "4-5 primary files require an explicit warning", "more than 5 non-state files blocks submit with TASK_TOO_LARGE_SPLIT_REQUIRED"],
-      "allowedFiles": ["tools/task_controller/**", ".roo/commands/**", "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-WF-T04"
+      ],
+      "acceptanceCriteria": [
+        "target is 1-3 primary product files",
+        "4-5 primary files require an explicit warning",
+        "more than 5 non-state files blocks submit with TASK_TOO_LARGE_SPLIT_REQUIRED"
+      ],
+      "allowedFiles": [
+        "tools/task_controller/**",
+        ".roo/commands/**",
+        "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -288,11 +635,32 @@
       "description": "Remove n8n tasks and track selection from PlatformInit canonical queue and generated views.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t06-workflow",
-      "dependsOn": ["P-WF-T05"],
-      "acceptanceCriteria": ["tasks/tracker.json contains only PlatformInit tasks", "PlatformInit next-task flow has no n8n branch", "historical shared-foundation references remain documentation only"],
-      "allowedFiles": ["tasks/**", ".roo/commands/**", "tools/platforminit_mcp/**", "docs/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-WF-T05"
+      ],
+      "acceptanceCriteria": [
+        "tasks/tracker.json contains only PlatformInit tasks",
+        "PlatformInit next-task flow has no n8n branch",
+        "historical shared-foundation references remain documentation only"
+      ],
+      "allowedFiles": [
+        "tasks/**",
+        ".roo/commands/**",
+        "tools/platforminit_mcp/**",
+        "docs/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -307,11 +675,32 @@
       "description": "Move the preserved parked n8n backlog into its own roadmap and canonical parked registry.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t07-workflow",
-      "dependsOn": ["P-WF-T06"],
-      "acceptanceCriteria": ["n8n roadmap lives outside the PlatformInit roadmap", "n8n task registry is separate from tasks/tracker.json", "PlatformInit controller cannot start n8n tasks"],
-      "allowedFiles": ["n8n/**", "docs/n8n/**", "docs/roo-lab/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-WF-T06"
+      ],
+      "acceptanceCriteria": [
+        "n8n roadmap lives outside the PlatformInit roadmap",
+        "n8n task registry is separate from tasks/tracker.json",
+        "PlatformInit controller cannot start n8n tasks"
+      ],
+      "allowedFiles": [
+        "n8n/**",
+        "docs/n8n/**",
+        "docs/roo-lab/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -326,11 +715,33 @@
       "description": "Verify the compact implementation-review-security-release route without broad reads or full-repo validation.",
       "scope": "workflow-tooling",
       "branch": "chore/p-wf-t08-workflow",
-      "dependsOn": ["P-WF-T07"],
-      "acceptanceCriteria": ["fresh child is used for every specialist stage", "MCP context is available after each handoff", "handoff payload remains bounded and no stale stage is executed"],
-      "allowedFiles": [".roomodes", ".roo/commands/**", "tools/platforminit_mcp/**", "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate runtime infrastructure, secrets, or GitHub environments", "do not run full-repository validation unless explicitly required"],
+      "dependsOn": [
+        "P-WF-T07"
+      ],
+      "acceptanceCriteria": [
+        "fresh child is used for every specialist stage",
+        "MCP context is available after each handoff",
+        "handoff payload remains bounded and no stale stage is executed"
+      ],
+      "allowedFiles": [
+        ".roomodes",
+        ".roo/commands/**",
+        "tools/platforminit_mcp/**",
+        "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not run full-repository validation unless explicitly required"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -345,11 +756,31 @@
       "description": "Define the Authentik ingress, certificate, hostname, and TLS ownership contract independently from identity model bootstrap.",
       "scope": "platform-identity",
       "branch": "batch/platform-ch04-5-authentik-ingress-tls",
-      "dependsOn": ["P-WF-T08"],
-      "acceptanceCriteria": ["Authentik hostname, ingress, certificate, and TLS ownership are explicit", "identity-model bootstrap is not coupled into ingress/TLS reconciliation", "focused repository validation covers the ingress/TLS contract"],
-      "allowedFiles": ["platform/identity/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval", "do not expose secret values"],
+      "dependsOn": [
+        "P-WF-T08"
+      ],
+      "acceptanceCriteria": [
+        "Authentik hostname, ingress, certificate, and TLS ownership are explicit",
+        "identity-model bootstrap is not coupled into ingress/TLS reconciliation",
+        "focused repository validation covers the ingress/TLS contract"
+      ],
+      "allowedFiles": [
+        "platform/identity/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -364,11 +795,31 @@
       "description": "Normalize PlatformInit groups, technical users/service identities, provider templates, and bootstrap idempotence as a small identity-model unit.",
       "scope": "platform-identity",
       "branch": "batch/platform-ch04-5-identity-model",
-      "dependsOn": ["P-CH04.5-T03"],
-      "acceptanceCriteria": ["PlatformInit groups and technical identities have explicit ownership", "provider templates and bootstrap behavior are deterministic", "re-running identity bootstrap does not duplicate managed objects"],
-      "allowedFiles": ["platform/identity/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval", "do not expose secret values"],
+      "dependsOn": [
+        "P-CH04.5-T03"
+      ],
+      "acceptanceCriteria": [
+        "PlatformInit groups and technical identities have explicit ownership",
+        "provider templates and bootstrap behavior are deterministic",
+        "re-running identity bootstrap does not duplicate managed objects"
+      ],
+      "allowedFiles": [
+        "platform/identity/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
@@ -383,16 +834,36 @@
       "description": "Consolidate only focused CH04.5 checks needed to prove repository contract, expected health signals, and break-glass recovery notes.",
       "scope": "platform-identity",
       "branch": "batch/platform-ch04-5-validation-recovery",
-      "dependsOn": ["P-CH04.5-T04"],
-      "acceptanceCriteria": ["focused CH04.5 validation covers repository contract and expected runtime health signals", "break-glass and recovery prerequisites are documented", "validation avoids unrelated full-repository checks"],
-      "allowedFiles": ["platform/identity/**", "docs/**", "tasks/**"],
-      "requiredValidators": [["git", "diff", "--check"]],
-      "forbiddenActions": ["do not run infrastructure workflows", "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval", "do not expose secret values"],
+      "dependsOn": [
+        "P-CH04.5-T04"
+      ],
+      "acceptanceCriteria": [
+        "focused CH04.5 validation covers repository contract and expected runtime health signals",
+        "break-glass and recovery prerequisites are documented",
+        "validation avoids unrelated full-repository checks"
+      ],
+      "allowedFiles": [
+        "platform/identity/**",
+        "docs/**",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval",
+        "do not expose secret values"
+      ],
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-11T13:58:00+00:00"
+  "updatedAt": "2026-09-11T19:44:38.259188+00:00"
 }

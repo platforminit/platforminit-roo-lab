@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T01` — Enforce fresh-child lifecycle handoffs | `pending` | `chore/p-wf-t01-workflow` |
+| `platform` | `P-WF-T02` — Verify MCP access across every Zoo mode | `pending` | `chore/p-wf-t02-workflow` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

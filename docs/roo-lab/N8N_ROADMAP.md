@@ -1,10 +1,12 @@
 # n8n Standalone Roadmap
 
-The n8n roadmap is separate from the main PlatformInit CH01-CH15 platform roadmap.
+> **PARKED:** the n8n track is intentionally paused while the PlatformInit platform CH04.5-CH15 roadmap is developed. Do not start n8n tasks until a human explicitly resumes the track through roadmap maintenance.
 
-## Direction
+The n8n roadmap remains separate from the main PlatformInit CH01-CH15 platform roadmap. Its backlog is preserved for later use; parking is a priority decision, not deletion or completion.
 
-n8n is a standalone runtime track, not part of the main single-node k3s PlatformInit platform path.
+## Direction when resumed
+
+n8n remains a standalone runtime track, not part of the main single-node k3s PlatformInit platform path.
 
 Default assumptions:
 
@@ -17,7 +19,7 @@ Default assumptions:
 - no k3s dependency for MVP;
 - Authentik/SSO is optional later, not an MVP blocker.
 
-## Roadmap chapters
+## Preserved roadmap chapters
 
 | Chapter | Purpose |
 |---|---|
@@ -32,16 +34,6 @@ Default assumptions:
 | N8N-CH09 | Optional SSO/Auth integration |
 | N8N-CH10 | Workflow template productization |
 
-## Active next task
+## Resume rule
 
-Read:
-
-```text
-tasks/active/n8n/NEXT_TASK.md
-```
-
-Start:
-
-```bash
-./scripts/orchestrator/start-next-task.sh --track n8n
-```
+Do not invoke `/next-task n8n` or `start-next-task.sh --track n8n` while parked. Resuming n8n requires an explicit human priority decision and a roadmap-maintenance change that restores its pending tasks to runnable state.

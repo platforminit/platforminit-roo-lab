@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-services
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: platform-services
+    app.kubernetes.io/part-of: platforminit
+    platforminit.io/chapter: ch04
+    platforminit.io/gitops-mode: owner
+  annotations:
+    platforminit.io/description: "CH04: Argo CD generates the platform services Applications from this ApplicationSet."
+    platforminit.io/source-inputs: "repoURL/targetRevision mirror the argocd-self Application and are rendered by addons/argocd/bootstrap-argocd.sh for pre-promotion rehearsals."
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - list:
+        elements:
+          - name: platform-traefik-exposure
+            path: platform/cluster/manifests/traefik
+            namespace: kube-system
+          - name: platform-cert-manager-issuers
+            path: platform/cluster/addons/cert-manager
+            namespace: cert-manager
+  template:
+    metadata:
+      name: "{{.name}}"
+      namespace: argocd
+      labels:
+        app.kubernetes.io/name: "{{.name}}"
+        app.kubernetes.io/part-of: platforminit
+        platforminit.io/chapter: ch04
+        platforminit.io/gitops-mode: owner
+      annotations:
+        platforminit.io/description: "Argo CD-owned CH04 platform service: {{.name}}"
+    spec:
+      project: platform-services
+      source:
+        # Same GitOps source as argocd-self: the lab repository at its promoted
+        # revision. Keep both values aligned with bootstrap-argocd.sh
+        # (PLATFORMINIT_GITOPS_REPO_URL / PLATFORMINIT_GITOPS_TARGET_REVISION).
+        repoURL: https://github.com/platforminit/platforminit-roo-lab.git
+        targetRevision: dev
+        path: "{{.path}}"
+        directory:
+          recurse: false
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{.namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
+          - PruneLast=true

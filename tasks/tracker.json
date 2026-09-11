@@ -344,7 +344,7 @@
       "id": "P-CH04.5-T01",
       "track": "platform",
       "order": 80,
-      "status": "ready_to_close",
+      "status": "done",
       "title": "Inventory current Authentik foundation",
       "description": "Audit the existing CH04.5 Authentik assets and deprecated CH06 compatibility paths, then document the canonical identity ownership boundary without changing runtime.",
       "scope": "platform-identity",
@@ -407,6 +407,20 @@
           "actor": "platforminit-owasp-reviewer",
           "verdict": "clear",
           "report": "docs/security-reviews/P-CH04.5-T01.md"
+        },
+        "complete": {
+          "at": "2026-09-11T12:40:46.305026+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ]
         }
       }
     },
@@ -1045,5 +1059,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-11T12:20:28.754735+00:00"
+  "updatedAt": "2026-09-11T12:40:47.232712+00:00"
 }

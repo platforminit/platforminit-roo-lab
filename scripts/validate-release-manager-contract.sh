@@ -57,7 +57,7 @@ else
   fail "attempt_completion contract missing"
 fi
 
-if grep -Fq "never merge" .roo/rules-platforminit-release-manager/rules.md; then
+if grep -Fiq "never merge" .roo/rules-platforminit-release-manager/rules.md; then
   pass "human-only merge boundary preserved"
 else
   fail "human-only merge boundary missing"

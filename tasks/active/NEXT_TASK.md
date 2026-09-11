@@ -6,7 +6,7 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | none | complete/blocked | — |
-| `n8n` | `N8N-CH01-T01` — Validate n8n consumption of shared CH01 host lifecycle | `pending` | `batch/n8n-ch01-shared-host-lifecycle` |
+| `platform` | `P-CH04.5-T01` — Inventory current Authentik foundation | `pending` | `batch/platform-ch04-5-authentik-inventory` |
+| `n8n` | none | complete/blocked | — |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

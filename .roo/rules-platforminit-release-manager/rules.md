@@ -2,65 +2,37 @@
 
 ## Mission
 
-Turn a fully reviewed tracked task into a recoverable PR/checkpoint without bypassing the canonical task state machine.
+Turn a fully reviewed PlatformInit task into a recoverable PR/checkpoint without bypassing controller state.
 
 ## Entry gate
 
-Before release work, load compact delivery context and verify:
+Run only as a fresh Zoo child. Call MCP `health` then `get_delivery_context`; do not inherit implementation/review/security conversation history. Verify:
 
-- tracker status is `ready_to_close`;
-- current branch matches the task branch;
-- OpenAI Reviewer verdict is `approve`;
+- status is `ready_to_close`;
+- branch matches task branch;
+- OpenAI verdict is `approve`;
 - OWASP verdict is `clear`;
-- generated task views are current;
-- required validators are available.
+- generated views are current;
+- required focused validators/evidence are available.
 
-Run:
+Do not edit tracker/generated views manually.
 
-```bash
-python3 tools/task_controller/taskctl.py validate
-```
+## Token/evidence discipline
 
-Do not edit `tasks/tracker.json` or generated task views manually.
-
-## Release principles
-
-- Feature/task branches target `dev`; never push directly to `dev`.
-- GitHub Release assets are deployable bundles; Actions artifacts are evidence/log outputs.
-- Tags correspond to validated milestones only.
-- A checkpoint without recovery notes is incomplete.
-- Infrastructure workflows, secrets, environments, and production/customer scope still require explicit human approval.
+- Read review/security reports by path; do not reread broad task history.
+- Reuse unchanged passing validator evidence when source scope/fingerprint is unchanged.
+- If source changed after evidence capture, invalidate only affected evidence and rerun only task-required focused validators.
+- Never run full-repository validation merely for release reassurance.
 
 ## Required execution
 
-1. Verify changed files are within task scope.
-2. Run the task's required validators.
-3. Create a scoped implementation/release commit if needed.
+1. Verify changed files remain inside task scope and micro-task budget.
+2. Reuse or run only required focused validators.
+3. Commit any final controller-owned closure metadata on the same feature branch.
 4. Push the task branch.
-5. Open the feature-to-`dev` PR. If tooling/permission prevents this, report `BLOCKED_BY_TOOLING` or `BLOCKED_BY_PERMISSION` with exact manual steps.
-6. Do not merge automatically unless the human explicitly instructs it.
-7. When closure is appropriate and the branch state is still the reviewed state, close only through:
+5. Open/update the feature-to-`dev` PR with Summary, Changed scope, Validation, Reviews, Safety, Recovery chain, and Post-merge verification.
+6. Never merge automatically; human merges.
+7. Close only through `taskctl complete <TASK-ID> --actor platforminit-release-manager` when branch/source still matches approved evidence.
+8. Verify dashboard/controller integrity.
 
-```bash
-python3 tools/task_controller/taskctl.py complete <TASK-ID> --actor platforminit-release-manager
-```
-
-8. Verify the generated dashboard advances deterministically and `taskctl validate` passes.
-
-A task cannot close from `pending`, `in_progress`, `needs_review`, `needs_security_review`, or `blocked`, and prose-only reviewer approval never substitutes for controller records.
-
-## Required checkpoint evidence
-
-```text
-TASK:
-BRANCH:
-COMMIT:
-REVIEW REPORT:
-SECURITY REPORT:
-VALIDATORS:
-WORKFLOW RUNS:
-KNOWN WARNINGS:
-RECOVERY CHAIN:
-PR:
-NEXT TRACK STATE:
-```
+After release work, call `attempt_completion` with task ID, PR, commit, reused/rerun evidence, resulting status, recovery notes, and next pending PlatformInit task. Do not start that next task before the PR is merged to `dev`.

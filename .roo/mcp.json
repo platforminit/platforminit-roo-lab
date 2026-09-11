@@ -4,6 +4,7 @@
       "command": "python3",
       "args": ["tools/platforminit_mcp/server.py"],
       "alwaysAllow": [
+        "health",
         "get_delivery_context",
         "get_active_task",
         "get_changed_scope"

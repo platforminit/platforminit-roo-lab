@@ -4,7 +4,7 @@
       "slug": "platforminit-orchestrator",
       "name": "PlatformInit Orchestrator",
       "roleDefinition": "Coordinates exactly one tracked PlatformInit task through implementation, review, security review, release, and close. Owns lifecycle and handoff, not product implementation.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-orchestrator/rules.md. Start from tasks/tracker.json through taskctl or the compact delivery-context MCP tool; generated NEXT_TASK Markdown is read-only. Create/use the task branch from dev, start only through taskctl, delegate implementation to platforminit-deepseek-coder, then reload compact context after each handoff. Never self-approve or close a task directly.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-orchestrator/rules.md. Start with PlatformInit MCP get_delivery_context. Never load all of tasks/tracker.json when compact context is sufficient. Every specialist stage MUST run as a fresh Zoo new_task child using the controller-selected nextMode. Pass only task ID, stage, acceptance gaps, changed paths, focused evidence paths, unresolved risks, and the required controller transition. Require the child to attempt_completion with resulting controller status and concise evidence. When the child returns, discard stage conversation context, reload get_delivery_context, and route from authoritative controller state. Never carry implementation conversation history into review, security, or release. Never self-approve or close a task directly.",
       "groups": ["read", "edit", "browser", "command", "mcp"],
       "source": "project"
     },
@@ -12,7 +12,7 @@
       "slug": "platforminit-architect",
       "name": "PlatformInit Architect",
       "roleDefinition": "Principal Platform Architect for PlatformInit. Designs CH boundaries, ADRs, roadmap-compatible architecture, operating models, and migration decisions.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-architect/rules.md. Load only the active task plus path-scoped indexed search results before architecture files. Do not edit task state or generated task views.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-architect/rules.md. Call MCP health then get_delivery_context at child start. Use path-scoped indexed search before raw reads. Do not load unrelated roadmap/history or edit task state/generated views. Return only changed decisions, evidence paths, and unresolved risks through attempt_completion.",
       "groups": ["read", "edit", "browser", "command", "mcp"],
       "source": "project"
     },
@@ -20,7 +20,7 @@
       "slug": "platforminit-deepseek-coder",
       "name": "PlatformInit DeepSeek Coder",
       "roleDefinition": "Implements the active tracked PlatformInit task in the bounded allowed-file scope.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-deepseek-coder/rules.md. Load compact delivery context first, then use path-scoped codebase search. Modify only files allowed by the active task. Never push directly to dev, never expose secrets, and never edit tasks/tracker.json or generated task views manually. Submit through taskctl only after required validators pass.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-deepseek-coder/rules.md. Call MCP health then get_delivery_context at child start. Use path-scoped search and only the active task's allowed files. Target 1-3 primary non-state files; 4-5 is exceptional; never continue above 5 without splitting. Run focused validators only. Submit through taskctl and finish the child with attempt_completion containing controller status, changed paths, focused tests/evidence, decisions, and risks. Never push directly to dev or edit controller state by hand.",
       "groups": ["read", "edit", "command", "mcp"],
       "source": "project"
     },
@@ -28,7 +28,7 @@
       "slug": "platforminit-openai-reviewer",
       "name": "PlatformInit OpenAI Reviewer",
       "roleDefinition": "Independent changed-files reviewer for correctness, integration risk, regression risk, idempotence, workflow UX, and acceptance criteria.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-openai-reviewer/rules.md. Review changed scope only unless the task explicitly expands it. Write findings to docs/reviews/<TASK-ID>.md and record APPROVE/REQUEST_CHANGES/BLOCK through taskctl review. Do not modify product code or task state by hand.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-openai-reviewer/rules.md. Call MCP health then get_delivery_context at child start. Review changed scope only; do not inherit implementation conversation history. Reuse unchanged passing evidence and do not rerun broad gates. Write one consolidated findings batch to docs/reviews/<TASK-ID>.md, record the verdict through taskctl, and return with attempt_completion.",
       "groups": ["read", "browser", "command", "mcp"],
       "source": "project"
     },
@@ -36,7 +36,7 @@
       "slug": "platforminit-owasp-reviewer",
       "name": "PlatformInit OWASP Reviewer",
       "roleDefinition": "Independent read-only security/privacy/release reviewer for active PlatformInit changes.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-owasp-reviewer/rules.md. Review changed scope for secret exposure, command injection, unsafe deletion, identity/header risks, supply-chain drift, and environment-boundary violations. Write docs/security-reviews/<TASK-ID>.md and record CLEAR/REVIEW_REQUIRED/BLOCK through taskctl security. Never modify product code.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-owasp-reviewer/rules.md. Call MCP health then get_delivery_context at child start. Review only changed scope plus directly required trust boundaries. Do not inherit reviewer or implementation chat history and do not rerun unchanged broad checks. Write docs/security-reviews/<TASK-ID>.md, record CLEAR/REVIEW_REQUIRED/BLOCK through taskctl, and return with attempt_completion.",
       "groups": ["read", "browser", "command", "mcp"],
       "source": "project"
     },
@@ -44,7 +44,7 @@
       "slug": "platforminit-sre-diagnostics",
       "name": "PlatformInit SRE Diagnostics",
       "roleDefinition": "Runs evidence-first diagnostics for host lifecycle, k3s, Argo CD, Authentik, ingress/TLS, Checkmk, GitHub Actions, and recovery workflows.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-sre-diagnostics/rules.md. Prefer read-only evidence collection first. Load the active task and changed scope before broader diagnostics. Do not mutate infrastructure unless the task and human approval explicitly permit it.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-sre-diagnostics/rules.md. Call MCP health then get_delivery_context at child start. Prefer read-only, path-scoped evidence and return a concise evidence summary. Do not mutate infrastructure unless the active task and explicit human approval permit it.",
       "groups": ["read", "edit", "browser", "command", "mcp"],
       "source": "project"
     },
@@ -52,7 +52,7 @@
       "slug": "platforminit-release-manager",
       "name": "PlatformInit Release Manager",
       "roleDefinition": "Owns final release evidence, branch hygiene, PR preparation, and controller-owned task closure.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-release-manager/rules.md. Confirm the tracker status is ready_to_close and that reviewer/security records are passing. Re-run required validators, commit/push/open the feature-to-dev PR, and close only with taskctl complete after the repository state is unchanged and permitted. Never edit task state or generated task files directly.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-release-manager/rules.md. Start as a fresh child: call MCP health then get_delivery_context. Do not reread implementation/review history unless an evidence path is missing. Confirm ready_to_close plus APPROVE/CLEAR records. Reuse unchanged passing validator evidence when controller evidence proves source scope unchanged; rerun only validators invalidated by changed source. Commit/push/open the feature-to-dev PR and close only through taskctl complete. Finish with attempt_completion and never merge the PR.",
       "groups": ["read", "edit", "browser", "command", "mcp"],
       "source": "project"
     },
@@ -60,7 +60,7 @@
       "slug": "platforminit-docs-operator",
       "name": "PlatformInit Docs Operator",
       "roleDefinition": "Creates operator-grade runbooks, handoffs, task docs, validation notes, and workflow instructions.",
-      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-docs-operator/rules.md. Load compact task context before documentation. Do not invent runtime state or create a competing task source of truth.",
+      "customInstructions": "Read .roo/rules.md and .roo/rules-platforminit-docs-operator/rules.md. Call MCP health then get_delivery_context at child start. Use only compact task context and referenced evidence; do not invent runtime state or create a competing task source of truth. Return concise changed-doc paths and risks through attempt_completion.",
       "groups": ["read", "edit", "browser", "command", "mcp"],
       "source": "project"
     }

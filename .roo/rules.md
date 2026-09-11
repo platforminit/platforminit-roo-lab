@@ -13,76 +13,93 @@ These rules apply to all PlatformInit custom modes in this repository.
 ## Task source of truth
 
 1. Current human instruction in the active chat/task.
-2. `tasks/tracker.json` — the only authoritative task registry and mutable task state.
-3. Generated task views under `tasks/active/`.
+2. `tasks/tracker.json` — the only authoritative PlatformInit task registry and mutable PlatformInit task state.
+3. Generated PlatformInit task views under `tasks/active/`.
 4. Current repository files, workflow definitions, architecture docs, and runbooks.
 5. Archived/historical material only when explicitly referenced.
 
 Generated Markdown is read-only. Never edit task state in `tasks/active/*.md`.
-Never recreate `tasks/status/*.json`, `tasks/roadmap/*.json`, `CURRENT_ACTIVE_TASKS.md`, or other competing current/next-task sources.
+Never recreate legacy task/status/roadmap files as competing PlatformInit current/next-task sources.
 
-Use the controller instead of editing task state directly:
+n8n is a separate delivery track with its own roadmap and parked registry under `docs/n8n/` and
+`n8n/tasks/`. It must not be selected, started, reviewed, or closed through PlatformInit taskctl,
+`/next-task`, generated views, or PlatformInit MCP.
+
+Use the PlatformInit controller instead of editing task state directly:
 
 ```bash
-python3 tools/task_controller/taskctl.py list
+python3 tools/task_controller/taskctl.py list --track platform
 python3 tools/task_controller/taskctl.py next --track platform
-python3 tools/task_controller/taskctl.py next --track n8n
 python3 tools/task_controller/taskctl.py validate
 ```
 
 ## Non-negotiable execution rules
 
-1. Load the active task through the controller or the compact delivery-context MCP tool before opening broad repository context.
+1. Load MCP `health` and `get_delivery_context` before broad repository context.
 2. Verify WSL, repository root, expected task branch, and working tree before changing files.
-3. Never use Windows CMD, PowerShell, Git Bash, MobaXterm shell, or `vscode-remote://` launchers for Roo execution.
+3. Never use Windows CMD, PowerShell, Git Bash, MobaXterm shell, or `vscode-remote://` launchers for Zoo execution.
 4. Never push directly to `dev`.
-5. Never dump secret values into files, logs, artifacts, Markdown, or terminal output.
+5. Never expose secret values in files, logs, artifacts, Markdown, or terminal output.
 6. Prefer small, bounded patches within the task's `allowedFiles` scope.
-7. Run the task's `requiredValidators` before submission and again before closure.
-8. Reviewer and OWASP verdicts must be recorded through `taskctl`; prose-only approval is not sufficient.
-9. Only the Release Manager may close a `ready_to_close` task, and only through `taskctl complete`.
-10. Generated-view drift, duplicate task IDs, missing dependencies, invalid transitions, stale legacy task artifacts, and active branch/task mismatches are release blockers.
+7. Run only task-required/focused validators unless a changed shared dependency invalidates earlier evidence.
+8. Reviewer and OWASP verdicts must be recorded through taskctl; prose-only approval is insufficient.
+9. Only the Release Manager may close `ready_to_close`, and only through taskctl.
+10. Generated-view drift, duplicate IDs, missing dependencies, invalid transitions, stale legacy authoritative artifacts, and active branch/task mismatch are release blockers.
 
-## Lifecycle
+## Lifecycle and Zoo handoff
 
-The canonical lifecycle is:
+Canonical lifecycle:
 
 `pending -> in_progress -> needs_review -> needs_security_review -> ready_to_close -> done`
 
-Failure/rework transitions are controller-owned:
+Failure/rework transitions remain controller-owned.
 
-- reviewer `request_changes` -> `in_progress`;
-- OWASP `review_required` -> `in_progress`;
-- reviewer/OWASP `block` or explicit block command -> `blocked`;
-- only the Orchestrator may unblock a task.
+Every specialist transition MUST use a fresh Zoo `new_task` child. Do not use legacy Roo `switch_mode`
+for delivery stages and do not continue a new specialist in the previous specialist's accumulated
+conversation.
 
 Role flow:
 
-1. `platforminit-orchestrator` starts exactly one runnable task for a track.
-2. `platforminit-deepseek-coder` implements only the bounded task scope and submits through the controller.
-3. `platforminit-openai-reviewer` records `approve`, `request_changes`, or `block` with a report under `docs/reviews/`.
-4. `platforminit-owasp-reviewer` records `clear`, `review_required`, or `block` with a report under `docs/security-reviews/`.
-5. `platforminit-release-manager` closes only a fully approved task through the controller.
+1. Orchestrator starts exactly one runnable PlatformInit task.
+2. Fresh `platforminit-deepseek-coder` child implements and submits.
+3. Orchestrator reloads compact MCP context.
+4. Fresh `platforminit-openai-reviewer` child reviews and records one consolidated verdict batch.
+5. Orchestrator reloads compact MCP context.
+6. Fresh `platforminit-owasp-reviewer` child performs security/privacy review.
+7. Orchestrator reloads compact MCP context.
+8. Fresh `platforminit-release-manager` child verifies evidence, prepares PR, and closes via controller.
 
-Use native Roo `switch_mode` handoff whenever the next stage belongs to another PlatformInit role. Manual next-prompt printing is fallback-only and must report `SWITCH_MODE_UNAVAILABLE_FALLBACK_USED`.
+Each child must call `attempt_completion` with resulting controller status, changed/evidence paths, and
+unresolved risks. The parent reloads MCP context before routing again.
 
 ## Context and token discipline
 
-Prefer compact context before raw file reads:
+- MCP compact context first; raw tracker/roadmap reads are fallback only.
+- Target 1-3 primary non-state changed files per task.
+- 4-5 primary files is exceptional and must be justified.
+- More than 5 non-state files or more than one subsystem/operator contract =>
+  `TASK_TOO_LARGE_SPLIT_REQUIRED`.
+- Use path-scoped codebase search before raw broad reads.
+- Full-repository validation is forbidden unless explicitly required or invalidated by shared changes.
+- Reuse unchanged passing evidence; do not rerun passing checks for reassurance.
+- Review/security findings return as one consolidated batch.
+- On API 400/context exhaustion, terminate the child and resume in a fresh child from MCP compact
+  context and evidence paths. Never rebuild failed context with broad repository rereads.
 
-- active task and transition;
-- changed files against `dev`;
-- task-specific allowed paths;
-- focused tests/validators;
-- one or two path-scoped codebase searches.
+## MCP availability
 
-Do not load entire roadmap/history files into context. Use codebase indexing/search for discovery and open only the relevant files. `tools/platforminit_mcp/` provides repository-local context tooling; future RAG must build on this boundary rather than becoming a second task source of truth.
+Every `platforminit-*` project mode must include the `mcp` group. Fresh-child mode changes must be
+verified with MCP `health` and `get_active_task`; `.roo/commands/mcp-smoke.md` is the runtime smoke
+procedure and `tools/platforminit_mcp/validate_mode_access.py` is the static check.
 
 ## Active architecture baseline
 
-PlatformInit remains a cost-conscious, deterministic rebuild platform built around Hetzner Cloud, Ubuntu, GitHub Actions, k3s, Argo CD, Traefik, cert-manager/Let's Encrypt, Cloudflare DNS-01, Authentik, and Checkmk Community. The `n8n` track remains standalone and consumes only shared host-lifecycle/baseline capabilities unless a later task explicitly changes that contract.
+PlatformInit remains a cost-conscious, deterministic rebuild platform built around Hetzner Cloud,
+Ubuntu, GitHub Actions, k3s, Argo CD, Traefik, cert-manager/Let's Encrypt, Cloudflare DNS-01,
+Authentik, and Checkmk Community.
 
-`DEPRECATED_COMPONENTS.md` remains a hard negative context file. Deprecated or superseded components must not be resurrected without an explicit architect decision.
+`DEPRECATED_COMPONENTS.md` remains hard negative context. Deprecated or superseded components must
+not be resurrected without an explicit architect decision.
 
 ## Human approval boundary
 

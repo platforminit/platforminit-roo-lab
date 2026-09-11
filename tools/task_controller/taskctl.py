@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,16 +14,20 @@ from datetime import datetime, timezone
 ROOT = Path(os.environ.get("PLATFORMINIT_REPO_ROOT", Path(__file__).resolve().parents[2])).resolve()
 TRACKER = ROOT / "tasks" / "tracker.json"
 ACTIVE = ROOT / "tasks" / "active"
+PLATFORM_TRACK = "platform"
 VALID = {"pending", "in_progress", "needs_review", "needs_security_review", "ready_to_close", "blocked", "done"}
 ACTIVE_STATES = {"in_progress", "needs_review", "needs_security_review", "ready_to_close"}
 ORCHESTRATOR = "platforminit-orchestrator"
 REVIEWER = "platforminit-openai-reviewer"
 OWASP = "platforminit-owasp-reviewer"
 RELEASE = "platforminit-release-manager"
+TASK_SIZE_TARGET = 3
+TASK_SIZE_HARD_MAX = 5
 LEGACY = [
     "tasks/status/platform.json", "tasks/status/n8n.json",
     "tasks/roadmap/platform.json", "tasks/roadmap/n8n.json",
     "tasks/active/CURRENT_ACTIVE_TASKS.md", "tasks/active/NEXT_TASK_AGENT_LAYER.md",
+    "tasks/active/n8n/NEXT_TASK.md",
     "docs/roo-lab/context/ACTIVE_AGENT_CONTEXT.md",
 ]
 SCOPE_EXCLUSIONS = (
@@ -63,12 +68,12 @@ def deps_done(task, data):
     return all(mapping[dependency]["status"] == "done" for dependency in task["dependsOn"])
 
 
-def active_task(data, track):
+def active_task(data, track=PLATFORM_TRACK):
     found = [task for task in data["tasks"] if task["track"] == track and task["status"] in ACTIVE_STATES]
     return sorted(found, key=lambda task: (task["order"], task["id"]))[0] if found else None
 
 
-def next_task(data, track):
+def next_task(data, track=PLATFORM_TRACK):
     current = active_task(data, track)
     if current:
         return current
@@ -83,6 +88,8 @@ def get_task(data, task_id):
     task = by_id(data).get(task_id)
     if not task:
         raise TaskError(f"unknown task {task_id}")
+    if task.get("track") != PLATFORM_TRACK:
+        raise TaskError(f"{task_id}: PlatformInit taskctl only manages the platform track")
     return task
 
 
@@ -121,6 +128,8 @@ def validate_tracker(data):
     if data.get("schemaVersion") != 1:
         errors.append("schemaVersion must be 1")
     tracks = [track.get("id") for track in data.get("tracks", [])]
+    if tracks != [PLATFORM_TRACK]:
+        errors.append("PlatformInit tracker must contain exactly one track: platform")
     ids, mapping = set(), {}
     for task in data.get("tasks", []):
         task_id = task.get("id")
@@ -131,8 +140,8 @@ def validate_tracker(data):
             errors.append(f"duplicate task id {task_id}")
         ids.add(task_id)
         mapping[task_id] = task
-        if task.get("track") not in tracks:
-            errors.append(f"{task_id}: unknown track {task.get('track')}")
+        if task.get("track") != PLATFORM_TRACK:
+            errors.append(f"{task_id}: non-platform task belongs in its own tracker, not tasks/tracker.json")
         if task.get("status") not in VALID:
             errors.append(f"{task_id}: invalid status {task.get('status')}")
         if not isinstance(task.get("order"), int):
@@ -169,10 +178,9 @@ def validate_tracker(data):
     for task_id in ids:
         visit(task_id)
 
-    for track in tracks:
-        active = [task["id"] for task in data.get("tasks", []) if task.get("track") == track and task.get("status") in ACTIVE_STATES]
-        if len(active) > 1:
-            errors.append(f"{track}: only one active task allowed; found {', '.join(active)}")
+    active = [task["id"] for task in data.get("tasks", []) if task.get("status") in ACTIVE_STATES]
+    if len(active) > 1:
+        errors.append(f"platform: only one active task allowed; found {', '.join(active)}")
     return errors
 
 
@@ -192,7 +200,7 @@ def transition(task):
     return "none", "none"
 
 
-def render_task(task, track):
+def render_task(task, track=PLATFORM_TRACK):
     if not task:
         return f"# {track} task view\n\nGenerated from `tasks/tracker.json`. Do not edit manually.\n\nNo runnable task exists.\n"
     actor, command = transition(task)
@@ -241,24 +249,23 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 
 def render_dashboard(data):
+    task = next_task(data)
     lines = [
         "# PlatformInit task dashboard", "",
         "Generated from `tasks/tracker.json`. Do not edit manually.", "",
         "`tasks/tracker.json` is the only authoritative task registry and mutable task state.", "",
         "| Track | Current / next | Status | Branch |", "|---|---|---|---|",
+        f"| `platform` | `{task['id']}` — {task['title']} | `{task['status']}` | `{task['branch']}` |" if task else "| `platform` | none | complete/blocked | — |",
+        "", "Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.", "",
     ]
-    for track in [item["id"] for item in data["tracks"]]:
-        task = next_task(data, track)
-        lines.append(f"| `{track}` | `{task['id']}` — {task['title']} | `{task['status']}` | `{task['branch']}` |" if task else f"| `{track}` | none | complete/blocked | — |")
-    lines += ["", "Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.", ""]
     return "\n".join(lines)
 
 
 def expected_views(data):
-    views = {ACTIVE / "NEXT_TASK.md": render_dashboard(data)}
-    for track in [item["id"] for item in data["tracks"]]:
-        views[ACTIVE / track / "NEXT_TASK.md"] = render_task(next_task(data, track), track)
-    return views
+    return {
+        ACTIVE / "NEXT_TASK.md": render_dashboard(data),
+        ACTIVE / PLATFORM_TRACK / "NEXT_TASK.md": render_task(next_task(data)),
+    }
 
 
 def sync_views(data, check=False):
@@ -303,6 +310,37 @@ def changed_files(base="dev"):
     return sorted(file for file in files if not any(file == prefix or file.startswith(prefix) for prefix in SCOPE_EXCLUSIONS))
 
 
+def source_fingerprint(base="dev"):
+    digest = hashlib.sha256()
+    files = changed_files(base)
+    for relative in files:
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        path = ROOT / relative
+        if path.is_file():
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<deleted>")
+        digest.update(b"\0")
+    return digest.hexdigest(), files
+
+
+def require_task_size(task):
+    files = changed_files()
+    count = len(files)
+    if count > TASK_SIZE_HARD_MAX:
+        raise TaskError(
+            f"TASK_TOO_LARGE_SPLIT_REQUIRED: {task['id']} changes {count} non-state files; "
+            f"hard maximum is {TASK_SIZE_HARD_MAX}. Split the task before submission."
+        )
+    if count > TASK_SIZE_TARGET:
+        print(
+            f"TASK_SIZE_WARNING: {task['id']} changes {count} non-state files; target is {TASK_SIZE_TARGET}.",
+            file=sys.stderr,
+        )
+    return files
+
+
 def require_allowed_scope(task):
     disallowed = [file for file in changed_files() if not any(fnmatch.fnmatch(file, pattern) for pattern in task["allowedFiles"])]
     if disallowed:
@@ -340,12 +378,12 @@ def make_parser():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
     next_parser = sub.add_parser("next")
-    next_parser.add_argument("--track", choices=["platform", "n8n"])
+    next_parser.add_argument("--track", choices=[PLATFORM_TRACK], default=PLATFORM_TRACK)
     next_parser.add_argument("--check", action="store_true")
     list_parser = sub.add_parser("list")
-    list_parser.add_argument("--track", choices=["platform", "n8n"])
+    list_parser.add_argument("--track", choices=[PLATFORM_TRACK], default=PLATFORM_TRACK)
     branch_parser = sub.add_parser("branch")
-    branch_parser.add_argument("--track", required=True, choices=["platform", "n8n"])
+    branch_parser.add_argument("--track", choices=[PLATFORM_TRACK], default=PLATFORM_TRACK)
     validate_parser = sub.add_parser("validate")
     validate_parser.add_argument("--sync", action="store_true")
     validate_parser.add_argument("--ignore-branch", action="store_true")
@@ -378,17 +416,16 @@ def main():
                 print("Generated task views are current.")
             else:
                 sync_views(data)
-                print(render_task(next_task(data, args.track), args.track) if args.track else render_dashboard(data))
+                print(render_task(next_task(data), PLATFORM_TRACK) if args.track else render_dashboard(data))
             return 0
         if args.cmd == "list":
             for task in data["tasks"]:
-                if not args.track or task["track"] == args.track:
-                    print(f"{task['id']}\t{task['track']}\t{task['status']}\t{task['title']}")
+                print(f"{task['id']}\t{task['track']}\t{task['status']}\t{task['title']}")
             return 0
         if args.cmd == "branch":
-            task = next_task(data, args.track)
+            task = next_task(data)
             if not task:
-                raise TaskError(f"no runnable task for {args.track}")
+                raise TaskError("no runnable PlatformInit task")
             print(task["branch"])
             return 0
         if args.cmd == "validate":
@@ -404,8 +441,8 @@ def main():
         if args.cmd == "start":
             if task["status"] != "pending":
                 raise TaskError(f"{task['id']} is {task['status']}, not pending")
-            if active_task(data, task["track"]):
-                raise TaskError(f"{task['track']} already has an active task")
+            if active_task(data):
+                raise TaskError("platform already has an active task")
             if not deps_done(task, data):
                 raise TaskError(f"{task['id']} has incomplete dependencies")
             if args.actor != ORCHESTRATOR:
@@ -421,7 +458,16 @@ def main():
                 raise TaskError(f"{task['id']} must be submitted by {task['implementationMode']}")
             require_branch(task)
             require_allowed_scope(task)
-            task.setdefault("workflow", {})["submit"] = {"at": now(), "actor": args.actor, "validators": run_validators(task)}
+            files = require_task_size(task)
+            validators = run_validators(task)
+            fingerprint, _ = source_fingerprint()
+            task.setdefault("workflow", {})["submit"] = {
+                "at": now(),
+                "actor": args.actor,
+                "validators": validators,
+                "sourceFingerprint": fingerprint,
+                "changedFiles": files,
+            }
             task["status"] = "needs_review"
             save(data)
         elif args.cmd == "review":
@@ -468,7 +514,23 @@ def main():
                 raise TaskError(f"{task['id']} lacks passing review/security records")
             require_branch(task)
             require_allowed_scope(task)
-            workflow["complete"] = {"at": now(), "actor": args.actor, "validators": run_validators(task)}
+            require_task_size(task)
+            fingerprint, files = source_fingerprint()
+            submit = workflow.get("submit", {})
+            if submit.get("sourceFingerprint") and submit.get("sourceFingerprint") == fingerprint:
+                validators = submit.get("validators", [])
+                reused = True
+            else:
+                validators = run_validators(task)
+                reused = False
+            workflow["complete"] = {
+                "at": now(),
+                "actor": args.actor,
+                "validators": validators,
+                "sourceFingerprint": fingerprint,
+                "changedFiles": files,
+                "reusedSubmitEvidence": reused,
+            }
             task["status"] = "done"
             task.pop("blocker", None)
             save(data)

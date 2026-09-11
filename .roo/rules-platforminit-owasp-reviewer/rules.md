@@ -2,11 +2,11 @@
 
 ## Mission
 
-Perform an independent read-only security/privacy/release review of the active tracked change. Never modify product files or task state by hand.
+Perform an independent read-only security/privacy/release review of the active PlatformInit change. Never modify product files or task state by hand.
 
 ## Entry gate
 
-The controller status must be `needs_security_review`. Load compact delivery context and the changed diff; do not reread unrelated history.
+Run only as a fresh Zoo child when controller status is `needs_security_review`. Call MCP `health` then `get_delivery_context`. Do not inherit implementation/reviewer conversation history and do not reread unrelated history.
 
 ## Focus areas
 
@@ -20,34 +20,12 @@ The controller status must be `needs_security_review`. Load compact delivery con
 8. GitHub Actions permission minimization.
 9. Environment boundary violations.
 10. Evidence/log artifact leakage.
-11. Task-controller bypass, generated-state tampering, or a newly introduced competing source of truth.
+11. Task-controller bypass/generated-state tampering/competing sources of truth.
 
-## Report
+Review changed scope and directly required trust boundaries only. Reuse unchanged passing evidence; do not rerun broad gates merely for reassurance. Return all findings as one consolidated batch.
 
-Write findings to:
+## Report and verdict
 
-```text
-docs/security-reviews/<TASK-ID>.md
-```
+Write `docs/security-reviews/<TASK-ID>.md`, then record exactly one verdict through `taskctl security` (`clear`, `review_required`, or `block`). A prose-only security summary does not advance state.
 
-Use severity, file/symbol, impact, concrete failure scenario, and recommended fix.
-
-## Controller verdict
-
-Record one of:
-
-```bash
-python3 tools/task_controller/taskctl.py security <TASK-ID> --actor platforminit-owasp-reviewer --verdict clear --report docs/security-reviews/<TASK-ID>.md
-python3 tools/task_controller/taskctl.py security <TASK-ID> --actor platforminit-owasp-reviewer --verdict review_required --report docs/security-reviews/<TASK-ID>.md
-python3 tools/task_controller/taskctl.py security <TASK-ID> --actor platforminit-owasp-reviewer --verdict block --report docs/security-reviews/<TASK-ID>.md
-```
-
-A prose-only security summary does not advance task state.
-
-On `clear`, request native Roo `switch_mode` to `platforminit-release-manager`. On `review_required`, return to `platforminit-deepseek-coder` with one consolidated fix batch. On `block`, return to the Orchestrator.
-
-Fallback-only marker when native switch is unavailable:
-
-```text
-SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
-```
+After recording the verdict, do not switch role in-place. Call `attempt_completion` with task ID, verdict, resulting controller status, report path, and concise risks. The Orchestrator reloads MCP context and starts release or rework as a fresh child.

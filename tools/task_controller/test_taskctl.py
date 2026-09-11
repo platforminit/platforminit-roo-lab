@@ -23,20 +23,15 @@ class TaskctlTests(unittest.TestCase):
         (self.root / "tools/task_controller").mkdir(parents=True)
         shutil.copy2(Path(__file__).with_name("taskctl.py"), self.root / "tools/task_controller/taskctl.py")
         (self.root / "tasks/active/platform").mkdir(parents=True)
-        (self.root / "tasks/active/n8n").mkdir(parents=True)
         (self.root / "docs/reviews").mkdir(parents=True)
         (self.root / "docs/security-reviews").mkdir(parents=True)
         self.tracker = {
             "schemaVersion": 1,
             "project": "fixture",
-            "tracks": [
-                {"id": "platform", "title": "Platform", "order": 1},
-                {"id": "n8n", "title": "n8n", "order": 2},
-            ],
+            "tracks": [{"id": "platform", "title": "Platform", "order": 1}],
             "tasks": [
                 self.task("P-001", 1, "done", "done/p-001"),
                 self.task("P-002", 2, "pending", "feature/p-002", ["P-001"]),
-                self.task("N-001", 1, "pending", "feature/n-001", ["P-001"], "n8n"),
             ],
         }
         self.write_tracker()
@@ -48,15 +43,15 @@ class TaskctlTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def task(self, tid, order, status, branch, depends=None, track="platform"):
+    def task(self, tid, order, status, branch, depends=None):
         return {
             "id": tid,
-            "track": track,
+            "track": "platform",
             "order": order,
             "status": status,
             "title": tid,
             "description": "fixture",
-            "scope": track,
+            "scope": "platform",
             "branch": branch,
             "dependsOn": depends or [],
             "acceptanceCriteria": ["deterministic"],
@@ -99,6 +94,13 @@ class TaskctlTests(unittest.TestCase):
 
     def write_security(self, text="CLEAR: no unresolved security blocker remains."):
         (self.root / "docs/security-reviews/P-002.md").write_text(f"# Security\n\n{text}\n")
+
+    def approve_to_close(self):
+        self.start_and_submit()
+        self.write_review()
+        self.invoke("review", "P-002", "--actor", REVIEWER, "--verdict", "approve", "--report", "docs/reviews/P-002.md")
+        self.write_security()
+        self.invoke("security", "P-002", "--actor", OWASP, "--verdict", "clear", "--report", "docs/security-reviews/P-002.md")
 
     def test_invalid_transition(self):
         result = self.invoke("submit", "P-002", "--actor", CODER, ok=False)
@@ -143,6 +145,16 @@ class TaskctlTests(unittest.TestCase):
         result = self.invoke("start", "P-002", "--actor", ORCHESTRATOR, ok=False)
         self.assertIn("branch-task mismatch", result.stderr)
 
+    def test_non_platform_track_is_rejected(self):
+        self.tracker["tracks"].append({"id": "n8n", "title": "n8n", "order": 2})
+        bad = self.task("N-001", 3, "pending", "feature/n-001")
+        bad["track"] = "n8n"
+        self.tracker["tasks"].append(bad)
+        self.write_tracker()
+        result = self.invoke("validate", "--ignore-branch", ok=False)
+        self.assertIn("exactly one track: platform", result.stderr)
+        self.assertIn("non-platform task", result.stderr)
+
     def test_workflow_state_mismatch_is_detected(self):
         task = self.tracker["tasks"][1]
         task["status"] = "ready_to_close"
@@ -155,10 +167,7 @@ class TaskctlTests(unittest.TestCase):
     def test_review_block_unblock_restores_review_state(self):
         self.start_and_submit()
         self.write_review("BLOCK: a concrete correctness blocker remains unresolved.")
-        self.invoke(
-            "review", "P-002", "--actor", REVIEWER, "--verdict", "block",
-            "--report", "docs/reviews/P-002.md",
-        )
+        self.invoke("review", "P-002", "--actor", REVIEWER, "--verdict", "block", "--report", "docs/reviews/P-002.md")
         self.invoke("unblock", "P-002", "--actor", ORCHESTRATOR)
         state = json.loads((self.root / "tasks/tracker.json").read_text())
         task = next(item for item in state["tasks"] if item["id"] == "P-002")
@@ -167,36 +176,38 @@ class TaskctlTests(unittest.TestCase):
     def test_security_block_unblock_restores_security_state(self):
         self.start_and_submit()
         self.write_review()
-        self.invoke(
-            "review", "P-002", "--actor", REVIEWER, "--verdict", "approve",
-            "--report", "docs/reviews/P-002.md",
-        )
+        self.invoke("review", "P-002", "--actor", REVIEWER, "--verdict", "approve", "--report", "docs/reviews/P-002.md")
         self.write_security("BLOCK: an unresolved security boundary violation remains.")
-        self.invoke(
-            "security", "P-002", "--actor", OWASP, "--verdict", "block",
-            "--report", "docs/security-reviews/P-002.md",
-        )
+        self.invoke("security", "P-002", "--actor", OWASP, "--verdict", "block", "--report", "docs/security-reviews/P-002.md")
         self.invoke("unblock", "P-002", "--actor", ORCHESTRATOR)
         state = json.loads((self.root / "tasks/tracker.json").read_text())
         task = next(item for item in state["tasks"] if item["id"] == "P-002")
         self.assertEqual(task["status"], "needs_security_review")
 
-    def test_full_review_security_close_path(self):
-        self.start_and_submit()
-        self.write_review()
-        self.invoke(
-            "review", "P-002", "--actor", REVIEWER, "--verdict", "approve",
-            "--report", "docs/reviews/P-002.md",
-        )
-        self.write_security()
-        self.invoke(
-            "security", "P-002", "--actor", OWASP, "--verdict", "clear",
-            "--report", "docs/security-reviews/P-002.md",
-        )
+    def test_full_review_security_close_path_reuses_submit_evidence(self):
+        self.approve_to_close()
         self.invoke("complete", "P-002", "--actor", RELEASE)
         state = json.loads((self.root / "tasks/tracker.json").read_text())
         task = next(item for item in state["tasks"] if item["id"] == "P-002")
         self.assertEqual(task["status"], "done")
+        self.assertTrue(task["workflow"]["complete"]["reusedSubmitEvidence"])
+        self.assertEqual(task["workflow"]["submit"]["sourceFingerprint"], task["workflow"]["complete"]["sourceFingerprint"])
+
+    def test_source_change_invalidates_submit_evidence(self):
+        self.approve_to_close()
+        (self.root / "changed.txt").write_text("changed after review\n", encoding="utf-8")
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        state = json.loads((self.root / "tasks/tracker.json").read_text())
+        task = next(item for item in state["tasks"] if item["id"] == "P-002")
+        self.assertFalse(task["workflow"]["complete"]["reusedSubmitEvidence"])
+
+    def test_more_than_five_non_state_files_requires_split(self):
+        self.switch("feature/p-002")
+        self.invoke("start", "P-002", "--actor", ORCHESTRATOR)
+        for index in range(6):
+            (self.root / f"change-{index}.txt").write_text(f"{index}\n", encoding="utf-8")
+        result = self.invoke("submit", "P-002", "--actor", CODER, ok=False)
+        self.assertIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
 
 
 if __name__ == "__main__":

@@ -7,32 +7,40 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 TRACKER = ROOT / "tasks" / "tracker.json"
 ACTIVE_STATES = {"in_progress", "needs_review", "needs_security_review", "ready_to_close"}
+STATE_EXCLUSIONS = (
+    "tasks/tracker.json",
+    "tasks/active/",
+    "docs/reviews/",
+    "docs/security-reviews/",
+)
 
 
 def _tracker() -> dict:
     return json.loads(TRACKER.read_text(encoding="utf-8"))
 
 
+def _platform_tasks() -> list[dict]:
+    return [task for task in _tracker()["tasks"] if task.get("track") == "platform"]
+
+
 def _deps_done(task: dict, mapping: dict[str, dict]) -> bool:
     return all(mapping[d]["status"] == "done" for d in task["dependsOn"])
 
 
-def select_task(track: str | None = None, task_id: str | None = None) -> dict | None:
-    tracker = _tracker()
-    tasks = tracker["tasks"]
+def select_task(task_id: str | None = None) -> dict | None:
+    tasks = _platform_tasks()
     if task_id:
         return next((task for task in tasks if task["id"] == task_id), None)
     mapping = {task["id"]: task for task in tasks}
-    candidates = [task for task in tasks if not track or task["track"] == track]
-    active = [task for task in candidates if task["status"] in ACTIVE_STATES]
+    active = [task for task in tasks if task["status"] in ACTIVE_STATES]
     if active:
-        return sorted(active, key=lambda task: (task["track"], task["order"], task["id"]))[0]
-    runnable = [task for task in candidates if task["status"] == "pending" and _deps_done(task, mapping)]
-    return sorted(runnable, key=lambda task: (task["track"], task["order"], task["id"]))[0] if runnable else None
+        return sorted(active, key=lambda task: (task["order"], task["id"]))[0]
+    runnable = [task for task in tasks if task["status"] == "pending" and _deps_done(task, mapping)]
+    return sorted(runnable, key=lambda task: (task["order"], task["id"]))[0] if runnable else None
 
 
-def changed_scope(base: str = "dev", max_files: int = 40) -> dict:
-    max_files = max(1, min(max_files, 80))
+def changed_scope(base: str = "dev", max_files: int = 12) -> dict:
+    max_files = max(1, min(max_files, 20))
     commands = [
         ["git", "diff", "--name-only", f"{base}...HEAD"],
         ["git", "diff", "--name-only"],
@@ -46,10 +54,7 @@ def changed_scope(base: str = "dev", max_files: int = 40) -> dict:
             files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
     visible = sorted(
         file for file in files
-        if file != "tasks/tracker.json"
-        and not file.startswith("tasks/active/")
-        and not file.startswith("docs/reviews/")
-        and not file.startswith("docs/security-reviews/")
+        if not any(file == prefix or file.startswith(prefix) for prefix in STATE_EXCLUSIONS)
     )
     tests = [file for file in visible if "test" in Path(file).name.lower()]
     return {
@@ -57,7 +62,8 @@ def changed_scope(base: str = "dev", max_files: int = 40) -> dict:
         "fileCount": len(visible),
         "files": visible[:max_files],
         "truncated": len(visible) > max_files,
-        "focusedTests": tests[:20],
+        "focusedTests": tests[:8],
+        "budget": {"target": 3, "warning": 5, "hardSplitAbove": 5},
     }
 
 
@@ -78,13 +84,12 @@ def transition(task: dict) -> dict:
     return {"nextMode": None, "command": None}
 
 
-def active_task_summary(track: str | None = None, task_id: str | None = None) -> dict:
-    task = select_task(track=track, task_id=task_id)
+def active_task_summary(task_id: str | None = None) -> dict:
+    task = select_task(task_id=task_id)
     if not task:
-        return {"state": "no-runnable-task", "track": track}
+        return {"state": "no-runnable-platform-task"}
     return {
         "id": task["id"],
-        "track": task["track"],
         "status": task["status"],
         "title": task["title"],
         "scope": task["scope"],
@@ -98,23 +103,22 @@ def active_task_summary(track: str | None = None, task_id: str | None = None) ->
     }
 
 
-def delivery_context(track: str | None = None, task_id: str | None = None, base: str = "dev", max_files: int = 40) -> dict:
-    task = active_task_summary(track=track, task_id=task_id)
+def delivery_context(task_id: str | None = None, base: str = "dev", max_files: int = 12) -> dict:
+    task = active_task_summary(task_id=task_id)
     scope = changed_scope(base=base, max_files=max_files)
-    title = task.get("title") if task.get("id") else "current PlatformInit task"
     allowed = task.get("allowedFiles", [])
     return {
-        "contextVersion": 1,
+        "contextVersion": 2,
+        "project": "platforminit",
         "task": task,
         "scope": scope,
+        "handoff": {
+            "rule": "fresh Zoo child for every specialist stage; reload this context after child completion",
+            "payload": ["task id", "stage", "acceptance gaps", "changed paths", "evidence paths", "unresolved risks", "controller transition"],
+        },
         "indexing": {
             "strategy": "path-scoped codebase_search before raw reads",
-            "suggestedSearch": title,
-            "suggestedPaths": allowed[:5],
+            "suggestedPaths": allowed[:3],
         },
-        "rag": {
-            "status": "scaffold-only",
-            "authoritativeTaskSource": "tasks/tracker.json",
-            "rule": "retrieval may enrich context but must never become mutable task state",
-        },
+        "authoritativeTaskSource": "tasks/tracker.json",
     }

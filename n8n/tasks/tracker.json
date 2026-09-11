@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "project": "PlatformInit n8n Standalone",
+  "status": "parked",
+  "authoritativeRoadmap": "docs/n8n/N8N_ROADMAP.md",
+  "externalPrerequisites": [
+    "PlatformInit shared CH01 host-lifecycle contract",
+    "PlatformInit shared CH02 hardening primitives"
+  ],
+  "tasks": [
+    {"id":"N8N-CH01-T01","order":10,"status":"parked","title":"Validate n8n consumption of shared CH01 host lifecycle","dependsOn":[]},
+    {"id":"N8N-CH02-T01","order":20,"status":"parked","title":"Validate n8n consumption of shared CH02 host baseline","dependsOn":[]},
+    {"id":"N8N-CH01-T02","order":30,"status":"parked","title":"Implement n8n project-default volume_layout none contract","dependsOn":["N8N-CH01-T01"]},
+    {"id":"N8N-CH02-T02","order":40,"status":"parked","title":"Prepare n8n runtime validation checklist","dependsOn":["N8N-CH02-T01"]},
+    {"id":"N8N-CH03-T01","order":50,"status":"parked","title":"Define n8n secrets and OAuth safety model","dependsOn":["N8N-CH02-T02"]},
+    {"id":"N8N-CH04-T01","order":60,"status":"parked","title":"Define n8n backup and restore model","dependsOn":["N8N-CH03-T01"]},
+    {"id":"N8N-CH05-T01","order":70,"status":"parked","title":"Define job-search workflow MVP","dependsOn":["N8N-CH04-T01"]},
+    {"id":"N8N-CH05-T02","order":80,"status":"parked","title":"Define IT job taxonomy and human-review bucket","dependsOn":["N8N-CH05-T01"]},
+    {"id":"N8N-CH06-T01","order":90,"status":"parked","title":"Define job-search productionization roadmap","dependsOn":["N8N-CH05-T02"]},
+    {"id":"N8N-CH07-T01","order":100,"status":"parked","title":"Define Canva and document automation roadmap","dependsOn":["N8N-CH06-T01"]},
+    {"id":"N8N-CH08-T01","order":110,"status":"parked","title":"Define n8n monitoring and remote operations model","dependsOn":["N8N-CH07-T01"]},
+    {"id":"N8N-CH09-T01","order":120,"status":"parked","title":"Define optional SSO/Auth integration roadmap","dependsOn":["N8N-CH08-T01"]},
+    {"id":"N8N-CH10-T01","order":130,"status":"parked","title":"Define n8n workflow template productization roadmap","dependsOn":["N8N-CH09-T01"]}
+  ]
+}

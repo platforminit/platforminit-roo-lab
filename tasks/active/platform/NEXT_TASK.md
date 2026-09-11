@@ -6,12 +6,12 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Field | Value |
 |---|---|
-| Status | `in_progress` |
+| Status | `ready_to_close` |
 | Track | `platform` |
 | Branch | `batch/platform-ch04-5-authentik-core-contract` |
 | Scope | `platform-identity` |
 | Dependencies | P-CH04.5-T01 |
-| Next actor | `platforminit-deepseek-coder` |
+| Next actor | `platforminit-release-manager` |
 
 Bound the Authentik core install to pinned chart/image inputs, secret preflight, namespace ownership, and idempotent repository-local deployment behavior.
 
@@ -39,4 +39,4 @@ Bound the Authentik core install to pinned chart/image inputs, secret preflight,
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py submit P-CH04.5-T02 --actor platforminit-deepseek-coder`
+`python3 tools/task_controller/taskctl.py complete P-CH04.5-T02 --actor platforminit-release-manager`

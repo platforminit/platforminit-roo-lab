@@ -2,6 +2,15 @@
 
 CH04.5 introduces the PlatformInit identity foundation based on Authentik. The identity runtime is owned by CH04.5. Old CH06 compatibility files have been removed from the normal lifecycle.
 
+## Canonical ownership and deprecated compatibility
+
+- CH04.5 owns the Authentik runtime, the `identity` namespace, the `auth.<PLATFORM_BASE_DOMAIN>` route and the `authentik-*` secrets.
+- CH04.6 owns the Argo CD SSO binding. CH05 owns the operations WebUI SSO bindings.
+- The `ch06-*` files in this directory (`ch06-deploy.sh`, `ch06-orchestrator.sh`, `validate/ch06-validate-identity.sh`, `docs/ch06-identity-runbook.md`, `docs/ch06-sso-integration.md`) are deprecated compatibility surface. No workflow invokes them and no new behaviour may be added to them.
+- The name `CH06` is reserved for the future Security & Compliance v2 chapter and carries no identity ownership.
+
+Full asset-by-asset inventory, evidence and compatibility invariants: [`docs/ch04-5-identity-ownership-inventory.md`](docs/ch04-5-identity-ownership-inventory.md).
+
 ## Scope
 
 - Deploy Authentik into the `identity` namespace.

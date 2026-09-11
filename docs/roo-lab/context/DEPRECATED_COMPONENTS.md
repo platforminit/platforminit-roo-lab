@@ -52,6 +52,25 @@ Treat these raw-memory tasks as historical/superseded unless re-opened explicitl
 - Do not use the legacy `default` Hetzner project for new active work.
 - Do not use Windows CMD, PowerShell, Git Bash, MobaXterm, or `vscode-remote://` launchers for Roo execution.
 
+## Deprecated CH06 identity compatibility surface
+
+Historical work used `ch06-*` naming for the Authentik/Argo CD SSO compatibility paths. CH06 is
+now reserved for Security & Compliance v2, and the identity chapter is CH04.5 (with CH04.6 for the
+Argo CD SSO binding). The following are deprecated compatibility surface and must not receive new
+behaviour:
+
+| Location | Status |
+|---|---|
+| `platform/identity/scripts/ch06-deploy.sh`, `platform/identity/scripts/ch06-orchestrator.sh` | superseded by `platform/identity/scripts/ch04-5-deploy-authentik-core.sh` |
+| `platform/identity/validate/ch06-validate-identity.sh` | superseded by `platform/identity/validate/ch04-5-validate-authentik-core.sh` |
+| `platform/identity/docs/ch06-identity-runbook.md` | superseded by `platform/identity/docs/ch04-5-identity-foundation.md` |
+| `platform/identity/docs/ch06-sso-integration.md` | superseded by `platform/identity/docs/ch04-6-argocd-sso-runbook.md` |
+| `.github/workflows/deploy-04-6-argocd-sso.yml` remote entrypoint name `ch06-remote.sh` | compatibility alias; keep in sync with the `identity`/`identity-sso` sudo scopes in `platform/host-baseline/scripts/grant-temporary-sudo.sh` |
+| `argocd/apps/ch06-identity.yaml` | stale Argo CD Application pinned to `feat/ch06-identity-sso-foundation`; do not apply as-is |
+
+Evidence, full inventory and compatibility invariants:
+[`platform/identity/docs/ch04-5-identity-ownership-inventory.md`](../../../platform/identity/docs/ch04-5-identity-ownership-inventory.md).
+
 ## Peximed lessons that apply here
 
 - Do not let old task files silently override current architecture.

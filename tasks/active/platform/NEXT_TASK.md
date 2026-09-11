@@ -6,12 +6,12 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Field | Value |
 |---|---|
-| Status | `pending` |
+| Status | `ready_to_close` |
 | Track | `platform` |
 | Branch | `batch/platform-ch04-5-authentik-inventory` |
 | Scope | `platform-identity` |
 | Dependencies | P-CH04-T01 |
-| Next actor | `platforminit-orchestrator` |
+| Next actor | `platforminit-release-manager` |
 
 Audit the existing CH04.5 Authentik assets and deprecated CH06 compatibility paths, then document the canonical identity ownership boundary without changing runtime.
 
@@ -39,4 +39,4 @@ Audit the existing CH04.5 Authentik assets and deprecated CH06 compatibility pat
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.5-T01 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py complete P-CH04.5-T01 --actor platforminit-release-manager`

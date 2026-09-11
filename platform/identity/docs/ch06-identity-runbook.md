@@ -1,5 +1,11 @@
 # Deprecated CH06 Identity Runbook
 
+> Status: deprecated compatibility documentation. No workflow, script or validator in this
+> repository invokes a CH06 identity path, and the `ch06-*` naming must not receive new behaviour.
+> Canonical references: [`ch04-5-identity-foundation.md`](ch04-5-identity-foundation.md),
+> [`ch04-6-argocd-sso-runbook.md`](ch04-6-argocd-sso-runbook.md) and the
+> [`ch04-5-identity-ownership-inventory.md`](ch04-5-identity-ownership-inventory.md).
+
 CH06 is retained only for compatibility. Normal lifecycle execution uses CH04.5 for Authentik and separate SSO workflows for applications.
 
 ## Current active identity lifecycle

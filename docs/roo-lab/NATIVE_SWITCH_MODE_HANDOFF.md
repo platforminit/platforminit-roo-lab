@@ -1,60 +1,12 @@
+# Deprecated: native Roo switch-mode handoff
 
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_START -->
-# Native Roo Mode-Switch Handoff
+This document is historical. PlatformInit no longer uses conversation-preserving Roo `switch_mode`
+for delivery lifecycle handoffs because accumulated context repeatedly caused Zoo/API HTTP 400 failures.
 
-PlatformInit Roo Lab uses native Roo mode switching for role-to-role handoff.
+Current contract: [`PLATFORM_WORKFLOW_REFACTOR.md`](PLATFORM_WORKFLOW_REFACTOR.md).
 
-Manual prompt copying is not the normal workflow.
+The supported flow is native Zoo `new_task`: every implementation, review, security, rework, and
+release stage starts as a fresh child with MCP compact context. The child returns through
+`attempt_completion`; the Orchestrator reloads MCP context before starting the next stage.
 
-## Required lifecycle
-
-```text
-PlatformInit Orchestrator
-  -> switch_mode: platforminit-deepseek-coder
-
-PlatformInit DeepSeek Coder
-  -> switch_mode: platforminit-openai-reviewer
-
-PlatformInit OpenAI Reviewer
-  APPROVE -> switch_mode: platforminit-owasp-reviewer
-  REQUEST_CHANGES -> switch_mode: platforminit-deepseek-coder
-
-PlatformInit OWASP Reviewer
-  PASS -> switch_mode: platforminit-release-manager
-  MUST_FIX -> switch_mode: platforminit-deepseek-coder
-
-PlatformInit Release Manager
-  -> detect active task ID
-  -> verify changed files and validation evidence
-  -> create scoped implementation commit
-  -> push branch
-  -> open PR via gh CLI (or BLOCKED_BY_TOOLING if unavailable)
-  -> after merge: run close-current-task.sh
-  -> verify status/roadmap/NEXT_TASK agreement
-  -> commit/push closure metadata
-  -> start or prepare next task
-  -> never stop at "human commit pending" unless BLOCKED_BY_PERMISSION or BLOCKED_BY_TOOLING
-```
-
-## Fallback
-
-If native mode switching is unavailable or blocked, the role must explicitly report:
-
-```text
-SWITCH_MODE_UNAVAILABLE_FALLBACK_USED
-```
-
-Only then may it print the next role prompt.
-
-## Hard gates
-
-Native role switching does not remove human approval gates.
-
-Human approval remains mandatory before:
-
-- CH01-CH05 workflow execution;
-- infrastructure mutation;
-- GitHub secret or environment mutation;
-- production/customer scope;
-- Hetzner, Cloudflare, Kubernetes, Authentik, Checkmk, DNS, k3s, or n8n runtime changes.
-<!-- PLATFORMINIT_NATIVE_SWITCH_MODE_HANDOFF_END -->
+Do not restore the old switch-mode lifecycle without an explicit human architecture decision.

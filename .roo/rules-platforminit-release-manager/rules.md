@@ -28,11 +28,17 @@ Do not edit tracker/generated views manually.
 
 1. Verify changed files remain inside task scope and micro-task budget.
 2. Reuse or run only required focused validators.
-3. Commit any final controller-owned closure metadata on the same feature branch.
-4. Push the task branch.
-5. Open/update the feature-to-`dev` PR with Summary, Changed scope, Validation, Reviews, Safety, Recovery chain, and Post-merge verification.
-6. Never merge automatically; human merges.
-7. Close only through `taskctl complete <TASK-ID> --actor platforminit-release-manager` when branch/source still matches approved evidence.
-8. Verify dashboard/controller integrity.
+3. Ensure the approved source diff is committed on the same feature branch before closure. If the implementation is already committed, do not create an empty duplicate commit.
+4. Re-read compact MCP/controller state and confirm the committed source still matches the approved source fingerprint/evidence.
+5. Close only through `taskctl complete <TASK-ID> --actor platforminit-release-manager`.
+6. Verify dashboard/controller integrity and generated views after completion.
+7. Commit controller-owned closure metadata and review/security evidence on the same feature branch. Do not mix new product/source changes into this closure commit.
+8. Push the task branch.
+9. Open/update the feature-to-`dev` PR with Summary, Changed scope, Validation, Reviews, Safety, Recovery chain, serialization notes when relevant, and Post-merge verification.
+10. Never merge automatically; human merges.
 
-After release work, call `attempt_completion` with task ID, PR, commit, reused/rerun evidence, resulting status, recovery notes, and next pending PlatformInit task. Do not start that next task before the PR is merged to `dev`.
+The canonical release sequence is therefore:
+
+`approved source commit -> taskctl complete -> closure/evidence commit -> push -> PR -> human merge`
+
+After release work, call `attempt_completion` with task ID, PR, source commit, closure commit, reused/rerun evidence, resulting status, recovery notes, and next pending PlatformInit task. Do not start that next task before the PR is merged to `dev`.

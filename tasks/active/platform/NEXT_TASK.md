@@ -2,29 +2,30 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.5-T03 — Stabilize Authentik ingress and TLS contract
+## P-WF-T01 — Enforce fresh-child lifecycle handoffs
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-5-authentik-ingress-tls` |
-| Scope | `platform-identity` |
+| Branch | `chore/p-wf-t01-workflow` |
+| Scope | `workflow-tooling` |
 | Dependencies | P-CH04.5-T02 |
 | Next actor | `platforminit-orchestrator` |
 
-Define the Authentik ingress, certificate, hostname, and TLS ownership contract independently from identity model bootstrap.
+Make every implementation, review, security, and release stage a fresh Zoo child task with compact handoff only.
 
 ### Acceptance criteria
 
-- [ ] Authentik hostname, ingress, certificate, and TLS ownership are explicit
-- [ ] identity-model bootstrap is not coupled into ingress/TLS reconciliation
-- [ ] focused repository validation covers the ingress/TLS contract
+- [ ] all lifecycle stage changes use native Zoo new_task
+- [ ] child completion returns concise evidence and resulting controller state
+- [ ] orchestrator reloads MCP delivery context after every child
 
 ### Allowed files
 
-- `platform/identity/**`
-- `docs/**`
+- `.roomodes`
+- `.roo/commands/**`
+- `docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md`
 - `tasks/**`
 
 ### Required validators
@@ -34,9 +35,9 @@ Define the Authentik ingress, certificate, hostname, and TLS ownership contract 
 ### Forbidden actions
 
 - do not run infrastructure workflows
-- do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval
-- do not expose secret values
+- do not mutate runtime infrastructure, secrets, or GitHub environments
+- do not run full-repository validation unless explicitly required
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.5-T03 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T01 --actor platforminit-orchestrator`

@@ -2,24 +2,24 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.5-T02 — Stabilize Authentik core deployment contract
+## P-CH04.5-T03 — Stabilize Authentik ingress and TLS contract
 
 | Field | Value |
 |---|---|
-| Status | `ready_to_close` |
+| Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-5-authentik-core-contract` |
+| Branch | `batch/platform-ch04-5-authentik-ingress-tls` |
 | Scope | `platform-identity` |
-| Dependencies | P-CH04.5-T01 |
-| Next actor | `platforminit-release-manager` |
+| Dependencies | P-CH04.5-T02 |
+| Next actor | `platforminit-orchestrator` |
 
-Bound the Authentik core install to pinned chart/image inputs, secret preflight, namespace ownership, and idempotent repository-local deployment behavior.
+Define the Authentik ingress, certificate, hostname, and TLS ownership contract independently from identity model bootstrap.
 
 ### Acceptance criteria
 
-- [ ] core deployment inputs are pinned or explicitly bounded
-- [ ] secret and namespace preflight fails safely before mutation
-- [ ] repository-local deployment behavior is idempotent and documented
+- [ ] Authentik hostname, ingress, certificate, and TLS ownership are explicit
+- [ ] identity-model bootstrap is not coupled into ingress/TLS reconciliation
+- [ ] focused repository validation covers the ingress/TLS contract
 
 ### Allowed files
 
@@ -39,4 +39,4 @@ Bound the Authentik core install to pinned chart/image inputs, secret preflight,
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py complete P-CH04.5-T02 --actor platforminit-release-manager`
+`python3 tools/task_controller/taskctl.py start P-CH04.5-T03 --actor platforminit-orchestrator`

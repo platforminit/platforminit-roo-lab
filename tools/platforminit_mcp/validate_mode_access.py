@@ -7,10 +7,14 @@ Static layer (default, cheap, no subprocess side effects):
     depend on conversation-carried context;
   - `.roo/commands/mcp-smoke.md` documents exactly the modes declared in `.roomodes` (no drift);
   - the `platforminit-roo-lab` server is enabled and always-allows the required tools;
-  - the shipped server actually exposes the required tools.
+  - the shipped server actually exposes the required tools;
+  - the delivery-context contract stays platform-only, keeps the changed-scope window bounded for
+    small tasks, and advertises that bound in the tool schema.
 
 Runtime layer (`--runtime`): boots the stdio JSON-RPC server exactly like Zoo does and calls
-`health` plus `get_active_task`, asserting the returned task id matches authoritative tracker state.
+`health`, `get_active_task`, `get_delivery_context`, and an oversized `get_changed_scope` request,
+asserting the returned task id matches authoritative tracker state, that delivery context holds only
+stage-critical fields, and that the changed-scope hard cap is enforced.
 
 Usage:
   python3 tools/platforminit_mcp/validate_mode_access.py
@@ -34,6 +38,48 @@ REQUIRED_TOOLS = {"health", "get_delivery_context", "get_active_task", "get_chan
 FRESH_CHILD_MARKERS = ("child start", "fresh child")
 ACTIVE_STATES = {"in_progress", "needs_review", "needs_security_review", "ready_to_close"}
 RUNTIME_TIMEOUT_SECONDS = 120
+
+# Compact delivery-context contract (P-WF-T03): platform-only, bounded for small tasks, and limited
+# to stage-critical fields. These sets are declared here so field drift fails loudly.
+PLATFORM_TRACK = "platform"
+DELIVERY_CONTEXT_KEYS = {
+    "contextVersion",
+    "project",
+    "track",
+    "task",
+    "scope",
+    "handoff",
+    "authoritativeTaskSource",
+}
+TASK_SUMMARY_KEYS = {
+    "id",
+    "track",
+    "status",
+    "title",
+    "scope",
+    "branch",
+    "dependsOn",
+    "acceptanceCriteria",
+    "allowedFiles",
+    "requiredValidators",
+    "forbiddenActions",
+    "stage",
+    "nextMode",
+    "command",
+}
+SCOPE_KEYS = {
+    "base",
+    "platformOnly",
+    "fileCount",
+    "files",
+    "truncated",
+    "focusedTests",
+    "foreignPathsExcluded",
+    "budget",
+}
+SCOPE_HARD_CAP = 8
+SCOPE_DEFAULT_LIMIT = 5
+FOREIGN_TRACK_PREFIXES = ("n8n/", "docs/n8n/")
 
 
 def _report(title: str, errors: list[str]) -> None:
@@ -61,6 +107,49 @@ def _served_tools() -> set[str]:
         return set()
     finally:
         sys.path.pop(0)
+
+
+def delivery_contract_errors() -> list[str]:
+    """Static, subprocess-free checks of the compact delivery-context contract."""
+    sys.path.insert(0, str(SERVER.parent))
+    try:
+        import context as mcp_context  # type: ignore[import-not-found]
+        import server as mcp_server  # type: ignore[import-not-found]
+    except Exception as exc:
+        return [f"cannot import shipped MCP modules: {exc}"]
+    finally:
+        sys.path.pop(0)
+
+    errors: list[str] = []
+    if mcp_context.PLATFORM_TRACK != PLATFORM_TRACK:
+        errors.append(f"delivery context is not platform-only: {mcp_context.PLATFORM_TRACK!r}")
+    if not mcp_context.FOREIGN_TRACK_PATHS:
+        errors.append("delivery context excludes no foreign-track paths")
+    if mcp_context.SCOPE_HARD_CAP_FILES != SCOPE_HARD_CAP:
+        errors.append(
+            f"changed-scope hard cap is not bounded for small tasks: {mcp_context.SCOPE_HARD_CAP_FILES}"
+        )
+    if mcp_context.SCOPE_DEFAULT_FILES > SCOPE_DEFAULT_LIMIT:
+        errors.append(
+            f"changed-scope default is not bounded for small tasks: {mcp_context.SCOPE_DEFAULT_FILES}"
+        )
+    if mcp_context.SCOPE_DEFAULT_FILES > mcp_context.SCOPE_HARD_CAP_FILES:
+        errors.append("changed-scope default exceeds the hard cap")
+    if mcp_context.clamp_max_files(None) != mcp_context.SCOPE_DEFAULT_FILES:
+        errors.append("changed-scope clamp does not fall back to the small-task default")
+    if mcp_context.clamp_max_files(10**6) != mcp_context.SCOPE_HARD_CAP_FILES:
+        errors.append("changed-scope clamp does not enforce the hard cap")
+
+    for tool in mcp_server.TOOLS:
+        properties = tool.get("inputSchema", {}).get("properties", {})
+        if "maxFiles" not in properties:
+            continue
+        schema = properties["maxFiles"]
+        if schema.get("maximum") != mcp_context.SCOPE_HARD_CAP_FILES:
+            errors.append(f"{tool.get('name')}: maxFiles schema does not advertise the hard cap")
+        if schema.get("default") != mcp_context.SCOPE_DEFAULT_FILES:
+            errors.append(f"{tool.get('name')}: maxFiles schema does not advertise the small-task default")
+    return errors
 
 
 def static_errors() -> tuple[list[str], list[dict]]:
@@ -108,6 +197,8 @@ def static_errors() -> tuple[list[str], list[dict]]:
     if unexposed:
         errors.append("MCP server does not expose: " + ", ".join(unexposed))
 
+    errors.extend(delivery_contract_errors())
+
     return errors, platform_modes
 
 
@@ -154,6 +245,13 @@ def runtime_errors() -> list[str]:
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "health", "arguments": {}}},
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_active_task", "arguments": {}}},
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "get_delivery_context", "arguments": {}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {"name": "get_changed_scope", "arguments": {"maxFiles": 1000000}},
+        },
     ]
     payload = "".join(json.dumps(request, separators=(",", ":")) + "\n" for request in requests if request)
     try:
@@ -182,7 +280,14 @@ def runtime_errors() -> list[str]:
         if message.get("id") is not None:
             responses[message["id"]] = message
 
-    for message_id, label in ((1, "initialize"), (2, "tools/list"), (3, "health"), (4, "get_active_task")):
+    for message_id, label in (
+        (1, "initialize"),
+        (2, "tools/list"),
+        (3, "health"),
+        (4, "get_active_task"),
+        (5, "get_delivery_context"),
+        (6, "get_changed_scope"),
+    ):
         if message_id not in responses:
             errors.append(f"runtime smoke: no response for {label}")
     if errors:
@@ -202,6 +307,40 @@ def runtime_errors() -> list[str]:
     expected = _expected_platform_task_id()
     if task.get("id") != expected:
         errors.append(f"runtime smoke: get_active_task returned {task.get('id')} expected {expected}")
+
+    delivery = _tool_payload(responses[5])
+    drifted = sorted(set(delivery) ^ DELIVERY_CONTEXT_KEYS)
+    if drifted:
+        errors.append("runtime smoke: delivery context fields drifted: " + ", ".join(drifted))
+    if delivery.get("track") != PLATFORM_TRACK:
+        errors.append(f"runtime smoke: delivery context is not platform-only: {delivery.get('track')!r}")
+    if "indexing" in delivery:
+        errors.append("runtime smoke: delivery context carries non stage-critical indexing hints")
+    summary = delivery.get("task", {})
+    if "id" in summary:
+        summary_drift = sorted(set(summary) ^ TASK_SUMMARY_KEYS)
+        if summary_drift:
+            errors.append("runtime smoke: task summary fields drifted: " + ", ".join(summary_drift))
+    elif "state" not in summary:
+        errors.append("runtime smoke: task summary is neither a task nor a documented state marker")
+    scope = delivery.get("scope", {})
+    scope_drift = sorted(set(scope) ^ SCOPE_KEYS)
+    if scope_drift:
+        errors.append("runtime smoke: changed-scope fields drifted: " + ", ".join(scope_drift))
+    if scope.get("platformOnly") is not True:
+        errors.append("runtime smoke: changed scope is not marked platform-only")
+    foreign = [
+        file
+        for file in scope.get("files", [])
+        if any(file.startswith(prefix) for prefix in FOREIGN_TRACK_PREFIXES)
+    ]
+    if foreign:
+        errors.append("runtime smoke: foreign-track paths in delivery scope: " + ", ".join(foreign))
+    for label, payload in (("get_delivery_context", scope), ("get_changed_scope", _tool_payload(responses[6]))):
+        if len(payload.get("files", [])) > SCOPE_HARD_CAP:
+            errors.append(f"runtime smoke: {label} exceeded the {SCOPE_HARD_CAP}-file changed-scope hard cap")
+        if payload.get("platformOnly") is not True:
+            errors.append(f"runtime smoke: {label} is not marked platform-only")
 
     return errors
 

@@ -5,7 +5,14 @@ import json
 import sys
 from typing import Any
 
-from context import active_task_summary, changed_scope, delivery_context
+from context import (
+    PROJECT,
+    SCOPE_DEFAULT_FILES,
+    SCOPE_HARD_CAP_FILES,
+    active_task_summary,
+    changed_scope,
+    delivery_context,
+)
 
 TOOLS = [
     {
@@ -15,13 +22,18 @@ TOOLS = [
     },
     {
         "name": "get_delivery_context",
-        "description": "Return compact PlatformInit task, stage transition, changed scope, and handoff hints.",
+        "description": "Return the compact platform-only PlatformInit delivery context: task, stage transition, and bounded changed scope.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "taskId": {"type": "string"},
                 "base": {"type": "string", "default": "dev"},
-                "maxFiles": {"type": "integer", "minimum": 1, "maximum": 20, "default": 12}
+                "maxFiles": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": SCOPE_HARD_CAP_FILES,
+                    "default": SCOPE_DEFAULT_FILES,
+                }
             },
             "additionalProperties": False
         }
@@ -37,12 +49,17 @@ TOOLS = [
     },
     {
         "name": "get_changed_scope",
-        "description": "Return bounded non-state changed paths and focused-test hints.",
+        "description": "Return bounded non-state PlatformInit changed paths, focused-test hints, and small-task budget.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "base": {"type": "string", "default": "dev"},
-                "maxFiles": {"type": "integer", "minimum": 1, "maximum": 20, "default": 12}
+                "maxFiles": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": SCOPE_HARD_CAP_FILES,
+                    "default": SCOPE_DEFAULT_FILES,
+                }
             },
             "additionalProperties": False
         }
@@ -71,7 +88,7 @@ def handle(message: dict) -> dict | None:
         return rpc_result(message_id, {
             "protocolVersion": params.get("protocolVersion", "2025-06-18"),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "platforminit-roo-lab", "version": "0.2.0"}
+            "serverInfo": {"name": "platforminit-roo-lab", "version": "0.3.0"}
         })
     if method == "notifications/initialized":
         return None
@@ -84,17 +101,17 @@ def handle(message: dict) -> dict | None:
         arguments = params.get("arguments") or {}
         try:
             if name == "health":
-                value = {"ok": True, "project": "platforminit", "contextVersion": 2}
+                value = {"ok": True, "project": PROJECT, "contextVersion": 3}
             elif name == "get_delivery_context":
                 value = delivery_context(
                     task_id=arguments.get("taskId"),
                     base=arguments.get("base", "dev"),
-                    max_files=arguments.get("maxFiles", 12),
+                    max_files=arguments.get("maxFiles", SCOPE_DEFAULT_FILES),
                 )
             elif name == "get_active_task":
                 value = active_task_summary(task_id=arguments.get("taskId"))
             elif name == "get_changed_scope":
-                value = changed_scope(base=arguments.get("base", "dev"), max_files=arguments.get("maxFiles", 12))
+                value = changed_scope(base=arguments.get("base", "dev"), max_files=arguments.get("maxFiles", SCOPE_DEFAULT_FILES))
             else:
                 return rpc_error(message_id, -32602, f"unknown tool: {name}")
             return rpc_result(message_id, result_text(value))

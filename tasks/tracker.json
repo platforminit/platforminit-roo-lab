@@ -469,7 +469,7 @@
       "id": "P-WF-T02",
       "track": "platform",
       "order": 110,
-      "status": "pending",
+      "status": "done",
       "title": "Verify MCP access across every Zoo mode",
       "description": "Add static and runtime smoke coverage proving every PlatformInit mode can access the PlatformInit MCP after fresh-child mode changes.",
       "scope": "workflow-tooling",
@@ -505,7 +505,67 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-12T18:50:25.400865+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "at": "2026-09-12T19:10:05.476303+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "d40922281cdfd3df0eb121b865c67f2289922e605265082163231700fea07231",
+          "changedFiles": [
+            ".roo/commands/mcp-smoke.md",
+            ".roomodes",
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/platforminit_mcp/validate_mode_access.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-12T19:12:59.240386+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T02.md"
+        },
+        "security": {
+          "at": "2026-09-12T19:15:51.645691+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T02.md"
+        },
+        "complete": {
+          "at": "2026-09-12T19:17:18.328807+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "d40922281cdfd3df0eb121b865c67f2289922e605265082163231700fea07231",
+          "changedFiles": [
+            ".roo/commands/mcp-smoke.md",
+            ".roomodes",
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/platforminit_mcp/validate_mode_access.py"
+          ],
+          "reusedSubmitEvidence": true
+        }
+      }
     },
     {
       "id": "P-WF-T03",
@@ -865,5 +925,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-11T19:44:38.259188+00:00"
+  "updatedAt": "2026-09-12T19:17:18.328862+00:00"
 }

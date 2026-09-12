@@ -37,8 +37,17 @@ controller transition.
 ## MCP access contract
 
 Every PlatformInit Zoo mode must declare the `mcp` group and must be able to call `health` plus
-`get_active_task` after a fresh `new_task` handoff. `.roo/commands/mcp-smoke.md` is the runtime smoke
-procedure. A static validator should reject a project mode without MCP access.
+`get_active_task` after a fresh `new_task` handoff. `.roo/commands/mcp-smoke.md` is the smoke
+procedure and documents both layers:
+
+- static: `python3 tools/platforminit_mcp/validate_mode_access.py` rejects a `platforminit-*` mode
+  without the `mcp` group, without a fresh-child `get_delivery_context` bootstrap, missing from the
+  smoke procedure, or backed by MCP config/server that no longer exposes the required tools;
+- runtime: `python3 tools/platforminit_mcp/validate_mode_access.py --runtime` boots the stdio server
+  and proves `health` plus `get_active_task` return the authoritative tracker task.
+
+A mode change is only valid when MCP state is re-derived from the controller after the handoff, so no
+specialist stage depends on conversation-carried context.
 
 ## Workflow-hardening task sequence
 

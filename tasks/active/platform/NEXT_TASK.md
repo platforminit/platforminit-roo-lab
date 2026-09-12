@@ -2,29 +2,31 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T01 — Enforce fresh-child lifecycle handoffs
+## P-WF-T02 — Verify MCP access across every Zoo mode
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `chore/p-wf-t01-workflow` |
+| Branch | `chore/p-wf-t02-workflow` |
 | Scope | `workflow-tooling` |
-| Dependencies | P-CH04.5-T02 |
+| Dependencies | P-WF-T01 |
 | Next actor | `platforminit-orchestrator` |
 
-Make every implementation, review, security, and release stage a fresh Zoo child task with compact handoff only.
+Add static and runtime smoke coverage proving every PlatformInit mode can access the PlatformInit MCP after fresh-child mode changes.
 
 ### Acceptance criteria
 
-- [ ] all lifecycle stage changes use native Zoo new_task
-- [ ] child completion returns concise evidence and resulting controller state
-- [ ] orchestrator reloads MCP delivery context after every child
+- [ ] every PlatformInit mode declares MCP access
+- [ ] MCP health/get_active_task smoke path is documented and testable
+- [ ] mode changes do not depend on conversation-carried context
 
 ### Allowed files
 
 - `.roomodes`
+- `.roo/mcp.json`
 - `.roo/commands/**`
+- `tools/platforminit_mcp/**`
 - `docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md`
 - `tasks/**`
 
@@ -40,4 +42,4 @@ Make every implementation, review, security, and release stage a fresh Zoo child
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T01 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T02 --actor platforminit-orchestrator`

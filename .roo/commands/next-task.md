@@ -24,7 +24,8 @@ For each stage:
 3. Start one fresh `new_task` child.
 4. Pass only: task ID, current stage, acceptance gaps, changed paths, focused evidence paths,
    unresolved risks, and the required controller transition.
-5. Require the child to call `attempt_completion` with resulting controller status and concise evidence.
+5. Require the child to call `attempt_completion` with the resulting controller status, the exact next
+   controller transition command, and concise evidence.
 6. When the child returns, discard stage conversation context and reload MCP before routing again.
 
 Route only from authoritative status:

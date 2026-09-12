@@ -2,30 +2,28 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T02 — Verify MCP access across every Zoo mode
+## P-WF-T03 — Shrink MCP delivery context budget
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `chore/p-wf-t02-workflow` |
+| Branch | `chore/p-wf-t03-workflow` |
 | Scope | `workflow-tooling` |
-| Dependencies | P-WF-T01 |
+| Dependencies | P-WF-T02 |
 | Next actor | `platforminit-orchestrator` |
 
-Add static and runtime smoke coverage proving every PlatformInit mode can access the PlatformInit MCP after fresh-child mode changes.
+Reduce delivery-context payload size and remove cross-project branching from the PlatformInit MCP.
 
 ### Acceptance criteria
 
-- [ ] every PlatformInit mode declares MCP access
-- [ ] MCP health/get_active_task smoke path is documented and testable
-- [ ] mode changes do not depend on conversation-carried context
+- [ ] PlatformInit MCP is platform-only
+- [ ] changed-scope default and hard cap are bounded for small tasks
+- [ ] delivery context returns only stage-critical fields
 
 ### Allowed files
 
-- `.roomodes`
 - `.roo/mcp.json`
-- `.roo/commands/**`
 - `tools/platforminit_mcp/**`
 - `docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md`
 - `tasks/**`
@@ -42,4 +40,4 @@ Add static and runtime smoke coverage proving every PlatformInit mode can access
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T02 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T03 --actor platforminit-orchestrator`

@@ -36,12 +36,16 @@ active_contracts=(
   ".roo/commands/next-task.md"
 )
 
+# Mentioning switch_mode in an explicit prohibition is valid documentation. Only flag
+# non-negated occurrences that can still act as an active legacy delivery contract.
 for file in "${active_contracts[@]}"; do
   [[ -f "$file" ]] || continue
-  if grep -Fq "switch_mode" "$file"; then
-    fail "$file still contains legacy switch_mode contract"
+  switch_lines="$(grep -nF "switch_mode" "$file" || true)"
+  legacy_lines="$(printf '%s\n' "$switch_lines" | grep -Eiv '(^$|do not|never|must not|forbid|prohibit|deprecated|legacy)' || true)"
+  if [[ -n "$legacy_lines" ]]; then
+    fail "$file still contains active legacy switch_mode contract"
   else
-    pass "$file has no legacy switch_mode contract"
+    pass "$file has no active legacy switch_mode contract"
   fi
 done
 

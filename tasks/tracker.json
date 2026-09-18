@@ -886,7 +886,7 @@
       "id": "P-WF-T06",
       "track": "platform",
       "order": 150,
-      "status": "pending",
+      "status": "done",
       "title": "Detach n8n from PlatformInit canonical task state",
       "description": "Remove n8n tasks and track selection from PlatformInit canonical queue and generated views.",
       "scope": "workflow-tooling",
@@ -921,7 +921,78 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-18T17:33:47.041159+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T17:36:05.386899+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "2b663e226c869600d8c51839971fc961cf230680c1c11800076eb576730b1f17",
+          "changedFiles": [
+            "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md",
+            "scripts/orchestrator/close-current-task.sh",
+            "scripts/orchestrator/generate-next-task.py",
+            "scripts/orchestrator/start-next-task.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-18T17:39:01.912843+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T06.md"
+        },
+        "security": {
+          "at": "2026-09-18T17:41:33.216272+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T06.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T17:43:09.422721+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "2b663e226c869600d8c51839971fc961cf230680c1c11800076eb576730b1f17",
+          "changedFiles": [
+            "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md",
+            "scripts/orchestrator/close-current-task.sh",
+            "scripts/orchestrator/generate-next-task.py",
+            "scripts/orchestrator/start-next-task.sh"
+          ],
+          "confirmedFingerprint": "2b663e226c869600d8c51839971fc961cf230680c1c11800076eb576730b1f17",
+          "confirmedFiles": [
+            "docs/roo-lab/TASK_ORCHESTRATION_MODEL.md",
+            "scripts/orchestrator/close-current-task.sh",
+            "scripts/orchestrator/generate-next-task.py",
+            "scripts/orchestrator/start-next-task.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-WF-T07",
@@ -1122,5 +1193,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-18T13:19:47.937485+00:00"
+  "updatedAt": "2026-09-18T17:43:09.422748+00:00"
 }

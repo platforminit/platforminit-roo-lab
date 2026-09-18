@@ -2,32 +2,31 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T06 — Detach n8n from PlatformInit canonical task state
+## P-WF-T07 — Create standalone n8n roadmap and task registry
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `chore/p-wf-t06-workflow` |
+| Branch | `chore/p-wf-t07-workflow` |
 | Scope | `workflow-tooling` |
-| Dependencies | P-WF-T05 |
+| Dependencies | P-WF-T06 |
 | Next actor | `platforminit-orchestrator` |
 
-Remove n8n tasks and track selection from PlatformInit canonical queue and generated views.
+Move the preserved parked n8n backlog into its own roadmap and canonical parked registry.
 
 ### Acceptance criteria
 
-- [ ] tasks/tracker.json contains only PlatformInit tasks
-- [ ] PlatformInit next-task flow has no n8n branch
-- [ ] historical shared-foundation references remain documentation only
+- [ ] n8n roadmap lives outside the PlatformInit roadmap
+- [ ] n8n task registry is separate from tasks/tracker.json
+- [ ] PlatformInit controller cannot start n8n tasks
 
 ### Allowed files
 
+- `n8n/**`
+- `docs/n8n/**`
+- `docs/roo-lab/**`
 - `tasks/**`
-- `.roo/commands/**`
-- `tools/platforminit_mcp/**`
-- `scripts/orchestrator/**`
-- `docs/**`
 
 ### Required validators
 
@@ -41,4 +40,4 @@ Remove n8n tasks and track selection from PlatformInit canonical queue and gener
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T06 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T07 --actor platforminit-orchestrator`

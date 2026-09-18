@@ -26,6 +26,7 @@ Remove n8n tasks and track selection from PlatformInit canonical queue and gener
 - `tasks/**`
 - `.roo/commands/**`
 - `tools/platforminit_mcp/**`
+- `scripts/orchestrator/**`
 - `docs/**`
 
 ### Required validators

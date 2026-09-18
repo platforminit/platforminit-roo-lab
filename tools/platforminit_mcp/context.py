@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,6 +54,17 @@ SCOPE_DEFAULT_FILES = 5
 SCOPE_HARD_CAP_FILES = 8
 FOCUSED_TEST_LIMIT = 3
 
+# Bounded MCP tool inputs (P-WF-T03 M-01). Every caller-supplied argument is constrained before it can
+# reach a Git argument vector or a tracker lookup: `base` is an allowlisted ref rather than a
+# free-form revision expression, `maxFiles` is an integer clamped to the small-task window, and
+# `taskId` is a bounded identifier.
+BASE_DEFAULT = "dev"
+BASE_MAX_LENGTH = 64
+BASE_ALLOWED_REFS = ("dev", "main", "origin/dev", "origin/main")
+BASE_REF_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+TASK_ID_MAX_LENGTH = 64
+TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 HANDOFF_PAYLOAD = (
     "task id",
     "stage",
@@ -75,6 +87,55 @@ def clamp_max_files(max_files: object) -> int:
     return max(1, min(requested, SCOPE_HARD_CAP_FILES))
 
 
+class InvalidToolInput(ValueError):
+    """Rejected MCP tool input.
+
+    Messages are assembled from module constants only: they never echo caller-supplied text and never
+    contain host paths, so they are safe to return to a consumer as controlled JSON-RPC errors.
+    """
+
+
+def validate_base(base: object = BASE_DEFAULT) -> str:
+    """Return an allowlisted Git ref; reject oversized, option-like, or unsupported values."""
+    if base is None:
+        return BASE_DEFAULT
+    if not isinstance(base, str):
+        raise InvalidToolInput("invalid 'base': expected a Git ref string")
+    if not base:
+        raise InvalidToolInput("invalid 'base': empty ref")
+    if len(base) > BASE_MAX_LENGTH:
+        raise InvalidToolInput(f"invalid 'base': longer than {BASE_MAX_LENGTH} characters")
+    if base.startswith("-"):
+        raise InvalidToolInput("invalid 'base': option-like revisions are not accepted")
+    if ".." in base or not BASE_REF_PATTERN.fullmatch(base):
+        raise InvalidToolInput("invalid 'base': not a conservative Git ref")
+    if base not in BASE_ALLOWED_REFS:
+        raise InvalidToolInput("invalid 'base': supported refs are " + ", ".join(BASE_ALLOWED_REFS))
+    return base
+
+
+def validate_task_id(task_id: object = None) -> str | None:
+    """Return a bounded task identifier, or None when no task id was supplied."""
+    if task_id is None:
+        return None
+    if not isinstance(task_id, str):
+        raise InvalidToolInput("invalid 'taskId': expected a task id string")
+    if len(task_id) > TASK_ID_MAX_LENGTH or not TASK_ID_PATTERN.fullmatch(task_id):
+        raise InvalidToolInput("invalid 'taskId': not a bounded PlatformInit task id")
+    return task_id
+
+
+def validate_max_files(max_files: object = None) -> int:
+    """Return a bounded changed-file window: clamp integers, reject non-integer types."""
+    if max_files is None:
+        return SCOPE_DEFAULT_FILES
+    if isinstance(max_files, bool) or not isinstance(max_files, int):
+        raise InvalidToolInput(
+            f"invalid 'maxFiles': expected an integer between 1 and {SCOPE_HARD_CAP_FILES}"
+        )
+    return clamp_max_files(max_files)
+
+
 def _matches(path: str, prefixes: tuple[str, ...]) -> bool:
     return any(path == prefix.rstrip("/") or path.startswith(prefix) for prefix in prefixes)
 
@@ -91,7 +152,8 @@ def _deps_done(task: dict, mapping: dict[str, dict]) -> bool:
     return all(mapping[d]["status"] == "done" for d in task["dependsOn"])
 
 
-def select_task(task_id: str | None = None) -> dict | None:
+def select_task(task_id: object = None) -> dict | None:
+    task_id = validate_task_id(task_id)
     tasks = _platform_tasks()
     if task_id:
         return next((task for task in tasks if task["id"] == task_id), None)
@@ -103,10 +165,11 @@ def select_task(task_id: str | None = None) -> dict | None:
     return sorted(runnable, key=lambda task: (task["order"], task["id"]))[0] if runnable else None
 
 
-def changed_scope(base: str = "dev", max_files: int = SCOPE_DEFAULT_FILES) -> dict:
-    limit = clamp_max_files(max_files)
+def changed_scope(base: object = BASE_DEFAULT, max_files: object = SCOPE_DEFAULT_FILES) -> dict:
+    ref = validate_base(base)
+    limit = validate_max_files(max_files)
     commands = [
-        ["git", "diff", "--name-only", f"{base}...HEAD"],
+        ["git", "diff", "--name-only", f"{ref}...HEAD"],
         ["git", "diff", "--name-only"],
         ["git", "diff", "--cached", "--name-only"],
         ["git", "ls-files", "--others", "--exclude-standard"],
@@ -127,7 +190,7 @@ def changed_scope(base: str = "dev", max_files: int = SCOPE_DEFAULT_FILES) -> di
         visible.append(file)
     tests = [file for file in visible if "test" in Path(file).name.lower()]
     return {
-        "base": base,
+        "base": ref,
         "platformOnly": True,
         "fileCount": len(visible),
         "files": visible[:limit],
@@ -200,7 +263,9 @@ def active_task_summary(task_id: str | None = None) -> dict:
     }
 
 
-def delivery_context(task_id: str | None = None, base: str = "dev", max_files: int = SCOPE_DEFAULT_FILES) -> dict:
+def delivery_context(
+    task_id: object = None, base: object = BASE_DEFAULT, max_files: object = SCOPE_DEFAULT_FILES
+) -> dict:
     return {
         "contextVersion": CONTEXT_VERSION,
         "project": PROJECT,

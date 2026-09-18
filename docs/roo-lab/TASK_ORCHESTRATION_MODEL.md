@@ -1,6 +1,6 @@
 # Multi-Track Task Orchestration Model
 
-PlatformInit Roo Lab keeps separate `platform` and `n8n` delivery tracks, but they now share one canonical task engine.
+PlatformInit Roo Lab keeps `platform` and `n8n` as separate delivery areas, but PlatformInit task state and the PlatformInit next-task flow are PlatformInit-only.
 
 ## Authoritative state
 
@@ -8,16 +8,15 @@ PlatformInit Roo Lab keeps separate `platform` and `n8n` delivery tracks, but th
 
 The following are generated/read-only views:
 
-- `tasks/active/NEXT_TASK.md` — dashboard across tracks;
-- `tasks/active/platform/NEXT_TASK.md`;
-- `tasks/active/n8n/NEXT_TASK.md`.
+- `tasks/active/NEXT_TASK.md` — PlatformInit dashboard;
+- `tasks/active/platform/NEXT_TASK.md`.
 
 Legacy `tasks/status/*.json`, `tasks/roadmap/*.json`, `CURRENT_ACTIVE_TASKS.md`, and `NEXT_TASK_AGENT_LAYER.md` are retired. Historical content remains recoverable from Git history; agents must not recreate those paths as active state.
 
 ## Tracks and shared foundation
 
-- `platform`: canonical `P-*` PlatformInit work.
-- `n8n`: standalone n8n work.
+- `platform`: canonical `P-*` PlatformInit work, the only track managed by this controller.
+- `n8n`: standalone n8n work; referenced here for shared-foundation context only and not selectable through PlatformInit taskctl.
 
 The n8n track consumes shared PlatformInit CH01/CH02 capabilities but diverges after the host foundation. It does not require local k3s, local Argo CD, or the main platform Checkmk runtime as prerequisites unless a later task explicitly changes that contract.
 
@@ -45,7 +44,7 @@ Direct completion from any state other than `ready_to_close` is illegal.
 
 ## Roles
 
-- Orchestrator selects and starts exactly one runnable task per track.
+- Orchestrator selects and starts exactly one runnable PlatformInit task.
 - DeepSeek Coder implements only the task's `allowedFiles` scope and submits through the controller.
 - OpenAI Reviewer records a report and verdict through `taskctl review`.
 - OWASP Reviewer records a report and verdict through `taskctl security`.
@@ -58,11 +57,12 @@ Generated files must never be hand-edited to change state.
 ```bash
 python3 tools/task_controller/taskctl.py list
 python3 tools/task_controller/taskctl.py next --track platform
-python3 tools/task_controller/taskctl.py next --track n8n
 python3 tools/task_controller/taskctl.py validate
 ```
 
-Compatibility wrappers under `scripts/orchestrator/` now delegate to `taskctl` instead of maintaining a second state machine.
+PlatformInit taskctl manages only the `platform` track. `--track n8n` fails with a clear non-zero error instead of silently selecting a non-PlatformInit queue.
+
+Compatibility wrappers under `scripts/orchestrator/` delegate to `taskctl` instead of maintaining a second state machine and accept only `--track platform`.
 
 ## Integrity rules
 

@@ -37,6 +37,16 @@ cross-project task dependencies and must not cause PlatformInit controller state
 | N8N-CH09 | Optional SSO/Auth integration |
 | N8N-CH10 | Workflow template productization |
 
+## Registry contract
+
+Canonical n8n task state is [`n8n/tasks/tracker.json`](../../n8n/tasks/tracker.json). Its schema,
+ownership boundary, parking semantics, chapter coverage, and verification recipe are documented in
+[`n8n/tasks/README.md`](../../n8n/tasks/README.md).
+
+The registry is not a second PlatformInit queue. It is never read or selected by
+`python3 tools/task_controller/taskctl.py`, PlatformInit `/next-task`, generated PlatformInit task
+views, or PlatformInit MCP; the PlatformInit controller is authoritative for `tasks/tracker.json` only.
+
 ## Resume rule
 
 Resuming n8n requires an explicit human decision and a dedicated n8n lifecycle/controller change.

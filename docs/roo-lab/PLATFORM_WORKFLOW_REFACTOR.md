@@ -25,14 +25,49 @@ controller transition.
 
 ## Token budget
 
-- MCP `get_delivery_context`: default max 12 changed files, hard cap 20.
-- Suggested paths: max 3.
-- Focused tests: max 8.
+- MCP `get_delivery_context`: default 5 changed files, hard cap 8. The cap is both advertised in the
+  tool schema and enforced by the shipped handler, so a large `maxFiles` request is clamped.
+- Bounded tool inputs: `base` accepts only `dev`, `main`, `origin/dev`, or `origin/main`, with a
+  64-character maximum and a conservative Git ref grammar; option-like revisions and `..` ranges are
+  rejected before any Git argument vector is built. `taskId` is a bounded identifier and `maxFiles`
+  must be an integer. Every rejection is a controlled JSON-RPC `-32602` error that carries no
+  traceback and no host path.
+- Suggested paths: removed. The compact payload no longer duplicates them; use the task's own
+  `allowedFiles`.
+- Focused tests: max 3.
 - Target task size: 1-3 primary non-state files.
 - 4-5 primary files: exceptional and explicitly justified.
 - More than 5 non-state files: `TASK_TOO_LARGE_SPLIT_REQUIRED`.
 - Full-repository validation is forbidden by default.
 - Passing unchanged evidence is reused instead of rerun.
+
+## Delivery context contract (contextVersion 3)
+
+`get_delivery_context` returns exactly these top-level fields and nothing else:
+
+| Field | Content |
+|---|---|
+| `contextVersion` | `3` — bumped when the compact payload shape changes |
+| `project` | `platforminit` |
+| `track` | `platform` — the only track this MCP serves |
+| `task` | active task summary: `id`, `track`, `status`, `title`, `scope`, `branch`, `dependsOn`, `acceptanceCriteria`, `allowedFiles`, `requiredValidators`, `forbiddenActions`, `stage`, `nextMode`, `command` |
+| `scope` | bounded changed scope: `base`, `platformOnly`, `fileCount`, `files`, `truncated`, `focusedTests`, `foreignPathsExcluded`, `budget` |
+| `handoff` | `payload` list only: task id, stage, acceptance gaps, changed paths, evidence paths, unresolved risks, controller transition |
+| `authoritativeTaskSource` | `tasks/tracker.json` |
+
+Removed from the payload on purpose: the prose `handoff.rule` string, the `indexing` block, and the
+duplicated `suggestedPaths`. Those rules belong to this document, not to every MCP response. When no
+platform task is runnable the `task` field carries a `state` marker (`no-runnable-platform-task`, or
+`unknown-platform-task` for a task ID that is not a platform task) instead of a full summary.
+
+Platform-only rules:
+
+- task selection reads only `track == "platform"` entries; no other track is ever selected, summarised,
+  or routed;
+- `scope.platformOnly` is always `true` and `foreignPathsExcluded` counts paths owned by the separate
+  n8n track (`n8n/`, `docs/n8n/`) that were deliberately dropped from the window;
+- controller-owned state (`tasks/tracker.json`, `tasks/active/`, review and security-review reports)
+  stays excluded from the changed scope.
 
 ## MCP access contract
 
@@ -42,9 +77,19 @@ procedure and documents both layers:
 
 - static: `python3 tools/platforminit_mcp/validate_mode_access.py` rejects a `platforminit-*` mode
   without the `mcp` group, without a fresh-child `get_delivery_context` bootstrap, missing from the
-  smoke procedure, or backed by MCP config/server that no longer exposes the required tools;
+  smoke procedure, or backed by MCP config/server that no longer exposes the required tools. It also
+  rejects a soft changed-scope hard cap, a non-default clamp fallback, a `maxFiles` schema that does
+  not advertise the small-task bound, a non-platform delivery track, and any bounded-input hole:
+  an unvalidated entry point, a `base` schema without the allowlist/length, or a rejection that is
+  not a controlled error;
 - runtime: `python3 tools/platforminit_mcp/validate_mode_access.py --runtime` boots the stdio server
-  and proves `health` plus `get_active_task` return the authoritative tracker task.
+  and proves `health` plus `get_active_task` return the authoritative tracker task, that
+  `get_delivery_context` holds only the contract fields above, and that an oversized
+  `get_changed_scope` request is still clamped to the hard cap. It also replays the invalid-input
+  matrix (oversized, option-like, `..`, unsupported, and non-string `base`; non-integer and boolean
+  `maxFiles`; oversized and non-string `taskId`; unknown tool; unexpected, non-object, and
+  non-object-`params` arguments; malformed JSON) and asserts each case is a controlled JSON-RPC
+  error without a traceback or a host path.
 
 A mode change is only valid when MCP state is re-derived from the controller after the handoff, so no
 specialist stage depends on conversation-carried context.
@@ -66,7 +111,10 @@ These tasks run after `P-CH04.5-T02` and before `P-CH04.5-T03`.
 
 ## n8n separation
 
-PlatformInit and n8n are separate delivery tracks, not two tracks in one lifecycle queue.
+PlatformInit and n8n are separate delivery tracks, not two tracks in one lifecycle queue. The
+PlatformInit MCP therefore contains no project/track branching: it serves the platform queue only and
+removes n8n-owned paths from the changed-scope window (`foreignPathsExcluded`) instead of duplicating
+n8n task state or n8n routing inside PlatformInit.
 
 PlatformInit owns:
 

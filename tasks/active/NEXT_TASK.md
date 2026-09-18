@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T03` — Shrink MCP delivery context budget | `pending` | `chore/p-wf-t03-workflow` |
+| `platform` | `P-WF-T04` — Reuse unchanged validation evidence | `pending` | `chore/p-wf-t04-workflow` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

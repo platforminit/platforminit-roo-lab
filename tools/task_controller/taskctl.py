@@ -36,6 +36,15 @@ SCOPE_EXCLUSIONS = (
     "docs/reviews/",
     "docs/security-reviews/",
 )
+EVIDENCE_VERSION = 1
+BASE_CANDIDATES = ("dev", "origin/dev", "main", "origin/main")
+SUBMIT_EVIDENCE_FIELDS = ("actor", "at", "changedFiles", "evidenceVersion", "sourceFingerprint", "validators")
+EVIDENCE_TRUST_BOUNDARY = (
+    "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; "
+    "submit evidence is unauthenticated, so an actor with unrestricted write access to controller state "
+    "can forge a fully consistent record and skip validators; authenticated or append-only evidence is an "
+    "explicit follow-up and is not implemented in P-WF-T04"
+)
 
 
 class TaskError(RuntimeError):
@@ -295,14 +304,50 @@ def integrity(data, ignore_branch=False):
     return errors
 
 
+def resolve_base(base="dev"):
+    """Resolve the comparison base commit used by fingerprint and scope checks.
+
+    Returns `(ref, sha)`, or `(None, None)` when the repository has no commits at all, in
+    which case the index plus worktree is the complete source. When commits exist but no
+    comparison base resolves the check fails loudly: a worktree-only fingerprint would hide
+    committed source and could reuse stale validator evidence.
+    """
+    seen = []
+    for candidate in (base, *BASE_CANDIDATES):
+        if not candidate or candidate in seen:
+            continue
+        seen.append(candidate)
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        sha = result.stdout.strip()
+        if result.returncode == 0 and sha:
+            return candidate, sha
+    head = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+        cwd=ROOT, text=True, capture_output=True,
+    )
+    if head.returncode == 0 and head.stdout.strip():
+        raise TaskError(
+            "cannot resolve a comparison base for the source fingerprint (tried: "
+            + ", ".join(seen) + "); refusing to fingerprint a partial source scope"
+        )
+    return None, None
+
+
 def changed_files(base="dev"):
+    """Non-state files owned by the task: committed delta from base plus index and worktree."""
+    _, sha = resolve_base(base)
     files = set()
-    commands = [
-        ["git", "diff", "--name-only", f"{base}...HEAD"],
+    commands = []
+    if sha:
+        commands.append(["git", "diff", "--name-only", f"{sha}...HEAD"])
+    commands.extend([
         ["git", "diff", "--name-only"],
         ["git", "diff", "--cached", "--name-only"],
         ["git", "ls-files", "--others", "--exclude-standard"],
-    ]
+    ])
     for command in commands:
         result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
         if result.returncode == 0:
@@ -311,18 +356,98 @@ def changed_files(base="dev"):
 
 
 def source_fingerprint(base="dev"):
+    """Deterministic fingerprint of exactly the non-state files that decide validator outcomes.
+
+    Covers the sorted changed-file scope (committed delta, index, worktree) with per-file
+    content hashes, so identical source always yields the same digest and any relevant source
+    change yields a different one. Controller-owned state, generated views, and review reports
+    are excluded, so timestamps and regenerated views never invalidate evidence. No volatile
+    value (time, actor, HEAD identity) enters the digest.
+    """
     digest = hashlib.sha256()
+    digest.update(b"platforminit-source-fingerprint-v1\0")
     files = changed_files(base)
     for relative in files:
+        path = ROOT / relative
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
-        path = ROOT / relative
         if path.is_file():
-            digest.update(path.read_bytes())
+            digest.update(hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii"))
         else:
             digest.update(b"<deleted>")
         digest.update(b"\0")
     return digest.hexdigest(), files
+
+
+def validator_plan(task):
+    return tuple(tuple(command) for command in task["requiredValidators"])
+
+
+def recorded_validator_plan(record):
+    """Normalized validator commands from a submit record, or None when evidence is unusable.
+
+    A record is usable only when every entry carries exactly a `command` vector of non-empty
+    strings plus an integer `exitCode` of 0. Booleans, non-integers, non-zero exits, extra entry
+    fields, and malformed vectors all make the evidence unusable so the caller reruns validators.
+    """
+    validators = record.get("validators") if isinstance(record, dict) else None
+    if not isinstance(validators, list) or not validators:
+        return None
+    plan = []
+    for item in validators:
+        if not isinstance(item, dict) or set(item) != {"command", "exitCode"}:
+            return None
+        command = item.get("command")
+        if not isinstance(command, list) or not command or not all(isinstance(part, str) and part for part in command):
+            return None
+        exit_code = item.get("exitCode")
+        if isinstance(exit_code, bool) or not isinstance(exit_code, int) or exit_code != 0:
+            return None
+        plan.append(tuple(command))
+    return tuple(plan)
+
+
+def reusable_submit_evidence(task, record, fingerprint, files):
+    """Fail-safe reuse decision: `(validators, None)` to reuse, or `(None, reason)` to rerun.
+
+    Reuse requires versioned, complete, passing, shape-consistent submit evidence for the identical
+    source scope and the identical validator plan, re-verified against a freshly recomputed
+    fingerprint immediately before the decision. Missing, legacy, corrupt, partial, unknown-field,
+    inconsistent, or mismatched evidence always returns a reason so the caller reruns the task's
+    focused validators; absent evidence is never treated as a pass.
+
+    Trust boundary (see `EVIDENCE_TRUST_BOUNDARY`): the record is unauthenticated controller state.
+    This decision fails closed for every single-field tamper, but a fully consistent forged record
+    cannot be distinguished from a genuine one without authenticated or append-only evidence, which
+    this task deliberately does not implement.
+    """
+    if not isinstance(record, dict):
+        return None, "no submit evidence recorded"
+    if record.get("evidenceVersion") != EVIDENCE_VERSION:
+        return None, "submit evidence version is missing or unsupported"
+    unknown = sorted(set(record) - set(SUBMIT_EVIDENCE_FIELDS))
+    if unknown:
+        return None, "submit evidence has unknown fields: " + ", ".join(unknown)
+    missing = sorted(set(SUBMIT_EVIDENCE_FIELDS) - set(record))
+    if missing:
+        return None, "submit evidence is incomplete: " + ", ".join(missing)
+    if not isinstance(record.get("at"), str) or not record["at"]:
+        return None, "submit evidence timestamp is missing"
+    if record.get("actor") != task["implementationMode"]:
+        return None, "submit evidence actor does not match the task implementation mode"
+    if record.get("sourceFingerprint") != fingerprint:
+        return None, "source fingerprint changed since submit"
+    if record.get("changedFiles") != files:
+        return None, "changed-file scope drifted since submit"
+    plan = recorded_validator_plan(record)
+    if plan is None:
+        return None, "submit evidence has no complete passing validator record"
+    if plan != validator_plan(task):
+        return None, "required validator plan changed since submit"
+    recomputed_fingerprint, recomputed_files = source_fingerprint()
+    if recomputed_fingerprint != fingerprint or recomputed_files != files:
+        return None, "source changed while the reuse decision was evaluated"
+    return list(record["validators"]), None
 
 
 def require_task_size(task):
@@ -387,6 +512,8 @@ def make_parser():
     validate_parser = sub.add_parser("validate")
     validate_parser.add_argument("--sync", action="store_true")
     validate_parser.add_argument("--ignore-branch", action="store_true")
+    fingerprint_parser = sub.add_parser("fingerprint")
+    fingerprint_parser.add_argument("--base", choices=["dev", "main", "origin/dev", "origin/main"], default="dev")
     for command in ("start", "submit", "complete", "unblock"):
         action = sub.add_parser(command)
         action.add_argument("task_id")
@@ -436,6 +563,15 @@ def main():
                 raise TaskError("integrity validation failed:\n- " + "\n- ".join(errors))
             print("Task tracker and generated views are valid.")
             return 0
+        if args.cmd == "fingerprint":
+            base_ref, _ = resolve_base(args.base)
+            fingerprint, files = source_fingerprint(args.base)
+            print(f"base={base_ref or '<no-commits>'}")
+            print(f"fingerprint={fingerprint}")
+            print(f"files={len(files)}")
+            for relative in files:
+                print(f"file={relative}")
+            return 0
 
         task = get_task(data, args.task_id)
         if args.cmd == "start":
@@ -458,10 +594,11 @@ def main():
                 raise TaskError(f"{task['id']} must be submitted by {task['implementationMode']}")
             require_branch(task)
             require_allowed_scope(task)
-            files = require_task_size(task)
+            require_task_size(task)
             validators = run_validators(task)
-            fingerprint, _ = source_fingerprint()
+            fingerprint, files = source_fingerprint()
             task.setdefault("workflow", {})["submit"] = {
+                "evidenceVersion": EVIDENCE_VERSION,
                 "at": now(),
                 "actor": args.actor,
                 "validators": validators,
@@ -515,25 +652,61 @@ def main():
             require_branch(task)
             require_allowed_scope(task)
             require_task_size(task)
+            previous_status = task["status"]
             fingerprint, files = source_fingerprint()
-            submit = workflow.get("submit", {})
-            if submit.get("sourceFingerprint") and submit.get("sourceFingerprint") == fingerprint:
-                validators = submit.get("validators", [])
-                reused = True
+            validators, reason = reusable_submit_evidence(task, workflow.get("submit"), fingerprint, files)
+            reused = validators is not None
+            if reused:
+                # Persisted-record confirmation, taken as late as practical: read the fingerprint once
+                # more immediately before the completion record is built, and persist only this reading
+                # together with the exact fingerprint inputs it was taken over. Drift observed here
+                # falls through to the focused rerun below, so reused evidence is never recorded for
+                # source that some earlier reading described.
+                confirmation, confirmation_files = source_fingerprint()
+                if (confirmation, confirmation_files) != (fingerprint, files):
+                    reused = False
+                    reason = "source changed while the reuse decision was evaluated"
+            if reused:
+                fingerprint, files = confirmation, confirmation_files
+                decision = "reused submit evidence: fingerprint and validator plan unchanged"
             else:
                 validators = run_validators(task)
-                reused = False
+                decision = f"reran required focused validators: {reason}"
+                fingerprint, files = source_fingerprint()
             workflow["complete"] = {
+                "evidenceVersion": EVIDENCE_VERSION,
                 "at": now(),
                 "actor": args.actor,
                 "validators": validators,
                 "sourceFingerprint": fingerprint,
                 "changedFiles": files,
+                "confirmedFingerprint": fingerprint,
+                "confirmedFiles": files,
                 "reusedSubmitEvidence": reused,
+                "evidenceDecision": decision,
+                "trustBoundary": EVIDENCE_TRUST_BOUNDARY,
             }
             task["status"] = "done"
             task.pop("blocker", None)
             save(data)
+            # Post-persistence re-verification. The confirmation above is not atomic with `save()`: a
+            # relevant source file can still change in the residual window between that confirmation
+            # read and the atomic replacement of `tasks/tracker.json`. Recompute now and, when the
+            # source no longer matches the recorded confirmation, fail loudly and repair controller
+            # state instead of leaving a `done` task backed by stale reused evidence. The window after
+            # this read cannot be closed without source locking or filesystem snapshot semantics, which
+            # are deliberately out of scope (see docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md).
+            persisted_fingerprint, persisted_files = source_fingerprint()
+            if (persisted_fingerprint, persisted_files) != (fingerprint, files):
+                task["status"] = previous_status
+                workflow.pop("complete", None)
+                save(data)
+                raise TaskError(
+                    f"{task['id']}: source changed after the completion record was confirmed "
+                    f"(confirmed {fingerprint[:12]}, now {persisted_fingerprint[:12]}); reverted to "
+                    f"{previous_status} instead of recording a done task with stale reused evidence - "
+                    "rerun complete to revalidate the focused validators"
+                )
         elif args.cmd == "block":
             if task["status"] == "done":
                 raise TaskError("completed task cannot be blocked")

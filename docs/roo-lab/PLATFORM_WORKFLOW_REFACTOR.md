@@ -41,6 +41,105 @@ controller transition.
 - Full-repository validation is forbidden by default.
 - Passing unchanged evidence is reused instead of rerun.
 
+## Validation evidence reuse contract
+
+`submit` records a deterministic source fingerprint next to the passing validator evidence, and the
+release stage (`complete`) reuses that evidence instead of rerunning validators when the source scope
+is provably unchanged.
+
+Source fingerprint:
+
+- SHA-256 over a fixed domain separator plus the sorted changed-file scope with one content hash per
+  file, so identical source always yields the same digest and any relevant source change yields a
+  different one.
+- Scope is the committed delta from the resolved comparison base (`dev`, `origin/dev`, `main`,
+  `origin/main`, first that resolves) plus index and worktree, so committing already-reviewed source
+  does not invalidate evidence.
+- Excludes controller-owned state and generated material (`tasks/tracker.json`, `tasks/active/`,
+  `docs/reviews/`, `docs/security-reviews/`) and contains no timestamp, actor, or HEAD identity, so
+  regenerated views and state writes can never cause false invalidation.
+- Deleted files contribute a fixed `<deleted>` marker so deletions change the digest.
+- When the repository has no commits at all, index plus worktree is the complete source and is used
+  as the whole scope. When commits exist but no comparison base resolves, the command fails loudly
+  instead of fingerprinting a partial source scope.
+
+Reuse decision (fail-safe):
+
+- Validators are reused only when the recorded evidence is present, carries the supported
+  `evidenceVersion`, matches the current fingerprint, matches the current changed-file scope, records
+  only exit code 0 for every required validator, covers exactly the task's current
+  `requiredValidators`, and carries no unknown fields.
+- Consistency checks run before reuse: the recorded submit actor must match the task's
+  `implementationMode`, the recorded timestamp must be a non-empty string, and every validator entry
+  must be exactly a `command` vector plus an integer `exitCode` of 0. A boolean or non-integer exit
+  code, an extra validator-entry field, or a malformed command vector is treated as unusable evidence.
+- The fingerprint and the changed-file scope are recomputed immediately before the reuse decision, and
+  once more immediately before the completion record is built. That last reading is the one persisted,
+  and drift observed at any of those readings falls through to a focused rerun; the residual window that
+  remains is described in the confirmation window section below.
+- Any missing, legacy, corrupt, partial, unknown-field, inconsistent, or mismatched evidence reruns the
+  task's `requiredValidators` only — never full-repository validation — and records the reason in
+  `workflow.complete.evidenceDecision`.
+- Absent evidence is never treated as a pass.
+
+Confirmation window and residual TOCTOU window:
+
+- `complete` persists the confirmed reading explicitly: `workflow.complete` carries
+  `sourceFingerprint`/`changedFiles` for the confirmed source plus `confirmedFingerprint`/
+  `confirmedFiles`, the fingerprint and the fingerprint inputs that were checked immediately before the
+  completion record was built.
+- That confirmation is not atomic with the atomic replacement of `tasks/tracker.json`. After `save()`
+  returns, the controller recomputes the fingerprint and compares it with the recorded confirmation. When
+  it drifted, the transition fails loudly with a non-zero exit status and the persisted state is
+  repaired: the task returns to `ready_to_close` and the stale `workflow.complete` record is removed, so a
+  `done` task is never left backed by evidence that no longer describes the source. Rerunning `complete`
+  then reruns the task's focused validators.
+- Residual window: a source change that lands after the post-persistence re-verification read is not
+  detected by this design. Closing that window needs source locking or filesystem snapshot semantics,
+  which P-WF-T04 deliberately does not add. The guarantee is detection of the reuse race up to the
+  post-persistence read, not perfect atomicity.
+- Compensating controls: fail-loud exit status, automatic repair of controller state, controller-owned
+  state (only `taskctl` transitions write `tasks/tracker.json`, and that file must never be hand-edited),
+  and a focused regression test that injects source drift exactly at the persistence boundary in
+  `tools/task_controller/test_taskctl.py`.
+
+Evidence trust boundary (residual risk):
+
+- Reuse is a fail-closed comparison, not an authenticity proof. Submit evidence is stored in
+  `tasks/tracker.json`, which is controller-owned state and must never be hand-edited; the controller
+  cannot cryptographically distinguish a genuine record from a forged one.
+- An actor with unrestricted write access to `tasks/tracker.json` can already bypass this gate: it can
+  call `complete` with forged `workflow.review`/`workflow.security` records, or write a submit record
+  whose every field (version, timestamp, actor, validator commands, zero exit codes, fingerprint, and
+  changed-file scope) is consistent with the current tree. Such a fully consistent forged record is
+  intentionally treated as reusable and the focused validators are not rerun. This is a documented
+  limitation of P-WF-T04, not a security guarantee.
+- Every single-field tamper is still detected and forces a real rerun of the focused validators:
+  fingerprint, changed-file scope, validator exit code, validator command/plan, validator entry shape,
+  `evidenceVersion`, a removed field, an added field, the recorded actor, and the recorded timestamp are
+  each covered by focused regression tests in `tools/task_controller/test_taskctl.py`.
+- Release evidence recorded by this controller is therefore trusted-state evidence, not independently
+  verifiable security evidence. Its integrity rests on the repository rule that controller state is
+  written only by `taskctl` transitions and is never edited by hand.
+
+Authenticated evidence follow-up (out of scope for P-WF-T04):
+
+- Authenticated or append-only evidence is the correct long-term fix and is deliberately not implemented
+  here: controller-side signing of the submit record, a keyed MAC bound to a secret the implementation
+  actor cannot read, an append-only run ledger outside the task-editable tree, or CI attestation. Each
+  option needs new trust infrastructure (secret storage, key distribution, or external state), which is
+  outside this task's allowed files and forbidden actions; treat it as a separate tracked task.
+
+Observability:
+
+- `workflow.submit` and `workflow.complete` record `evidenceVersion`, `sourceFingerprint`,
+  `changedFiles`, `validators`, `reusedSubmitEvidence`, and (at completion) `evidenceDecision`,
+  `confirmedFingerprint`/`confirmedFiles` for the persisted confirmation, plus a `trustBoundary` note
+  that restates the residual authenticity limitation next to the decision.
+- `python3 tools/task_controller/taskctl.py fingerprint --base dev` prints the resolved base, the
+  fingerprint, and the fingerprinted file list for independent inspection by review, security, and
+  release roles.
+
 ## Delivery context contract (contextVersion 3)
 
 `get_delivery_context` returns exactly these top-level fields and nothing else:

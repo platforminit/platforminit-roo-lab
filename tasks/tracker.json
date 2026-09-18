@@ -903,6 +903,7 @@
         "tasks/**",
         ".roo/commands/**",
         "tools/platforminit_mcp/**",
+        "scripts/orchestrator/**",
         "docs/**"
       ],
       "requiredValidators": [

@@ -1,46 +1,75 @@
 # P-WF-T03 Review — Shrink MCP delivery context budget
 
-## Review scope
+## Re-review scope and history
 
-- Branch: `chore/p-wf-t03-workflow`
-- Commit under review: `3ce3520` versus `dev` (`0cb330a`)
-- Product changed scope: exactly the four declared non-state files:
-  [`context.py`](../../tools/platforminit_mcp/context.py), [`server.py`](../../tools/platforminit_mcp/server.py), [`validate_mode_access.py`](../../tools/platforminit_mcp/validate_mode_access.py), and [`PLATFORM_WORKFLOW_REFACTOR.md`](../roo-lab/PLATFORM_WORKFLOW_REFACTOR.md).
-- Controller-owned working-tree changes under `tasks/active/` and `tasks/tracker.json` were ignored.
-- No product code, tests, tracker state, or generated task views were modified by this review.
+- Branch: `chore/p-wf-t03-workflow`; HEAD: `e4715b8` (`fix(mcp): bound and validate every caller-supplied MCP tool input`).
+- Rework reviewed: `git diff 0535a6a...e4715b8`; whole task scope: `git diff dev...HEAD`.
+- Product scope remains the four declared non-state files: [`context.py`](../../tools/platforminit_mcp/context.py), [`server.py`](../../tools/platforminit_mcp/server.py), [`validate_mode_access.py`](../../tools/platforminit_mcp/validate_mode_access.py), and [`PLATFORM_WORKFLOW_REFACTOR.md`](../roo-lab/PLATFORM_WORKFLOW_REFACTOR.md).
+- Review #1 approved implementation commit `3ce3520`.
+- Security #1 (`0535a6a`) raised M-01 because caller-supplied `base` reached the Git argv without a bounded/allowlisted contract.
+- This re-review adjudicates the rework commit `e4715b8`; controller-owned changes under [`tasks/active/`](../../tasks/active/) and [`tasks/tracker.json`](../../tasks/tracker.json) were ignored and not committed.
+
+## Verdict
+
+**APPROVE.** The rework closes M-01 without identifying a legitimate in-repository caller that would break. Validation occurs before Git subprocess construction, the schema derives the handler argument allowlist, and the compact context contract remains version 3 and stage-critical only.
 
 ## Acceptance criteria
 
 ### 1. PlatformInit MCP is platform-only — PASS
 
-[`_platform_tasks()`](../../tools/platforminit_mcp/context.py:86) selects only tasks whose `track` is `platform`; task summaries and delivery context explicitly emit `track: platform`. [`changed_scope()`](../../tools/platforminit_mcp/context.py:106) excludes the separate `n8n/` and `docs/n8n/` path prefixes and marks the result `platformOnly: true`. The server exposes only PlatformInit task/scope tools and the validator checks both static and runtime platform-only markers.
+[`_platform_tasks()`](../../tools/platforminit_mcp/context.py:147) selects only `track == platform`; task summaries and delivery context emit the platform track. [`changed_scope()`](../../tools/platforminit_mcp/context.py:168) excludes `n8n/` and `docs/n8n/` paths and marks the result `platformOnly: true`. Static and runtime validation cover these markers and the required MCP tool surface.
 
 ### 2. Changed-scope default and hard cap are bounded for small tasks — PASS
 
-[`SCOPE_DEFAULT_FILES`](../../tools/platforminit_mcp/context.py:52) is 5 and [`SCOPE_HARD_CAP_FILES`](../../tools/platforminit_mcp/context.py:53) is 8. [`clamp_max_files()`](../../tools/platforminit_mcp/context.py:69) applies the default for invalid/missing values and clamps oversized values to 8. Both relevant tool schemas advertise minimum 1, maximum 8, and default 5 in [`server.py`](../../tools/platforminit_mcp/server.py:24). The validator statically checks these contracts and runtime smoke passes an oversized request.
+[`SCOPE_DEFAULT_FILES`](../../tools/platforminit_mcp/context.py:53) is 5 and [`SCOPE_HARD_CAP_FILES`](../../tools/platforminit_mcp/context.py:54) is 8. [`validate_max_files()`](../../tools/platforminit_mcp/context.py:128) rejects booleans, floats, numeric strings, lists, and other non-integers, while integer values are clamped to 1..8. Both scope-bearing schemas advertise integer type, minimum 1, maximum 8, and default 5. The runtime oversized request remains clamped to the hard cap.
 
 ### 3. Delivery context returns only stage-critical fields — PASS
 
-[`delivery_context()`](../../tools/platforminit_mcp/context.py:203) returns exactly the compact top-level contract: context version, project/track, task, scope, handoff payload, and authoritative source. The former prose handoff rule, indexing block, and duplicated suggested paths are removed. Runtime validation compares top-level, task-summary, and scope key sets and rejects indexing hints in [`runtime_errors()`](../../tools/platforminit_mcp/validate_mode_access.py:311).
+[`delivery_context()`](../../tools/platforminit_mcp/context.py:266) still returns `contextVersion: 3` and exactly the compact top-level contract: project/track, task, bounded scope, handoff payload, and authoritative source. No rework change restores the removed prose handoff rule, indexing block, or duplicated suggested paths. Static and runtime validators compare the exact field sets.
 
-## Evidence commands and results
+## Tightened input contract and integration review
 
-1. `pwd; grep -Eiq "microsoft|wsl" /proc/version && echo WSL_OK; id -un; git branch --show-current; git status --short; git remote -v` — PASS: WSL, user `hattila`, branch `chore/p-wf-t03-workflow`; only controller-owned task-state files were dirty; origin was present.
-2. `git rev-parse --short HEAD; git rev-parse --short dev` — PASS: `3ce3520` and `0cb330a`.
-3. `git diff --name-status dev...HEAD -- <four declared paths>` — PASS: exactly the four declared product paths.
-4. `git diff --check dev...HEAD` — PASS, exit 0.
-5. `python3 tools/platforminit_mcp/validate_mode_access.py` — PASS: 8 PlatformInit modes declare MCP access and required tools are enabled.
-6. `python3 tools/platforminit_mcp/validate_mode_access.py --runtime` — PASS: runtime MCP smoke returned the authoritative PlatformInit task and passed delivery-context, platform-only, and hard-cap assertions.
-7. Initial controller MCP calls — [`health`](../../tools/platforminit_mcp/server.py:103) reported `contextVersion: 2`; compact `get_delivery_context` returned the active `needs_review` task and scope, also with `contextVersion: 2`. This is stale relative to the changed contract's version 3, while the validator's spawned runtime server passed the version-3 checks.
+### `base` callers
 
-## Unresolved risks and adjudication
+Path-scoped searches across [`.roo/`](../../.roo/), [`.github/workflows/`](../../.github/workflows/), [`tools/`](../../tools/), [`scripts/`](../../scripts/), and the relevant workflow documentation found no external caller that supplies a `base` value to the MCP tools. The only operational defaults are the server/schema default `dev` and the controller/MCP delivery request used in this review, which is `dev`; both remain allowlisted. `origin/feature-*` appears only as an intentionally rejected validator case and as a documented unresolved compatibility/design risk, not as an active caller. Rejecting such refs is acceptable for this micro-task because the new contract explicitly supports only `dev`, `main`, `origin/dev`, and `origin/main`.
 
-1. **Hosted/editor MCP restart — operator step, not a patch defect:** the already-hosted MCP process is stale and must be restarted/reloaded before relying on the new context contract. A fresh child should call MCP health and reload `get_delivery_context`; stale cached context must not be carried across the stage boundary. The runtime validator proves the shipped stdio server is correct, but does not restart the editor-hosted process.
-2. **`mcp-smoke.md` documentation drift — low-risk documentation gap:** it was intentionally outside the four-file product scope and the static validator still confirms command/mode/tool wiring. However, the command documentation now under-describes the new delivery-contract checks (platform-only, bounded default/hard cap, exact compact fields). This does not break the command, but should be updated in a follow-up documentation task rather than expanding this micro-task after the fact.
-3. **`foreignPathsExcluded` count — accepted limitation:** the count is sufficient to prove foreign paths were observed and removed, while the returned `files` list remains platform-only. It does not expose which foreign paths were dropped, so it can hide cross-track coupling details from an operator. This is an observability limitation, not evidence that foreign files leak or that this task's platform-only contract fails; detailed path inspection should remain a separate diagnostic/reporting concern.
-4. **Four-file task-size warning — justified:** the fourth file is the workflow contract documentation corresponding directly to the three-file MCP implementation/validator subsystem. The files form one coherent delivery-context contract, and the diff is bounded; no split is required.
-5. **Additional finding:** none. Existing consumers of `get_delivery_context` should not depend on removed `handoff.rule`/`indexing` fields because the validator enforces the new contract and the documented handoff payload retains the routing-critical information (`stage`, `nextMode`/transition command via task summary). The validator is repeatable and makes no repository mutations.
+### `maxFiles` callers
 
-## Verdict rationale
+No repository caller or command example supplies a string or float `maxFiles`. The shipped schemas use integer values, and the validator intentionally tests rejection of `"5"`, `2.5`, `True`, and list input. This is an intentional contract tightening, not a regression for the discovered consumers. Oversized integers retain the prior bounded/clamping behavior.
 
-**APPROVE.** The patch is branch-correct, within the declared allowed scope, platform-only, bounded at both schema and runtime layers, and its compact payload is explicitly contract-tested. Focused validation passes. The stale editor-hosted process requires an operational restart/reload, and `mcp-smoke.md` has a follow-up documentation gap, but neither warrants blocking this scoped implementation.
+### `taskId` compatibility
+
+[`TASK_ID_PATTERN`](../../tools/platforminit_mcp/context.py:66) permits letters, digits, dots, underscores, and hyphens after a non-empty alphanumeric first character, with a 64-character cap. Legitimate identifiers including `P-WF-T03` and dotted n8n/platform-style identifiers such as `P-CH04.5-T02` are accepted. Shell metacharacters, path separators, whitespace, and oversized identifiers are rejected before tracker lookup.
+
+### Error semantics
+
+The path-scoped search found no consumer assertion or documentation dependency on the removed exception text. The validator now asserts controlled `-32602` responses for unknown tools, unexpected argument names, non-object `params`/`arguments`, and [`InvalidToolInput`](../../tools/platforminit_mcp/context.py:90). Other handler exceptions return constant `-32603` text without exception details or host paths. JSON parse errors remain the standard `-32700`; a non-object JSON-RPC message remains the protocol-level `-32600` invalid-request response, which is distinct and appropriate.
+
+### Stdio/editor-hosted path and drift prevention
+
+[`handle()`](../../tools/platforminit_mcp/server.py:106) routes all tool inputs through validation-bearing context functions before [`changed_scope()`](../../tools/platforminit_mcp/context.py:168) constructs any Git command. [`allowed_arguments()`](../../tools/platforminit_mcp/server.py:98) derives accepted argument names from `TOOLS` schemas, preventing schema/handler argument-list drift. The runtime validator exercises invalid inputs, unknown tools, unexpected arguments, non-object arguments, malformed JSON, and the normal health/task/context calls.
+
+## Focused evidence
+
+1. `health` MCP call — PASS: `ok: true`, project `platforminit`, `contextVersion: 3`.
+2. `get_delivery_context` MCP call — PASS: status `needs_review`, platform track, bounded scope budget `{target: 3, warning: 5, hardSplitAbove: 5, hardCap: 8}`, and compact context version 3.
+3. Environment/branch check — PASS: WSL, user `hattila`, branch `chore/p-wf-t03-workflow`; only controller-owned task-state files were dirty before this report update.
+4. `git diff 0535a6a...e4715b8` — PASS: rework limited to the four declared product paths.
+5. `git diff --check` — PASS, exit 0.
+6. `python3 tools/platforminit_mcp/validate_mode_access.py` — PASS: 8 PlatformInit modes declare MCP access and required tools are enabled.
+7. `python3 tools/platforminit_mcp/validate_mode_access.py --runtime` — PASS: runtime MCP smoke returned the authoritative PlatformInit task and passed compact-contract, platform-only, hard-cap, input-rejection, and error-safety assertions.
+
+## Unresolved risks
+
+1. No outbound GitHub access is available from this workspace; remote fetch/push/PR evidence remains a known release-stage blocker.
+2. [`.roo/commands/mcp-smoke.md`](../../.roo/commands/mcp-smoke.md) has documentation drift: it does not fully describe the newer compact-contract and input-rejection assertions. This is deferred rather than expanding this micro-task.
+3. `origin/feature-*` refs are now rejected by design. No active caller was found, but any future caller must use the four documented allowlisted refs.
+4. The editor-hosted MCP process must be restarted/reloaded at stage boundaries so it serves context version 3; the fresh health/context calls and spawned runtime validator show the shipped path is correct.
+
+## Controller transition
+
+After this report is committed, record exactly one verdict:
+
+```text
+python3 tools/task_controller/taskctl.py review P-WF-T03 --actor platforminit-openai-reviewer --verdict approve --report docs/reviews/P-WF-T03.md
+```

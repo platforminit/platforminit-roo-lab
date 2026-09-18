@@ -998,7 +998,7 @@
       "id": "P-WF-T07",
       "track": "platform",
       "order": 160,
-      "status": "pending",
+      "status": "done",
       "title": "Create standalone n8n roadmap and task registry",
       "description": "Move the preserved parked n8n backlog into its own roadmap and canonical parked registry.",
       "scope": "workflow-tooling",
@@ -1032,7 +1032,72 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-18T17:59:20.765166+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T18:02:02.136318+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "41adfdb1d9fa4ee6811d252e0a8d2411b3d89566072c8e7088068cde03433ccb",
+          "changedFiles": [
+            "docs/n8n/N8N_ROADMAP.md",
+            "n8n/tasks/README.md"
+          ]
+        },
+        "review": {
+          "at": "2026-09-18T18:04:39.574541+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T07.md"
+        },
+        "security": {
+          "at": "2026-09-18T18:07:17.681804+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T07.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T18:08:24.086465+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "41adfdb1d9fa4ee6811d252e0a8d2411b3d89566072c8e7088068cde03433ccb",
+          "changedFiles": [
+            "docs/n8n/N8N_ROADMAP.md",
+            "n8n/tasks/README.md"
+          ],
+          "confirmedFingerprint": "41adfdb1d9fa4ee6811d252e0a8d2411b3d89566072c8e7088068cde03433ccb",
+          "confirmedFiles": [
+            "docs/n8n/N8N_ROADMAP.md",
+            "n8n/tasks/README.md"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-WF-T08",
@@ -1193,5 +1258,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-18T17:43:09.422748+00:00"
+  "updatedAt": "2026-09-18T18:08:24.086504+00:00"
 }

@@ -2,30 +2,31 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T07 — Create standalone n8n roadmap and task registry
+## P-WF-T08 — Smoke-test fresh-child delivery pipeline
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `chore/p-wf-t07-workflow` |
+| Branch | `chore/p-wf-t08-workflow` |
 | Scope | `workflow-tooling` |
-| Dependencies | P-WF-T06 |
+| Dependencies | P-WF-T07 |
 | Next actor | `platforminit-orchestrator` |
 
-Move the preserved parked n8n backlog into its own roadmap and canonical parked registry.
+Verify the compact implementation-review-security-release route without broad reads or full-repo validation.
 
 ### Acceptance criteria
 
-- [ ] n8n roadmap lives outside the PlatformInit roadmap
-- [ ] n8n task registry is separate from tasks/tracker.json
-- [ ] PlatformInit controller cannot start n8n tasks
+- [ ] fresh child is used for every specialist stage
+- [ ] MCP context is available after each handoff
+- [ ] handoff payload remains bounded and no stale stage is executed
 
 ### Allowed files
 
-- `n8n/**`
-- `docs/n8n/**`
-- `docs/roo-lab/**`
+- `.roomodes`
+- `.roo/commands/**`
+- `tools/platforminit_mcp/**`
+- `docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md`
 - `tasks/**`
 
 ### Required validators
@@ -40,4 +41,4 @@ Move the preserved parked n8n backlog into its own roadmap and canonical parked 
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T07 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T08 --actor platforminit-orchestrator`

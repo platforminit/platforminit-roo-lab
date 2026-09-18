@@ -1103,7 +1103,7 @@
       "id": "P-WF-T08",
       "track": "platform",
       "order": 170,
-      "status": "pending",
+      "status": "done",
       "title": "Smoke-test fresh-child delivery pipeline",
       "description": "Verify the compact implementation-review-security-release route without broad reads or full-repo validation.",
       "scope": "workflow-tooling",
@@ -1138,7 +1138,75 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-18T18:18:17.738546+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T18:51:32.194056+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "7372a6044f1b1689e861b901974518b3ad7e1e767a6c579043e538dee161c41c",
+          "changedFiles": [
+            ".roo/commands/pipeline-smoke.md",
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/platforminit_mcp/validate_pipeline_smoke.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-18T18:53:59.905402+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T08.md"
+        },
+        "security": {
+          "at": "2026-09-18T18:56:21.254359+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T08.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T18:58:07.598950+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "7372a6044f1b1689e861b901974518b3ad7e1e767a6c579043e538dee161c41c",
+          "changedFiles": [
+            ".roo/commands/pipeline-smoke.md",
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/platforminit_mcp/validate_pipeline_smoke.py"
+          ],
+          "confirmedFingerprint": "7372a6044f1b1689e861b901974518b3ad7e1e767a6c579043e538dee161c41c",
+          "confirmedFiles": [
+            ".roo/commands/pipeline-smoke.md",
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/platforminit_mcp/validate_pipeline_smoke.py"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH04.5-T03",
@@ -1258,5 +1326,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-18T18:08:24.086504+00:00"
+  "updatedAt": "2026-09-18T18:58:07.598985+00:00"
 }

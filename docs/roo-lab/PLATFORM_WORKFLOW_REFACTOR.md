@@ -222,6 +222,27 @@ procedure and documents both layers:
 A mode change is only valid when MCP state is re-derived from the controller after the handoff, so no
 specialist stage depends on conversation-carried context.
 
+## Fresh-child pipeline smoke
+
+`.roo/commands/pipeline-smoke.md` is the end-to-end procedure and
+`python3 tools/platforminit_mcp/validate_pipeline_smoke.py` is its deterministic contract layer. The
+smoke checks the three acceptance gates of the fresh-child pipeline and nothing else:
+
+- gate 1 — every specialist stage is one fresh Zoo `new_task` child in the tracker-declared mode
+  (`implementationMode`, `reviewMode`, `securityMode`, `releaseMode`), and each of those modes is a
+  declared `platforminit-*` mode that starts as a fresh child;
+- gate 2 — every stage mode declares the `mcp` group and boots `health` plus `get_delivery_context`
+  after the handoff, and the payload re-derives `stage`/`nextMode`/`command` from authoritative state
+  rather than from conversation-carried context;
+- gate 3 — the handoff payload is exactly the seven bounded fields, and no stale stage is routable: an
+  unknown task id returns a state marker without a stage, and an unmapped or `blocked`/`done` status
+  routes to nothing.
+
+The contract layer is read-only, starts no infrastructure workflow, and writes no task state. It reuses
+the MCP-access runtime layer (`validate_mode_access.py --runtime`) for the post-handoff
+`get_delivery_context` proof instead of booting a second stdio server, so unchanged MCP-access evidence
+is not rerun.
+
 ## Workflow-hardening task sequence
 
 | Task | Purpose |

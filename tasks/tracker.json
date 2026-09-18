@@ -671,7 +671,7 @@
       "id": "P-WF-T04",
       "track": "platform",
       "order": 130,
-      "status": "pending",
+      "status": "done",
       "title": "Reuse unchanged validation evidence",
       "description": "Define source/evidence fingerprint reuse so unchanged passing validators are not rerun at release.",
       "scope": "workflow-tooling",
@@ -704,7 +704,75 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-18T12:18:21.816735+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T12:36:23.408234+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "12bbbad9ab475937299496e10600c4825be147ce7d8c5507d6136b547689538b",
+          "changedFiles": [
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/task_controller/taskctl.py",
+            "tools/task_controller/test_taskctl.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-18T12:39:07.481438+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T04.md"
+        },
+        "security": {
+          "at": "2026-09-18T12:41:58.044706+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T04.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T12:43:36.410322+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "12bbbad9ab475937299496e10600c4825be147ce7d8c5507d6136b547689538b",
+          "changedFiles": [
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/task_controller/taskctl.py",
+            "tools/task_controller/test_taskctl.py"
+          ],
+          "confirmedFingerprint": "12bbbad9ab475937299496e10600c4825be147ce7d8c5507d6136b547689538b",
+          "confirmedFiles": [
+            "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+            "tools/task_controller/taskctl.py",
+            "tools/task_controller/test_taskctl.py"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-WF-T05",
@@ -985,5 +1053,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-18T11:34:22.110703+00:00"
+  "updatedAt": "2026-09-18T12:43:36.410354+00:00"
 }

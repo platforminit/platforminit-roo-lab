@@ -20,6 +20,7 @@ class TaskctlTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self.ledger_dir = Path(tempfile.mkdtemp(prefix="taskctl-validator-ledger-"))
         (self.root / "tools/task_controller").mkdir(parents=True)
         shutil.copy2(Path(__file__).with_name("taskctl.py"), self.root / "tools/task_controller/taskctl.py")
         (self.root / "tasks/active/platform").mkdir(parents=True)
@@ -38,10 +39,13 @@ class TaskctlTests(unittest.TestCase):
         subprocess.run(["git", "init", "-b", "dev"], cwd=self.root, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=self.root, check=True)
         subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "fixture baseline"], cwd=self.root, check=True, capture_output=True)
         self.invoke("next")
 
     def tearDown(self):
         self.tmp.cleanup()
+        shutil.rmtree(self.ledger_dir, ignore_errors=True)
 
     def task(self, tid, order, status, branch, depends=None):
         return {
@@ -83,6 +87,110 @@ class TaskctlTests(unittest.TestCase):
 
     def switch(self, branch):
         subprocess.run(["git", "switch", "-C", branch], cwd=self.root, check=True, capture_output=True)
+
+    def commit_all(self, message="fixture change"):
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", message], cwd=self.root, check=True, capture_output=True)
+
+    def state_task(self, task_id="P-002"):
+        state = json.loads((self.root / "tasks/tracker.json").read_text())
+        return next(item for item in state["tasks"] if item["id"] == task_id)
+
+    def store_task(self, task):
+        state = json.loads((self.root / "tasks/tracker.json").read_text())
+        state["tasks"] = [task if item["id"] == task["id"] else item for item in state["tasks"]]
+        (self.root / "tasks/tracker.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
+    def current_fingerprint(self):
+        result = self.invoke("fingerprint")
+        for line in result.stdout.splitlines():
+            if line.startswith("fingerprint="):
+                return line.split("=", 1)[1]
+        self.fail(f"no fingerprint in output: {result.stdout}")
+
+    def current_scope(self):
+        """Fingerprint and changed-file scope exactly as the controller computes them."""
+        result = self.invoke("fingerprint")
+        fingerprint, files = None, []
+        for line in result.stdout.splitlines():
+            if line.startswith("fingerprint="):
+                fingerprint = line.split("=", 1)[1]
+            elif line.startswith("file="):
+                files.append(line.split("=", 1)[1])
+        if fingerprint is None:
+            self.fail(f"no fingerprint in output: {result.stdout}")
+        return fingerprint, files
+
+    def arm_recording_validator(self):
+        """Swap the focused validator for one that appends a line per execution.
+
+        The ledger lives outside the repository, so recording a run cannot change the source
+        fingerprint or the changed-file scope under test.
+        """
+        ledger = self.ledger_dir / "validators.log"
+        task = self.state_task()
+        task["requiredValidators"] = [[
+            sys.executable,
+            "-c",
+            "import pathlib, sys; pathlib.Path(sys.argv[1]).open('a', encoding='utf-8').write('run\\n')",
+            str(ledger),
+        ]]
+        self.store_task(task)
+        return ledger
+
+    def run_count(self, ledger):
+        return len(ledger.read_text(encoding="utf-8").splitlines()) if ledger.exists() else 0
+
+    def invoke_complete_with_persistence_drift(self, drift_relative, *args):
+        """Run taskctl so a fingerprinted source file changes exactly at the persistence boundary.
+
+        The driver wraps `pathlib.Path.replace`, which `save()` uses for the atomic `tracker.json`
+        write, and mutates the target source file once, immediately before that replacement. That is
+        the smallest observable window between the final fingerprint confirmation and persisted
+        controller state, i.e. the interleaving described by review finding P-WF-T04-REV-001. No
+        production test hook is required: the monkeypatch lives only in this taskctl subprocess.
+        """
+        drift_target = str(self.root / drift_relative)
+        driver = "\n".join([
+            "import pathlib, runpy, sys",
+            "sys.argv = ['taskctl.py', " + ", ".join(repr(arg) for arg in args) + "]",
+            "drift_target = pathlib.Path(" + repr(drift_target) + ")",
+            "original_replace = pathlib.Path.replace",
+            "state = {'armed': False}",
+            "def replace_with_drift(self, target):",
+            "    if not state['armed'] and self.name == 'tracker.json.tmp':",
+            "        state['armed'] = True",
+            "        drift_target.write_text(drift_target.read_text(encoding='utf-8') + 'drift\\n', encoding='utf-8')",
+            "    return original_replace(self, target)",
+            "pathlib.Path.replace = replace_with_drift",
+            "runpy.run_path('tools/task_controller/taskctl.py', run_name='__main__')",
+        ])
+        env = {**os.environ, "PLATFORMINIT_REPO_ROOT": str(self.root)}
+        return subprocess.run(
+            [sys.executable, "-c", driver],
+            cwd=self.root,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+
+    def tamper_submit_evidence(self, mutate):
+        """Run the submit-to-release path with a single tampered submit-evidence field.
+
+        One focused-validator execution happens during submit. Any accepted tampering must force a
+        second, real execution instead of a silent pass.
+        """
+        ledger = self.arm_recording_validator()
+        self.approve_to_close()
+        self.assertEqual(self.run_count(ledger), 1, "submit must run the focused validator exactly once")
+        task = self.state_task()
+        mutate(task["workflow"]["submit"])
+        self.store_task(task)
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertFalse(complete["reusedSubmitEvidence"])
+        self.assertEqual(self.run_count(ledger), 2, "tampered evidence must rerun validators, never pass silently")
+        return complete
 
     def start_and_submit(self):
         self.switch("feature/p-002")
@@ -197,9 +305,199 @@ class TaskctlTests(unittest.TestCase):
         self.approve_to_close()
         (self.root / "changed.txt").write_text("changed after review\n", encoding="utf-8")
         self.invoke("complete", "P-002", "--actor", RELEASE)
-        state = json.loads((self.root / "tasks/tracker.json").read_text())
-        task = next(item for item in state["tasks"] if item["id"] == "P-002")
-        self.assertFalse(task["workflow"]["complete"]["reusedSubmitEvidence"])
+        self.assertFalse(self.state_task()["workflow"]["complete"]["reusedSubmitEvidence"])
+
+    def test_submit_records_versioned_fingerprint_and_validator_plan(self):
+        self.start_and_submit()
+        submit = self.state_task()["workflow"]["submit"]
+        self.assertEqual(submit["evidenceVersion"], 1)
+        self.assertRegex(submit["sourceFingerprint"], r"^[0-9a-f]{64}$")
+        self.assertEqual([item["exitCode"] for item in submit["validators"]], [0])
+        self.assertEqual(submit["changedFiles"], [])
+        self.assertEqual(submit["sourceFingerprint"], self.current_fingerprint())
+
+    def test_fingerprint_ignores_controller_state_and_generated_views(self):
+        before = self.current_fingerprint()
+        self.tracker["tasks"][1]["title"] = "controller state renamed"
+        self.write_tracker()
+        self.invoke("next")
+        self.assertEqual(before, self.current_fingerprint())
+
+    def test_release_reuses_passing_evidence_across_identical_commit(self):
+        self.approve_to_close()
+        self.commit_all("commit the reviewed source unchanged")
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertTrue(complete["reusedSubmitEvidence"])
+        self.assertEqual(complete["sourceFingerprint"], self.state_task()["workflow"]["submit"]["sourceFingerprint"])
+
+    def test_committed_source_change_invalidates_reuse(self):
+        self.approve_to_close()
+        (self.root / "src-change.txt").write_text("new source after review\n", encoding="utf-8")
+        self.commit_all("change source after review")
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertFalse(complete["reusedSubmitEvidence"])
+        self.assertEqual(len(complete["validators"]), 1)
+        self.assertNotEqual(complete["sourceFingerprint"], self.state_task()["workflow"]["submit"]["sourceFingerprint"])
+
+    def test_source_drift_during_persistence_fails_loud_and_never_records_done(self):
+        """Residual TOCTOU window between the final confirmation and `save()` (P-WF-T04-REV-001).
+
+        `complete` confirms the fingerprint immediately before building the completion record and then
+        persists it, but the confirmation and the atomic state write are not one atomic step. The hook
+        in `invoke_complete_with_persistence_drift` mutates a fingerprinted file exactly when
+        `tasks/tracker.json` is replaced, which is the smallest window this design can observe. True
+        atomicity would need source locking or filesystem snapshots, which are explicitly out of scope,
+        so the strongest achievable in-process property is asserted: the transition fails loudly, the
+        `done` state and its reused-evidence record are reverted, and a follow-up `complete` reruns the
+        focused validators for the drifted source.
+        """
+        ledger = self.arm_recording_validator()
+        (self.root / "drift-source.txt").write_text("validated source\n", encoding="utf-8")
+        self.approve_to_close()
+        self.assertEqual(self.run_count(ledger), 1, "submit must run the focused validator exactly once")
+
+        drifted = self.invoke_complete_with_persistence_drift(
+            "drift-source.txt", "complete", "P-002", "--actor", RELEASE,
+        )
+        self.assertNotEqual(drifted.returncode, 0, "source drift during persistence must fail loudly")
+        self.assertIn("source changed after the completion record was confirmed", drifted.stderr)
+        repaired = self.state_task()
+        self.assertEqual(repaired["status"], "ready_to_close", "reverted state must not stay done")
+        self.assertNotIn("complete", repaired["workflow"], "stale completion record must be removed")
+        self.assertEqual(self.run_count(ledger), 1, "the reuse path must not have run validators")
+
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertFalse(complete["reusedSubmitEvidence"])
+        self.assertEqual(self.run_count(ledger), 2, "drifted source must rerun the focused validators")
+        self.assertEqual(complete["confirmedFingerprint"], complete["sourceFingerprint"])
+
+    def test_legacy_evidence_without_version_reruns_focused_validators(self):
+        self.approve_to_close()
+        task = self.state_task()
+        del task["workflow"]["submit"]["evidenceVersion"]
+        self.store_task(task)
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertFalse(complete["reusedSubmitEvidence"])
+        self.assertIn("evidence version", complete["evidenceDecision"])
+        self.assertEqual([item["command"] for item in complete["validators"]], [[sys.executable, "-c", "raise SystemExit(0)"]])
+
+    def test_empty_validator_evidence_reruns_validators(self):
+        self.approve_to_close()
+        task = self.state_task()
+        task["workflow"]["submit"]["validators"] = []
+        self.store_task(task)
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertFalse(complete["reusedSubmitEvidence"])
+        self.assertIn("no complete passing validator record", complete["evidenceDecision"])
+
+    def test_validator_plan_change_invalidates_reuse(self):
+        self.approve_to_close()
+        task = self.state_task()
+        task["requiredValidators"] = [[sys.executable, "-c", "print('focused-alt')"]]
+        self.store_task(task)
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertFalse(complete["reusedSubmitEvidence"])
+        self.assertEqual([item["command"] for item in complete["validators"]], [[sys.executable, "-c", "print('focused-alt')"]])
+
+    def test_tampered_fingerprint_reruns_validators(self):
+        complete = self.tamper_submit_evidence(lambda submit: submit.update(sourceFingerprint="0" * 64))
+        self.assertIn("source fingerprint changed since submit", complete["evidenceDecision"])
+
+    def test_tampered_changed_file_scope_reruns_validators(self):
+        def mutate(submit):
+            submit["changedFiles"] = [*submit["changedFiles"], "smuggled.txt"]
+        complete = self.tamper_submit_evidence(mutate)
+        self.assertIn("changed-file scope drifted since submit", complete["evidenceDecision"])
+
+    def test_tampered_validator_exit_code_reruns_validators(self):
+        def mutate(submit):
+            submit["validators"][0]["exitCode"] = 1
+        complete = self.tamper_submit_evidence(mutate)
+        self.assertIn("no complete passing validator record", complete["evidenceDecision"])
+
+    def test_tampered_validator_command_reruns_validators(self):
+        def mutate(submit):
+            submit["validators"][0]["command"] = [sys.executable, "-c", "print('forged')"]
+        complete = self.tamper_submit_evidence(mutate)
+        self.assertIn("required validator plan changed since submit", complete["evidenceDecision"])
+
+    def test_tampered_validator_extra_field_reruns_validators(self):
+        def mutate(submit):
+            submit["validators"][0]["skipped"] = True
+        complete = self.tamper_submit_evidence(mutate)
+        self.assertIn("no complete passing validator record", complete["evidenceDecision"])
+
+    def test_tampered_validator_boolean_exit_code_reruns_validators(self):
+        def mutate(submit):
+            submit["validators"][0]["exitCode"] = True
+        complete = self.tamper_submit_evidence(mutate)
+        self.assertIn("no complete passing validator record", complete["evidenceDecision"])
+
+    def test_tampered_evidence_version_reruns_validators(self):
+        complete = self.tamper_submit_evidence(lambda submit: submit.update(evidenceVersion=2))
+        self.assertIn("evidence version", complete["evidenceDecision"])
+
+    def test_unknown_evidence_field_reruns_validators(self):
+        complete = self.tamper_submit_evidence(lambda submit: submit.update(authenticated=True))
+        self.assertIn("unknown fields: authenticated", complete["evidenceDecision"])
+
+    def test_missing_evidence_field_reruns_validators(self):
+        def mutate(submit):
+            del submit["actor"]
+        complete = self.tamper_submit_evidence(mutate)
+        self.assertIn("incomplete: actor", complete["evidenceDecision"])
+
+    def test_tampered_evidence_actor_reruns_validators(self):
+        complete = self.tamper_submit_evidence(lambda submit: submit.update(actor=RELEASE))
+        self.assertIn("actor does not match the task implementation mode", complete["evidenceDecision"])
+
+    def test_tampered_evidence_timestamp_reruns_validators(self):
+        def mutate(submit):
+            submit["at"] = None
+        complete = self.tamper_submit_evidence(mutate)
+        self.assertIn("timestamp is missing", complete["evidenceDecision"])
+
+    def test_completion_records_evidence_trust_boundary(self):
+        self.approve_to_close()
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertTrue(complete["reusedSubmitEvidence"])
+        self.assertIn("controller-owned", complete["trustBoundary"])
+        self.assertIn("tasks/tracker.json", complete["trustBoundary"])
+
+    def test_fully_consistent_forged_evidence_is_a_documented_limitation(self):
+        """Documented trust-boundary limitation, not a guarantee.
+
+        Without authenticated or append-only evidence the controller cannot distinguish a fully
+        consistent forged record from genuine evidence, so the focused validator is intentionally not
+        rerun. Every single-field tamper is still detected and forces a rerun; see the tamper tests
+        above and the trust-boundary section of docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md.
+        """
+        ledger = self.arm_recording_validator()
+        self.approve_to_close()
+        self.assertEqual(self.run_count(ledger), 1)
+        fingerprint, files = self.current_scope()
+        task = self.state_task()
+        task["workflow"]["submit"] = {
+            "evidenceVersion": 1,
+            "at": task["workflow"]["submit"]["at"],
+            "actor": CODER,
+            "validators": [{"command": list(command), "exitCode": 0} for command in task["requiredValidators"]],
+            "sourceFingerprint": fingerprint,
+            "changedFiles": files,
+        }
+        self.store_task(task)
+        self.invoke("complete", "P-002", "--actor", RELEASE)
+        complete = self.state_task()["workflow"]["complete"]
+        self.assertTrue(complete["reusedSubmitEvidence"])
+        self.assertEqual(self.run_count(ledger), 1, "a fully consistent forged record is undetectable by design")
+        self.assertIn("reused submit evidence", complete["evidenceDecision"])
 
     def test_more_than_five_non_state_files_requires_split(self):
         self.switch("feature/p-002")

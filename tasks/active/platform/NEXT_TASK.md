@@ -2,28 +2,29 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T04 — Reuse unchanged validation evidence
+## P-WF-T05 — Enforce micro-task sizing
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `chore/p-wf-t04-workflow` |
+| Branch | `chore/p-wf-t05-workflow` |
 | Scope | `workflow-tooling` |
-| Dependencies | P-WF-T03 |
+| Dependencies | P-WF-T04 |
 | Next actor | `platforminit-orchestrator` |
 
-Define source/evidence fingerprint reuse so unchanged passing validators are not rerun at release.
+Make the small-context file budget enforceable instead of prompt-only.
 
 ### Acceptance criteria
 
-- [ ] submit records a deterministic source fingerprint
-- [ ] release reuses passing validator evidence when the fingerprint is unchanged
-- [ ] changed source invalidates reuse and runs only required focused validators
+- [ ] target is 1-3 primary product files
+- [ ] 4-5 primary files require an explicit warning
+- [ ] more than 5 non-state files blocks submit with TASK_TOO_LARGE_SPLIT_REQUIRED
 
 ### Allowed files
 
 - `tools/task_controller/**`
+- `.roo/commands/**`
 - `docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md`
 - `tasks/**`
 
@@ -39,4 +40,4 @@ Define source/evidence fingerprint reuse so unchanged passing validators are not
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T04 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T05 --actor platforminit-orchestrator`

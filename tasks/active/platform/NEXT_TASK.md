@@ -2,31 +2,31 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T05 — Enforce micro-task sizing
+## P-WF-T06 — Detach n8n from PlatformInit canonical task state
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `chore/p-wf-t05-workflow` |
+| Branch | `chore/p-wf-t06-workflow` |
 | Scope | `workflow-tooling` |
-| Dependencies | P-WF-T04 |
+| Dependencies | P-WF-T05 |
 | Next actor | `platforminit-orchestrator` |
 
-Make the small-context file budget enforceable instead of prompt-only.
+Remove n8n tasks and track selection from PlatformInit canonical queue and generated views.
 
 ### Acceptance criteria
 
-- [ ] target is 1-3 primary product files
-- [ ] 4-5 primary files require an explicit warning
-- [ ] more than 5 non-state files blocks submit with TASK_TOO_LARGE_SPLIT_REQUIRED
+- [ ] tasks/tracker.json contains only PlatformInit tasks
+- [ ] PlatformInit next-task flow has no n8n branch
+- [ ] historical shared-foundation references remain documentation only
 
 ### Allowed files
 
-- `tools/task_controller/**`
-- `.roo/commands/**`
-- `docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md`
 - `tasks/**`
+- `.roo/commands/**`
+- `tools/platforminit_mcp/**`
+- `docs/**`
 
 ### Required validators
 
@@ -40,4 +40,4 @@ Make the small-context file budget enforceable instead of prompt-only.
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T05 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T06 --actor platforminit-orchestrator`

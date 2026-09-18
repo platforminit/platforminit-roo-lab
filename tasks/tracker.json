@@ -1212,7 +1212,7 @@
       "id": "P-CH04.5-T03",
       "track": "platform",
       "order": 180,
-      "status": "pending",
+      "status": "done",
       "title": "Stabilize Authentik ingress and TLS contract",
       "description": "Define the Authentik ingress, certificate, hostname, and TLS ownership contract independently from identity model bootstrap.",
       "scope": "platform-identity",
@@ -1245,7 +1245,75 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-18T19:33:53.571342+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T19:46:07.977702+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "48819273eecff423cff00cbae382b22e774ae395a427f15cd9a9cb43144d3063",
+          "changedFiles": [
+            "platform/identity/docs/ch04-5-authentik-ingress-tls-contract.md",
+            "platform/identity/docs/ch04-5-identity-foundation.md",
+            "platform/identity/validate/ch04-5-validate-authentik-ingress-tls.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-18T19:53:39.315514+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH04.5-T03.md"
+        },
+        "security": {
+          "at": "2026-09-18T20:00:04.024331+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH04.5-T03.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-18T20:02:14.727671+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "48819273eecff423cff00cbae382b22e774ae395a427f15cd9a9cb43144d3063",
+          "changedFiles": [
+            "platform/identity/docs/ch04-5-authentik-ingress-tls-contract.md",
+            "platform/identity/docs/ch04-5-identity-foundation.md",
+            "platform/identity/validate/ch04-5-validate-authentik-ingress-tls.sh"
+          ],
+          "confirmedFingerprint": "48819273eecff423cff00cbae382b22e774ae395a427f15cd9a9cb43144d3063",
+          "confirmedFiles": [
+            "platform/identity/docs/ch04-5-authentik-ingress-tls-contract.md",
+            "platform/identity/docs/ch04-5-identity-foundation.md",
+            "platform/identity/validate/ch04-5-validate-authentik-ingress-tls.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH04.5-T04",
@@ -1326,5 +1394,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-18T18:58:07.598985+00:00"
+  "updatedAt": "2026-09-18T20:02:14.727713+00:00"
 }

@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T05` — Enforce micro-task sizing | `pending` | `chore/p-wf-t05-workflow` |
+| `platform` | `P-WF-T06` — Detach n8n from PlatformInit canonical task state | `pending` | `chore/p-wf-t06-workflow` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

@@ -174,6 +174,42 @@ class TaskctlTests(unittest.TestCase):
             capture_output=True,
         )
 
+    def invoke_submit_with_scope_growth_during_validators(self, count):
+        """Run submit so extra non-state files appear after the size count and before the snapshot.
+
+        The driver loads `taskctl` as a module and wraps `run_validators`, so the changed-file scope
+        grows right after the size gate counted the smaller snapshot and before the controller
+        fingerprints and persists the scope it acted on. That is exactly the interleaving of review
+        finding P-WF-T05-D1: an oversized scope trying to pass the gate by being added after the
+        count. No production test hook is required; the wrapper lives only in this taskctl process.
+        """
+        driver = "\n".join([
+            "import importlib.util, sys",
+            # Loading taskctl as a module must not add a `__pycache__` entry to the very scope this
+            # driver measures, so bytecode caching is disabled for the subprocess.
+            "sys.dont_write_bytecode = True",
+            "spec = importlib.util.spec_from_file_location('taskctl_under_test', 'tools/task_controller/taskctl.py')",
+            "module = importlib.util.module_from_spec(spec)",
+            "spec.loader.exec_module(module)",
+            "original_run_validators = module.run_validators",
+            "def run_validators_then_grow(task):",
+            "    records = original_run_validators(task)",
+            "    for index in range(" + str(count) + "):",
+            "        (module.ROOT / ('late-%d.txt' % index)).write_text('%d\\n' % index, encoding='utf-8')",
+            "    return records",
+            "module.run_validators = run_validators_then_grow",
+            "sys.argv = ['taskctl.py', 'submit', 'P-002', '--actor', '" + CODER + "']",
+            "raise SystemExit(module.main())",
+        ])
+        env = {**os.environ, "PLATFORMINIT_REPO_ROOT": str(self.root)}
+        return subprocess.run(
+            [sys.executable, "-c", driver],
+            cwd=self.root,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+
     def tamper_submit_evidence(self, mutate):
         """Run the submit-to-release path with a single tampered submit-evidence field.
 
@@ -196,6 +232,13 @@ class TaskctlTests(unittest.TestCase):
         self.switch("feature/p-002")
         self.invoke("start", "P-002", "--actor", ORCHESTRATOR)
         self.invoke("submit", "P-002", "--actor", CODER)
+
+    def stage_non_state_files(self, count):
+        """Start P-002 with a changed non-state scope of exactly `count` files."""
+        self.switch("feature/p-002")
+        self.invoke("start", "P-002", "--actor", ORCHESTRATOR)
+        for index in range(count):
+            (self.root / f"change-{index}.txt").write_text(f"{index}\n", encoding="utf-8")
 
     def write_review(self, text="APPROVE: scope and acceptance criteria verified."):
         (self.root / "docs/reviews/P-002.md").write_text(f"# Review\n\n{text}\n")
@@ -506,6 +549,133 @@ class TaskctlTests(unittest.TestCase):
             (self.root / f"change-{index}.txt").write_text(f"{index}\n", encoding="utf-8")
         result = self.invoke("submit", "P-002", "--actor", CODER, ok=False)
         self.assertIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
+
+    def test_three_non_state_files_submit_without_size_warning(self):
+        """Target band (1-3 files): the expected size submits silently."""
+        self.stage_non_state_files(3)
+        result = self.invoke("submit", "P-002", "--actor", CODER)
+        self.assertNotIn("TASK_SIZE_WARNING", result.stderr)
+        self.assertNotIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
+        self.assertEqual(self.state_task()["status"], "needs_review")
+
+    def test_four_non_state_files_warn_without_blocking_submit(self):
+        """Lower warning band (4-5 files): warns on stderr exactly once and still submits."""
+        self.stage_non_state_files(4)
+        result = self.invoke("submit", "P-002", "--actor", CODER)
+        self.assertIn("TASK_SIZE_WARNING", result.stderr)
+        self.assertIn("4 non-state files", result.stderr)
+        self.assertEqual(result.stderr.count("TASK_SIZE_WARNING"), 1, "one command warns exactly once")
+        self.assertNotIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
+        self.assertEqual(self.state_task()["status"], "needs_review")
+
+    def test_five_non_state_files_warn_at_warning_boundary(self):
+        """Upper warning boundary: 5 files is the last non-blocking size."""
+        self.stage_non_state_files(5)
+        result = self.invoke("submit", "P-002", "--actor", CODER)
+        self.assertIn("TASK_SIZE_WARNING", result.stderr)
+        self.assertIn("5 non-state files", result.stderr)
+        self.assertNotIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
+        self.assertEqual(self.state_task()["status"], "needs_review")
+
+    def test_hard_split_blocks_submit_only_above_five_files(self):
+        """Above the warning band the gate is validate-neutral and submit blocks before any write."""
+        self.stage_non_state_files(6)
+        validate = self.invoke("validate")
+        self.assertNotIn("TASK_TOO_LARGE_SPLIT_REQUIRED", validate.stdout + validate.stderr)
+        result = self.invoke("submit", "P-002", "--actor", CODER, ok=False)
+        self.assertIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
+        self.assertIn("hard split threshold is 5", result.stderr)
+        task = self.state_task()
+        self.assertEqual(task["status"], "in_progress")
+        self.assertNotIn("submit", task.get("workflow", {}))
+
+    def test_size_gate_ignores_controller_state_and_generated_views(self):
+        """Controller-owned state and review reports never count toward the size verdict."""
+        self.stage_non_state_files(3)
+        (self.root / "tasks/active/NEXT_TASK.md").write_text("regenerated\n", encoding="utf-8")
+        (self.root / "docs/reviews/P-002.md").write_text("scope note\n", encoding="utf-8")
+        result = self.invoke("submit", "P-002", "--actor", CODER)
+        self.assertNotIn("TASK_SIZE_WARNING", result.stderr)
+        self.assertEqual(self.state_task()["status"], "needs_review")
+
+    def test_size_gate_is_bound_to_the_scope_it_fingerprints_and_persists(self):
+        """Regression test for P-WF-T05-D1: the size verdict must bind to a single snapshot.
+
+        Six non-state files appear after the size gate counted the scope and before the controller
+        fingerprints and persists it. The gate must be decided on the scope that is actually recorded,
+        so the oversized scope is rejected with `TASK_TOO_LARGE_SPLIT_REQUIRED`, no submit evidence is
+        written, and the task stays `in_progress`. Before the fix the gate judged the smaller snapshot
+        while a later gather fingerprinted and persisted the oversized one, so this submission passed.
+        """
+        self.switch("feature/p-002")
+        self.invoke("start", "P-002", "--actor", ORCHESTRATOR)
+        result = self.invoke_submit_with_scope_growth_during_validators(6)
+        self.assertNotEqual(result.returncode, 0, "an oversized late scope must not pass the size gate")
+        self.assertIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
+        self.assertEqual(sorted(path.name for path in self.root.glob("late-*.txt")), [f"late-{index}.txt" for index in range(6)])
+        task = self.state_task()
+        self.assertEqual(task["status"], "in_progress")
+        self.assertNotIn("submit", task.get("workflow", {}))
+
+    def test_counted_scope_fingerprint_and_persisted_evidence_are_one_snapshot(self):
+        """The warning count, the fingerprint, and `workflow.submit.changedFiles` are one list."""
+        self.stage_non_state_files(4)
+        result = self.invoke("submit", "P-002", "--actor", CODER)
+        submit = self.state_task()["workflow"]["submit"]
+        self.assertIn("4 non-state files", result.stderr)
+        self.assertEqual(len(submit["changedFiles"]), 4, "the gate must count the scope it persists")
+        fingerprint, files = self.current_scope()
+        self.assertEqual(submit["changedFiles"], files)
+        self.assertEqual(submit["sourceFingerprint"], fingerprint)
+
+    def test_warning_band_growth_during_validators_warns_once_and_submits(self):
+        """Regression test for P-WF-T05-D2: a re-gathered scope warns once, never twice.
+
+        The scope starts in the warning band (4 non-state files) and grows to 5 while the required
+        validators run, so `submit` decides the size twice over two different snapshots: the silent
+        pre-validator gate and the authoritative post-validator gate. The command must emit the warning
+        exactly once, describe the scope it actually persists (5 files), and still succeed, with the
+        counted scope, the fingerprint, and the recorded evidence all describing that one list.
+        """
+        self.stage_non_state_files(4)
+        result = self.invoke_submit_with_scope_growth_during_validators(1)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr.count("TASK_SIZE_WARNING"), 1, "submit must warn exactly once")
+        self.assertIn("5 non-state files", result.stderr)
+        self.assertNotIn("TASK_TOO_LARGE_SPLIT_REQUIRED", result.stderr)
+        task = self.state_task()
+        self.assertEqual(task["status"], "needs_review")
+        submit = task["workflow"]["submit"]
+        self.assertEqual(len(submit["changedFiles"]), 5, "the warning count and the persisted scope are one list")
+        self.assertIn("late-0.txt", submit["changedFiles"])
+        fingerprint, files = self.current_scope()
+        self.assertEqual(submit["changedFiles"], files)
+        self.assertEqual(submit["sourceFingerprint"], fingerprint)
+
+    def test_warning_band_scope_warns_once_per_complete_command(self):
+        """D2 for `complete`: the provisional gate and the rerun gate emit one warning together.
+
+        The submitted evidence is unusable (tampered validator exit code), so `complete` gates the
+        warning-band scope before the reuse decision and again over the freshly gathered rerun
+        snapshot. Those two gate calls must still produce a single `TASK_SIZE_WARNING` for the command,
+        and the task must still close.
+        """
+        self.stage_non_state_files(4)
+        self.invoke("submit", "P-002", "--actor", CODER)
+        self.write_review()
+        self.invoke("review", "P-002", "--actor", REVIEWER, "--verdict", "approve", "--report", "docs/reviews/P-002.md")
+        self.write_security()
+        self.invoke("security", "P-002", "--actor", OWASP, "--verdict", "clear", "--report", "docs/security-reviews/P-002.md")
+        task = self.state_task()
+        task["workflow"]["submit"]["validators"] = [
+            {"command": list(record["command"]), "exitCode": 1}
+            for record in task["workflow"]["submit"]["validators"]
+        ]
+        self.store_task(task)
+        result = self.invoke("complete", "P-002", "--actor", RELEASE)
+        self.assertEqual(result.stderr.count("TASK_SIZE_WARNING"), 1, "complete must warn exactly once")
+        self.assertIn("4 non-state files", result.stderr)
+        self.assertEqual(self.state_task()["status"], "done")
 
 
 if __name__ == "__main__":

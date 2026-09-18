@@ -21,8 +21,11 @@ ORCHESTRATOR = "platforminit-orchestrator"
 REVIEWER = "platforminit-openai-reviewer"
 OWASP = "platforminit-owasp-reviewer"
 RELEASE = "platforminit-release-manager"
+# Micro-task sizing contract. Thresholds match the `scope.budget` fields the MCP delivery
+# context advertises: target 3, warning 5, hardSplitAbove 5.
 TASK_SIZE_TARGET = 3
-TASK_SIZE_HARD_MAX = 5
+TASK_SIZE_WARNING_MAX = 5
+TASK_SIZE_HARD_SPLIT_ABOVE = TASK_SIZE_WARNING_MAX
 LEGACY = [
     "tasks/status/platform.json", "tasks/status/n8n.json",
     "tasks/roadmap/platform.json", "tasks/roadmap/n8n.json",
@@ -355,18 +358,16 @@ def changed_files(base="dev"):
     return sorted(file for file in files if not any(file == prefix or file.startswith(prefix) for prefix in SCOPE_EXCLUSIONS))
 
 
-def source_fingerprint(base="dev"):
-    """Deterministic fingerprint of exactly the non-state files that decide validator outcomes.
+def fingerprint_files(files):
+    """Deterministic digest over exactly the supplied changed-file list.
 
-    Covers the sorted changed-file scope (committed delta, index, worktree) with per-file
-    content hashes, so identical source always yields the same digest and any relevant source
-    change yields a different one. Controller-owned state, generated views, and review reports
-    are excluded, so timestamps and regenerated views never invalidate evidence. No volatile
-    value (time, actor, HEAD identity) enters the digest.
+    Per-file content hashes, a `<deleted>` marker for missing files, and no volatile input (time,
+    actor, HEAD identity), so identical source always yields the same digest and any relevant source
+    change yields a different one. This function never gathers the scope itself: the caller passes the
+    one list it counted, will persist, and wants the digest to describe.
     """
     digest = hashlib.sha256()
     digest.update(b"platforminit-source-fingerprint-v1\0")
-    files = changed_files(base)
     for relative in files:
         path = ROOT / relative
         digest.update(relative.encode("utf-8"))
@@ -376,7 +377,26 @@ def source_fingerprint(base="dev"):
         else:
             digest.update(b"<deleted>")
         digest.update(b"\0")
-    return digest.hexdigest(), files
+    return digest.hexdigest()
+
+
+def change_snapshot(base="dev"):
+    """One gathered changed-file scope plus the fingerprint of exactly that list.
+
+    The single-snapshot contract for every scope-based decision: the returned list is the only scope a
+    caller may count, fingerprint, or persist, so the size gate can never judge one file set while the
+    fingerprint and the recorded evidence describe another (P-WF-T05-D1). Scope is the committed delta
+    from the resolved comparison base plus index and worktree; controller-owned state, generated views,
+    and review reports are excluded, so regenerated views and state writes never invalidate evidence.
+    """
+    files = changed_files(base)
+    return files, fingerprint_files(files)
+
+
+def source_fingerprint(base="dev"):
+    """Fingerprint of the current scope, returned in the historical `(fingerprint, files)` order."""
+    files, fingerprint = change_snapshot(base)
+    return fingerprint, files
 
 
 def validator_plan(task):
@@ -450,26 +470,67 @@ def reusable_submit_evidence(task, record, fingerprint, files):
     return list(record["validators"]), None
 
 
-def require_task_size(task):
-    files = changed_files()
+def require_task_size(task, files, *, emit_warning=True):
+    """Enforce the micro-task sizing contract on the caller's gathered non-state scope.
+
+    Bands (identical to the `scope.budget` values the MCP delivery context advertises):
+
+    - 1-3 non-state files: the target size for one tracked task, no output.
+    - 4-5 non-state files: `TASK_SIZE_WARNING` on stderr, non-blocking, so `submit` still succeeds
+      and the handoff carries the explicit justification.
+    - more than 5 non-state files: `TASK_TOO_LARGE_SPLIT_REQUIRED`, raised before any validator runs
+      or any controller state is written, so the task must be split first.
+
+    `files` is the snapshot from `change_snapshot()` that the caller also fingerprints and persists;
+    this function never re-gathers the scope, so the counted file set and the acted-upon file set are
+    one list and a file that appears after the count cannot be recorded without being counted.
+
+    Only this scope decides the verdict, so controller-owned state, generated views, and review
+    reports never count toward the size.
+
+    The hard verdict is applied by every call, but a command gates more than once: `submit` gates
+    before and after its required validators, and `complete` gates before and after its reuse decision.
+    A provisional call passes `emit_warning=False`, so the one `TASK_SIZE_WARNING` a command may emit
+    is written by its authoritative call over the snapshot it fingerprints and persists. A warning-band
+    scope that grows from 4 to 5 files while the validators run is therefore reported once, with the
+    final counted scope, instead of the same count twice (P-WF-T05-D2).
+    """
     count = len(files)
-    if count > TASK_SIZE_HARD_MAX:
+    if count > TASK_SIZE_HARD_SPLIT_ABOVE:
         raise TaskError(
             f"TASK_TOO_LARGE_SPLIT_REQUIRED: {task['id']} changes {count} non-state files; "
-            f"hard maximum is {TASK_SIZE_HARD_MAX}. Split the task before submission."
+            f"task size target is {TASK_SIZE_TARGET} and the hard split threshold is "
+            f"{TASK_SIZE_HARD_SPLIT_ABOVE}. Split the task before submission."
         )
-    if count > TASK_SIZE_TARGET:
+    if count > TASK_SIZE_TARGET and emit_warning:
         print(
-            f"TASK_SIZE_WARNING: {task['id']} changes {count} non-state files; target is {TASK_SIZE_TARGET}.",
+            f"TASK_SIZE_WARNING: {task['id']} changes {count} non-state files; target is "
+            f"{TASK_SIZE_TARGET}, warning band is {TASK_SIZE_TARGET + 1}-{TASK_SIZE_WARNING_MAX}, "
+            f"and only more than {TASK_SIZE_HARD_SPLIT_ABOVE} non-state files block submission.",
             file=sys.stderr,
         )
-    return files
 
 
-def require_allowed_scope(task):
-    disallowed = [file for file in changed_files() if not any(fnmatch.fnmatch(file, pattern) for pattern in task["allowedFiles"])]
+def require_allowed_scope(task, files):
+    """Allowed-file check decided on the caller's gathered snapshot, never on a fresh gather."""
+    disallowed = [file for file in files if not any(fnmatch.fnmatch(file, pattern) for pattern in task["allowedFiles"])]
     if disallowed:
         raise TaskError(f"{task['id']}: changed files outside allowedFiles: {', '.join(disallowed)}")
+
+
+def enforce_scope(task, files, *, emit_size_warning=True):
+    """Decide both scope checks on one gathered snapshot, never on a fresh gather.
+
+    `files` must be the list that the caller will fingerprint and persist, so the allowedFiles verdict
+    and the size verdict describe exactly the scope the controller acts on.
+
+    `emit_size_warning` is passed through to `require_task_size` and is `False` for a command's
+    provisional gate call: the allowedFiles verdict and the size hard block still apply there, but the
+    warning-band message is left to the command's authoritative call, so one command emits at most one
+    `TASK_SIZE_WARNING` and that message always describes the persisted snapshot (P-WF-T05-D2).
+    """
+    require_allowed_scope(task, files)
+    require_task_size(task, files, emit_warning=emit_size_warning)
 
 
 def run_validators(task):
@@ -593,10 +654,21 @@ def main():
             if args.actor != task["implementationMode"]:
                 raise TaskError(f"{task['id']} must be submitted by {task['implementationMode']}")
             require_branch(task)
-            require_allowed_scope(task)
-            require_task_size(task)
+            files, fingerprint = change_snapshot()
+            # Provisional gate: it still hard-blocks above the split threshold (fail-fast, before any
+            # validator runs), but it defers the warning-band message to the authoritative snapshot
+            # below so one `submit` can never emit two `TASK_SIZE_WARNING` lines (P-WF-T05-D2).
+            enforce_scope(task, files, emit_size_warning=False)
             validators = run_validators(task)
-            fingerprint, files = source_fingerprint()
+            # Validators can touch the tree, so the snapshot that is fingerprinted and persisted is
+            # gathered once more after they ran and is re-decided on that exact list. The size gate,
+            # the fingerprint, and the recorded evidence therefore always describe one scope: a file
+            # that appears after the count can never be recorded without being counted too.
+            final_files, final_fingerprint = change_snapshot()
+            # This authoritative decision always runs, also when the scope did not change, so the one
+            # warning a submit may emit always reports the scope that is about to be persisted.
+            enforce_scope(task, final_files)
+            files, fingerprint = final_files, final_fingerprint
             task.setdefault("workflow", {})["submit"] = {
                 "evidenceVersion": EVIDENCE_VERSION,
                 "at": now(),
@@ -650,10 +722,13 @@ def main():
             if workflow.get("review", {}).get("verdict") != "approve" or workflow.get("security", {}).get("verdict") != "clear":
                 raise TaskError(f"{task['id']} lacks passing review/security records")
             require_branch(task)
-            require_allowed_scope(task)
-            require_task_size(task)
+            files, fingerprint = change_snapshot()
+            # Provisional gate: hard verdict only, with the warning-band message deferred to this
+            # command's authoritative snapshot (see `enforce_scope`), so `complete` emits at most one
+            # `TASK_SIZE_WARNING` even when the reuse decision rejects the submitted evidence and the
+            # scope is gated again in the rerun path below (P-WF-T05-D2).
+            enforce_scope(task, files, emit_size_warning=False)
             previous_status = task["status"]
-            fingerprint, files = source_fingerprint()
             validators, reason = reusable_submit_evidence(task, workflow.get("submit"), fingerprint, files)
             reused = validators is not None
             if reused:
@@ -669,10 +744,17 @@ def main():
             if reused:
                 fingerprint, files = confirmation, confirmation_files
                 decision = "reused submit evidence: fingerprint and validator plan unchanged"
+                # The confirmed list is this command's authoritative scope and is the same list the
+                # provisional gate above already checked, so emitting the size warning here is what
+                # keeps `complete` at exactly one warning per command.
+                require_task_size(task, files)
             else:
                 validators = run_validators(task)
                 decision = f"reran required focused validators: {reason}"
-                fingerprint, files = source_fingerprint()
+                # The rerun path persists a freshly fingerprinted scope, so that scope must pass the
+                # same gate before it can back a `done` record.
+                files, fingerprint = change_snapshot()
+                enforce_scope(task, files)
             workflow["complete"] = {
                 "evidenceVersion": EVIDENCE_VERSION,
                 "at": now(),

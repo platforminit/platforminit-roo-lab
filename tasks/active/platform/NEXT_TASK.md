@@ -2,31 +2,29 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T08 — Smoke-test fresh-child delivery pipeline
+## P-CH04.5-T03 — Stabilize Authentik ingress and TLS contract
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `chore/p-wf-t08-workflow` |
-| Scope | `workflow-tooling` |
-| Dependencies | P-WF-T07 |
+| Branch | `batch/platform-ch04-5-authentik-ingress-tls` |
+| Scope | `platform-identity` |
+| Dependencies | P-WF-T08 |
 | Next actor | `platforminit-orchestrator` |
 
-Verify the compact implementation-review-security-release route without broad reads or full-repo validation.
+Define the Authentik ingress, certificate, hostname, and TLS ownership contract independently from identity model bootstrap.
 
 ### Acceptance criteria
 
-- [ ] fresh child is used for every specialist stage
-- [ ] MCP context is available after each handoff
-- [ ] handoff payload remains bounded and no stale stage is executed
+- [ ] Authentik hostname, ingress, certificate, and TLS ownership are explicit
+- [ ] identity-model bootstrap is not coupled into ingress/TLS reconciliation
+- [ ] focused repository validation covers the ingress/TLS contract
 
 ### Allowed files
 
-- `.roomodes`
-- `.roo/commands/**`
-- `tools/platforminit_mcp/**`
-- `docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md`
+- `platform/identity/**`
+- `docs/**`
 - `tasks/**`
 
 ### Required validators
@@ -36,9 +34,9 @@ Verify the compact implementation-review-security-release route without broad re
 ### Forbidden actions
 
 - do not run infrastructure workflows
-- do not mutate runtime infrastructure, secrets, or GitHub environments
-- do not run full-repository validation unless explicitly required
+- do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval
+- do not expose secret values
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T08 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.5-T03 --actor platforminit-orchestrator`

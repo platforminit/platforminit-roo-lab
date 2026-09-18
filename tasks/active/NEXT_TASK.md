@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T08` — Smoke-test fresh-child delivery pipeline | `pending` | `chore/p-wf-t08-workflow` |
+| `platform` | `P-CH04.5-T03` — Stabilize Authentik ingress and TLS contract | `pending` | `batch/platform-ch04-5-authentik-ingress-tls` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

@@ -35,9 +35,34 @@ controller transition.
 - Suggested paths: removed. The compact payload no longer duplicates them; use the task's own
   `allowedFiles`.
 - Focused tests: max 3.
-- Target task size: 1-3 primary non-state files.
-- 4-5 primary files: exceptional and explicitly justified.
-- More than 5 non-state files: `TASK_TOO_LARGE_SPLIT_REQUIRED`.
+- Task sizing: enforced by `taskctl` over the non-state changed-file scope, using the same thresholds
+  the MCP delivery context advertises as `scope.budget` (`target` 3, `warning` 5, `hardSplitAbove` 5),
+  which are the constants `TASK_SIZE_TARGET`, `TASK_SIZE_WARNING_MAX`, and `TASK_SIZE_HARD_SPLIT_ABOVE`
+  in `tools/task_controller/taskctl.py`:
+  - 1-3 non-state files: the target size for one tracked task; no sizing output.
+  - 4-5 non-state files: `TASK_SIZE_WARNING` on stderr, non-blocking. `submit` still succeeds, and the
+    handoff must carry the explicit justification for exceeding the target. The message is emitted
+    exactly once per command, by that command's authoritative gate call over the snapshot it
+    fingerprints and persists: the pre-validator gate in `submit` and the pre-decision gate in
+    `complete` apply the hard verdict without warning, so a warning-band scope that grows from 4 to 5
+    files while the validators run is reported once, with the final counted scope, instead of the same
+    count twice (P-WF-T05-D2).
+  - more than 5 non-state files: `TASK_TOO_LARGE_SPLIT_REQUIRED`. `submit` fails before any validator
+    runs and before any controller state is written, so the task must be split first.
+  - Enforcement points are `submit` and `complete`; `validate` and `start` never block on size, so an
+    oversized scope stays diagnosable instead of stranding the task in a state it cannot leave.
+  - Controller-owned state (`tasks/tracker.json`, `tasks/active/`), generated views, and review reports
+    (`docs/reviews/`, `docs/security-reviews/`) never count toward the size.
+  - Single-snapshot contract: every scope-based decision — the allowedFiles check, the size gate, the
+    fingerprint, and the persisted `changedFiles` evidence — is taken over one list returned by
+    `change_snapshot()`, which fingerprints exactly the list it gathered. `submit` gathers once before
+    the gate (fail-fast, before any validator runs) and once more after the required validators ran; that
+    second list is always re-gated before it is fingerprinted and persisted, also when it is unchanged,
+    and it is the list whose size is warned about. `complete` applies the same gate to the snapshot it
+    confirms, including the freshly gathered scope in the rerun path, and emits the one warning from the
+    snapshot it records. A file that appears after a count therefore can never be fingerprinted or
+    recorded without being counted too, so a late-added file cannot make an oversized scope pass the
+    gate (P-WF-T05-D1), and no second warning is emitted for the same command (P-WF-T05-D2).
 - Full-repository validation is forbidden by default.
 - Passing unchanged evidence is reused instead of rerun.
 
@@ -59,6 +84,10 @@ Source fingerprint:
   `docs/reviews/`, `docs/security-reviews/`) and contains no timestamp, actor, or HEAD identity, so
   regenerated views and state writes can never cause false invalidation.
 - Deleted files contribute a fixed `<deleted>` marker so deletions change the digest.
+- Snapshot binding: `change_snapshot()` gathers the scope once and `fingerprint_files()` digests exactly
+  that returned list, so a fingerprint never describes a scope that was re-read after the decision it
+  belongs to. `submit` persists that list as `workflow.submit.changedFiles` next to the matching
+  `sourceFingerprint`, and `complete` records the confirmed list and fingerprint together.
 - When the repository has no commits at all, index plus worktree is the complete source and is used
   as the whole scope. When commits exist but no comparison base resolves, the command fails loudly
   instead of fingerprinting a partial source scope.

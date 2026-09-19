@@ -1,9 +1,25 @@
 {
   "schema": "platforminit.identity.bootstrap-users.v1",
+  "management": {
+    "managed_by": "ch04-5-bootstrap-identity-model",
+    "reconcile_mode": "membership-upsert-no-prune",
+    "attribute_prefix": "platforminit",
+    "contract_version": 1,
+    "owner_chapter": "CH04.5",
+    "technical_user_creation": "disabled",
+    "reconciler": "platform/identity/scripts/ch04-5-bootstrap-identity-model.sh",
+    "contract": "platform/identity/docs/ch04-5-identity-model-contract.md",
+    "validator": "platform/identity/validate/ch04-5-validate-identity-model-contract.sh"
+  },
   "bootstrap_memberships": [
     {
       "username_env": "AUTHENTIK_BOOTSTRAP_ADMIN_USERNAME",
       "default_username": "akadmin",
+      "identity_kind": "break-glass-admin",
+      "owner_chapter": "CH04.5",
+      "owner_role": "identity-platform-admins",
+      "credential_source": "AUTHENTIK_BOOTSTRAP_PASSWORD",
+      "rotation_policy": "operator-managed",
       "groups": [
         "PlatformInit Admins",
         "ArgoCD Admins",
@@ -18,8 +34,14 @@
     {
       "username": "platforminit-automation",
       "display_name": "PlatformInit Automation",
+      "identity_kind": "technical",
       "create_by_default": false,
+      "owner_chapter": "CH04.5",
+      "owner_role": "platform-automation",
       "purpose": "Future non-human automation identity for API-based platform operations.",
+      "credential_source": "none-provisioned",
+      "rotation_policy": "tracked-task-required",
+      "enablement_gate": "requires a tracked task that defines credential issuance, rotation, disablement and audit trail before this identity may be created",
       "groups": [
         "PlatformInit Operators"
       ]
@@ -27,8 +49,14 @@
     {
       "username": "argocd-bootstrap-admin",
       "display_name": "Argo CD Bootstrap Admin",
+      "identity_kind": "technical",
       "create_by_default": false,
+      "owner_chapter": "CH04.5",
+      "owner_role": "argo-cd-platform",
       "purpose": "Temporary Argo CD bootstrap identity until real user/group onboarding is complete.",
+      "credential_source": "none-provisioned",
+      "rotation_policy": "tracked-task-required",
+      "enablement_gate": "requires the tracked CH04.6 onboarding task that retires the bootstrap Argo CD admin path",
       "groups": [
         "ArgoCD Admins"
       ]
@@ -36,8 +64,14 @@
     {
       "username": "operations-bootstrap-admin",
       "display_name": "Operations Bootstrap Admin",
+      "identity_kind": "technical",
       "create_by_default": false,
+      "owner_chapter": "CH04.5",
+      "owner_role": "operations-platform",
       "purpose": "Temporary CH05 operations bootstrap identity until real user/group onboarding is complete.",
+      "credential_source": "none-provisioned",
+      "rotation_policy": "tracked-task-required",
+      "enablement_gate": "requires the tracked CH05 onboarding task that retires the bootstrap operations admin path",
       "groups": [
         "Operations Admins",
         "Zabbix Admins",

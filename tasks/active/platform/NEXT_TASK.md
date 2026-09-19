@@ -2,24 +2,24 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.5-T04 — Define identity groups and technical users contract
+## P-CH04.5-T05 — Create CH04.5 focused validation and recovery checkpoint
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-5-identity-model` |
+| Branch | `batch/platform-ch04-5-validation-recovery` |
 | Scope | `platform-identity` |
-| Dependencies | P-CH04.5-T03 |
+| Dependencies | P-CH04.5-T04 |
 | Next actor | `platforminit-orchestrator` |
 
-Normalize PlatformInit groups, technical users/service identities, provider templates, and bootstrap idempotence as a small identity-model unit.
+Consolidate only focused CH04.5 checks needed to prove repository contract, expected health signals, and break-glass recovery notes.
 
 ### Acceptance criteria
 
-- [ ] PlatformInit groups and technical identities have explicit ownership
-- [ ] provider templates and bootstrap behavior are deterministic
-- [ ] re-running identity bootstrap does not duplicate managed objects
+- [ ] focused CH04.5 validation covers repository contract and expected runtime health signals
+- [ ] break-glass and recovery prerequisites are documented
+- [ ] validation avoids unrelated full-repository checks
 
 ### Allowed files
 
@@ -39,4 +39,4 @@ Normalize PlatformInit groups, technical users/service identities, provider temp
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.5-T04 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.5-T05 --actor platforminit-orchestrator`

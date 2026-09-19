@@ -2,24 +2,24 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.5-T03 — Stabilize Authentik ingress and TLS contract
+## P-CH04.5-T04 — Define identity groups and technical users contract
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-5-authentik-ingress-tls` |
+| Branch | `batch/platform-ch04-5-identity-model` |
 | Scope | `platform-identity` |
-| Dependencies | P-WF-T08 |
+| Dependencies | P-CH04.5-T03 |
 | Next actor | `platforminit-orchestrator` |
 
-Define the Authentik ingress, certificate, hostname, and TLS ownership contract independently from identity model bootstrap.
+Normalize PlatformInit groups, technical users/service identities, provider templates, and bootstrap idempotence as a small identity-model unit.
 
 ### Acceptance criteria
 
-- [ ] Authentik hostname, ingress, certificate, and TLS ownership are explicit
-- [ ] identity-model bootstrap is not coupled into ingress/TLS reconciliation
-- [ ] focused repository validation covers the ingress/TLS contract
+- [ ] PlatformInit groups and technical identities have explicit ownership
+- [ ] provider templates and bootstrap behavior are deterministic
+- [ ] re-running identity bootstrap does not duplicate managed objects
 
 ### Allowed files
 
@@ -39,4 +39,4 @@ Define the Authentik ingress, certificate, hostname, and TLS ownership contract 
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.5-T03 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.5-T04 --actor platforminit-orchestrator`

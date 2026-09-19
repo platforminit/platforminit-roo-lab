@@ -5,14 +5,26 @@ Three gates, checked offline: read-only, no infrastructure workflow, no task-sta
 
 Gate 1 - a fresh child is used for every specialist stage: every lifecycle status has its own stage,
          the controller returns the tracker-declared mode for each specialist stage, and each of those
-         modes is a declared `platforminit-*` mode that starts as a fresh child.
+         modes is a declared `platforminit-*` mode that starts as a fresh child. Extended by P-WF-T09:
+         each specialist mode is statically terminal at its own controller transition and forbids
+         launching the next lifecycle stage, including a `switch_mode` continuation of the lifecycle
+         (load-bearing: the check fails when that marker is removed from a specialist mode), the
+         shared `.roo/rules/05-lifecycle-routing.md` rule carries the same invariant for every mode,
+         and the `next-task` startup gate orders
+         `git fetch origin`, a fast-forward-only `dev` refresh, and only then MCP task resolution.
 Gate 2 - MCP context is available after every handoff: every specialist mode declares the `mcp`
          group and boots `health` plus `get_delivery_context`, and the compact delivery payload
-         re-derives stage, next mode, and transition command from authoritative state.
+         re-derives stage, next mode, and transition command from authoritative state. Extended by
+         P-WF-T09: the smoke procedure must state that this static layer proves contract text only and
+         does not prove Zoo parent/child provenance, and must declare the runtime FAIL for a
+         specialist child that itself launches the next lifecycle stage.
 Gate 3 - the handoff payload stays bounded and no stale stage is executed: the handoff payload is
          exactly the documented bounded field list, an unknown task id yields a state marker instead
          of a stage, and an unmapped or closed status routes to nothing instead of reusing the
          previous stage.
+
+The gate count stays three: the P-WF-T09 terminal-stage and startup-gate invariants extend gates 1
+and 2 so the documented three-gate contract in `.roo/commands/pipeline-smoke.md` remains accurate.
 
 Usage:
   python3 tools/platforminit_mcp/validate_pipeline_smoke.py
@@ -70,6 +82,60 @@ ROUTING_MARKERS = (
 SAMPLE_TASK_ID = "P-WF-T08"
 UNKNOWN_TASK_ID = "P-ZZ-T99"
 UNMAPPED_STATUS = "archived"
+
+# Terminal specialist contract (P-WF-T09). Each specialist mode runs exactly its own stage, records its
+# own controller transition, then terminates; only the orchestrator routes the next stage.
+LIFECYCLE_RULE = ROOT / ".roo" / "rules" / "05-lifecycle-routing.md"
+LIFECYCLE_RULE_DIR = ROOT / ".roo" / "rules"
+SPECIALIST_MODES = (
+    "platforminit-deepseek-coder",
+    "platforminit-openai-reviewer",
+    "platforminit-owasp-reviewer",
+    "platforminit-release-manager",
+)
+ORCHESTRATOR_MODE = "platforminit-orchestrator"
+ROUTING_OWNER_MARKER = "the orchestrator is the only next-stage routing owner"
+TERMINAL_STAGE_MARKERS = (
+    "run exactly this one stage",
+    "taskctl",
+    "attempt_completion",
+    "terminate",
+)
+# Load-bearing self-routing prohibitions. The `switch_mode` marker is verified by a negative control:
+# deleting it from a specialist mode declaration must make `terminal_mode_errors()` report the mode,
+# so a mode can never regain lifecycle continuation through `switch_mode` unnoticed.
+SELF_ROUTING_PROHIBITION_MARKERS = (
+    "never call `new_task`",
+    "never spawn a child",
+    "never use `switch_mode` to continue the lifecycle",
+    "never hand off to the next lifecycle stage",
+)
+LIFECYCLE_RULE_MARKERS = (
+    "run exactly this one stage",
+    "attempt_completion",
+    "terminate",
+    "static proof boundary",
+    "does not prove zoo parent/child provenance",
+) + SELF_ROUTING_PROHIBITION_MARKERS + (ROUTING_OWNER_MARKER,)
+SMOKE_PROOF_BOUNDARY_MARKERS = (
+    "contract text only",
+    "does not prove zoo parent/child provenance",
+    "runtime parent-routing",
+)
+SMOKE_SELF_ROUTING_FAIL_MARKERS = (
+    "specialist child that itself launches the next lifecycle stage",
+    "nested `new_task`",
+)
+STARTUP_GATE_HEADING = "## Startup gate"
+STARTUP_GATE_ORDER = ("git fetch origin", "fast-forward-only", "get_delivery_context")
+STARTUP_GATE_MARKERS = (
+    "git status --short",
+    "origin/dev",
+    "never `reset --hard`",
+    "never discard dirty work automatically",
+    "hard stop",
+    "in-flight dirty feature branch",
+)
 
 
 def _report(title: str, errors: list[str]) -> None:
@@ -143,6 +209,99 @@ def _role_mode_errors(
                 errors.append(f"{mode}: instructions do not call MCP {required}")
         if not any(marker in instructions for marker in FRESH_CHILD_MARKERS):
             errors.append(f"{mode}: instructions do not start as a fresh child")
+        errors.extend(terminal_mode_errors(mode, record))
+    return errors
+
+
+def _normalize(text: str) -> str:
+    """Contract markers are matched case-insensitively with whitespace collapsed, so Markdown line
+    wrapping can never silently break a required phrase."""
+    return " ".join(text.lower().split())
+
+
+def terminal_mode_errors(mode: str, record: dict) -> list[str]:
+    """A specialist mode must be terminal at its own controller transition and never route onward."""
+    errors: list[str] = []
+    instructions = _normalize(record.get("customInstructions", ""))
+    for marker in TERMINAL_STAGE_MARKERS:
+        if marker not in instructions:
+            errors.append(f"{mode}: instructions do not declare the stage terminal ({marker!r})")
+    for marker in SELF_ROUTING_PROHIBITION_MARKERS:
+        if marker not in instructions:
+            errors.append(
+                f"{mode}: instructions do not forbid launching the next lifecycle stage ({marker!r})"
+            )
+    if ROUTING_OWNER_MARKER not in instructions:
+        errors.append(f"{mode}: instructions do not defer next-stage routing to the orchestrator")
+    return errors
+
+
+def lifecycle_routing_rule_errors(declared: dict[str, dict]) -> list[str]:
+    """Every mode must load the shared lifecycle-routing rule, not only the mode registry."""
+    errors: list[str] = []
+    if LIFECYCLE_RULE.parent != LIFECYCLE_RULE_DIR:
+        errors.append(f"{LIFECYCLE_RULE.name}: shared rule must live in .roo/rules/ so every mode loads it")
+    if not LIFECYCLE_RULE.is_file():
+        errors.append(f"{LIFECYCLE_RULE.name}: shared lifecycle-routing rule is missing")
+        return errors
+    rule = _normalize(LIFECYCLE_RULE.read_text(encoding="utf-8"))
+    for marker in LIFECYCLE_RULE_MARKERS:
+        if marker not in rule:
+            errors.append(f"{LIFECYCLE_RULE.name}: lost the shared lifecycle-routing invariant {marker!r}")
+    for mode in SPECIALIST_MODES:
+        if mode not in declared:
+            errors.append(f"{mode}: terminal specialist mode is not declared in .roomodes")
+        if mode not in rule:
+            errors.append(f"{LIFECYCLE_RULE.name}: shared rule does not name the terminal specialist {mode!r}")
+    orchestrator = declared.get(ORCHESTRATOR_MODE, {}).get("customInstructions", "")
+    if ROUTING_OWNER_MARKER not in _normalize(orchestrator):
+        errors.append(
+            f"{ORCHESTRATOR_MODE}: instructions do not claim the only next-stage routing ownership"
+        )
+    return errors
+
+
+def next_task_startup_gate_errors(contract: str) -> list[str]:
+    """The next-task startup gate must fetch and fast-forward `dev` before MCP task resolution."""
+    errors: list[str] = []
+    normalized = _normalize(contract)
+    start = normalized.find(_normalize(STARTUP_GATE_HEADING))
+    if start == -1:
+        errors.append(
+            f"{NEXT_TASK_COMMAND.name}: no ordered startup gate, so a task can resolve from stale local dev"
+        )
+        return errors
+    end = normalized.find(" ## ", start + 1)
+    section = normalized[start:] if end == -1 else normalized[start:end]
+    positions = [section.find(marker) for marker in STARTUP_GATE_ORDER]
+    for marker, index in zip(STARTUP_GATE_ORDER, positions):
+        if index == -1:
+            errors.append(f"{NEXT_TASK_COMMAND.name}: startup gate does not {marker!r}")
+    found = [index for index in positions if index != -1]
+    if len(found) == len(positions) and found != sorted(found):
+        errors.append(
+            f"{NEXT_TASK_COMMAND.name}: startup gate must order git fetch origin, then a "
+            "fast-forward-only dev refresh, then MCP task resolution"
+        )
+    for marker in STARTUP_GATE_MARKERS:
+        if marker not in section:
+            errors.append(f"{NEXT_TASK_COMMAND.name}: startup gate is missing the safety marker {marker!r}")
+    return errors
+
+
+def smoke_proof_boundary_errors(smoke: str) -> list[str]:
+    """The smoke procedure must separate static/contract proof from runtime routing proof."""
+    errors: list[str] = []
+    normalized = _normalize(smoke)
+    for marker in SMOKE_PROOF_BOUNDARY_MARKERS:
+        if marker not in normalized:
+            errors.append(f"{SMOKE_COMMAND.name}: static/runtime proof boundary is not stated ({marker!r})")
+    for marker in SMOKE_SELF_ROUTING_FAIL_MARKERS:
+        if marker not in normalized:
+            errors.append(
+                f"{SMOKE_COMMAND.name}: runtime FAIL for a specialist child that routes the next "
+                f"stage is not stated ({marker!r})"
+            )
     return errors
 
 
@@ -176,6 +335,7 @@ def gate1_errors(
                 errors.append(f"{stage_name} stage: transition does not go through the controller")
         errors.extend(_role_mode_errors(field, stage_name, roles, declared, smoke))
 
+    errors.extend(lifecycle_routing_rule_errors(declared))
     if not NEXT_TASK_COMMAND.is_file():
         errors.append(f"{NEXT_TASK_COMMAND.name}: fresh-child lifecycle contract missing")
     else:
@@ -186,6 +346,7 @@ def gate1_errors(
         for status, _stage, field in STAGE_STATUS:
             if f"`{status}` -> {field}" not in contract:
                 errors.append(f"{NEXT_TASK_COMMAND.name}: no authoritative route for {status!r}")
+        errors.extend(next_task_startup_gate_errors(contract))
     return errors
 
 
@@ -202,6 +363,7 @@ def gate2_errors(mcp_context, smoke: str, modes: list[dict], roles: dict[str, se
     for marker in SMOKE_CHILD_MARKERS:
         if marker not in smoke:
             errors.append(f"{SMOKE_COMMAND.name}: child startup is not documented ({marker!r})")
+    errors.extend(smoke_proof_boundary_errors(smoke))
 
     summary = mcp_context.active_task_summary()
     if "id" in summary:

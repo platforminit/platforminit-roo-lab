@@ -35,7 +35,7 @@ python3 tools/task_controller/taskctl.py validate
 
 ## Non-negotiable execution rules
 
-1. Load MCP `health` and `get_delivery_context` before broad repository context.
+1. For initial runnable-task resolution, complete the ordered fresh-`dev` startup gate in `.roo/commands/next-task.md` before calling MCP task-resolution tools. Once a task is active on its feature branch, call MCP `health` and `get_delivery_context` before broad repository context and after each specialist handoff.
 2. Verify WSL, repository root, expected task branch, and working tree before changing files.
 3. Never use Windows CMD, PowerShell, Git Bash, MobaXterm shell, or `vscode-remote://` launchers for Zoo execution.
 4. Never push directly to `dev`.
@@ -74,7 +74,7 @@ unresolved risks. The parent reloads MCP context before routing again.
 
 ## Context and token discipline
 
-- MCP compact context first; raw tracker/roadmap reads are fallback only.
+- MCP compact context first after the startup gate or when resuming an active task; raw tracker/roadmap reads are fallback only.
 - Target 1-3 primary non-state changed files per task.
 - 4-5 primary files is exceptional and must be justified.
 - More than 5 non-state files or more than one subsystem/operator contract =>

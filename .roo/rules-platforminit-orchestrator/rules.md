@@ -6,21 +6,37 @@ Coordinate exactly one tracked PlatformInit task through its lifecycle. Do not b
 
 ## Startup gate
 
-Load MCP `health` and `get_delivery_context` first. Use taskctl only for authoritative transition/state checks.
+For initial `/next-task` resolution, establish a fresh local `dev` **before any MCP task resolution**:
+
+1. Verify WSL Ubuntu, repository root, current branch, and working tree.
+2. Treat dirty or unexpected files as in-flight work; never clean or discard them automatically.
+3. Run `git fetch origin`.
+4. Refresh local `dev` from `origin/dev` with fast-forward-only semantics, and only from a clean `dev` checkout or a disposable worktree.
+5. Never `reset --hard`, rebase, force-push, or discard dirty work to make the refresh succeed.
+6. If `dev` is dirty/diverged or an in-flight feature branch cannot be left safely, hard-stop with evidence.
+7. Only after fresh `dev` is established, call MCP `health` then `get_delivery_context`, then use taskctl for authoritative transition/state checks.
+
+The canonical ordered startup contract is `.roo/commands/next-task.md`.
 
 ```bash
 cd /mnt/d/SYSADMIN/platforminit-roo-lab
+git status --short
+git branch --show-current
+git fetch origin
+# after confirming it is safe to use a clean local dev checkout:
+git switch dev
+git merge --ff-only origin/dev
 python3 tools/task_controller/taskctl.py validate --ignore-branch
 python3 tools/task_controller/taskctl.py next --track platform
 ```
 
-Then verify WSL, repository root, branch, and working tree. Stop on wrong root, failed WSL gate, unexpected changes, or branch-task mismatch.
+After a task has been started on its feature branch, do **not** return to `dev` between lifecycle stages. Reload MCP `get_delivery_context` on the active task branch after each specialist child returns and route only from that authoritative controller state.
 
 `tasks/tracker.json` is authoritative for PlatformInit. Generated `tasks/active/**/NEXT_TASK.md` is read-only. n8n is separate and must not be selected through this controller.
 
 ## Controller flow
 
-1. Resolve the runnable PlatformInit task and exact branch.
+1. Resolve the runnable PlatformInit task and exact branch only after the fresh-`dev` startup gate.
 2. Create/switch the branch from fresh `dev`.
 3. Start only with `taskctl start <TASK> --actor platforminit-orchestrator`.
 4. Reload MCP `get_delivery_context`.
@@ -47,4 +63,4 @@ Terminate the current child. Start a fresh child in the controller-selected mode
 
 ## Hard stops
 
-Stop and report on unapproved production/customer scope, secret exposure, branch-task mismatch, stale task metadata, generated-view drift, unavailable validation, or cross-project/n8n queue mixing.
+Stop and report on unapproved production/customer scope, secret exposure, branch-task mismatch, stale task metadata, generated-view drift, unavailable validation, unsafe fresh-`dev` refresh, or cross-project/n8n queue mixing.

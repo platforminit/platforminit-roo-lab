@@ -1456,7 +1456,7 @@
       "id": "P-CH04.5-T04",
       "track": "platform",
       "order": 190,
-      "status": "pending",
+      "status": "done",
       "title": "Define identity groups and technical users contract",
       "description": "Normalize PlatformInit groups, technical users/service identities, provider templates, and bootstrap idempotence as a small identity-model unit.",
       "scope": "platform-identity",
@@ -1489,7 +1489,81 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-19T14:52:18.792071+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-19T15:00:06.422327+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "576617846fe48084997dc4b14ac4bf9c2ec362a75263cdf3c4fd7280daf5157a",
+          "changedFiles": [
+            "platform/identity/docs/ch04-5-identity-model-contract.md",
+            "platform/identity/groups/platforminit-groups.yaml",
+            "platform/identity/scripts/ch04-5-bootstrap-identity-model.sh",
+            "platform/identity/users/bootstrap-technical-users.yaml",
+            "platform/identity/validate/ch04-5-validate-identity-model-contract.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-19T15:03:22.087640+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH04.5-T04.md"
+        },
+        "security": {
+          "at": "2026-09-19T15:06:42.656583+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH04.5-T04.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-19T15:08:08.432081+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "576617846fe48084997dc4b14ac4bf9c2ec362a75263cdf3c4fd7280daf5157a",
+          "changedFiles": [
+            "platform/identity/docs/ch04-5-identity-model-contract.md",
+            "platform/identity/groups/platforminit-groups.yaml",
+            "platform/identity/scripts/ch04-5-bootstrap-identity-model.sh",
+            "platform/identity/users/bootstrap-technical-users.yaml",
+            "platform/identity/validate/ch04-5-validate-identity-model-contract.sh"
+          ],
+          "confirmedFingerprint": "576617846fe48084997dc4b14ac4bf9c2ec362a75263cdf3c4fd7280daf5157a",
+          "confirmedFiles": [
+            "platform/identity/docs/ch04-5-identity-model-contract.md",
+            "platform/identity/groups/platforminit-groups.yaml",
+            "platform/identity/scripts/ch04-5-bootstrap-identity-model.sh",
+            "platform/identity/users/bootstrap-technical-users.yaml",
+            "platform/identity/validate/ch04-5-validate-identity-model-contract.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH04.5-T05",
@@ -1531,5 +1605,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-19T09:42:28.075286+00:00"
+  "updatedAt": "2026-09-19T15:08:08.432117+00:00"
 }

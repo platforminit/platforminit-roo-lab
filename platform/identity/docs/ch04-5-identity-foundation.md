@@ -97,6 +97,20 @@ The Authentik runtime in namespace `identity` is deployed only by
 and asserted by
 [`platform/identity/validate/ch04-5-validate-authentik-core.sh`](validate/ch04-5-validate-authentik-core.sh:1).
 
+### Ingress and TLS contract
+
+The hostname, the `Ingress`, the `Certificate` and single TLS ownership are stated as one explicit
+contract in
+[`platform/identity/docs/ch04-5-authentik-ingress-tls-contract.md`](ch04-5-authentik-ingress-tls-contract.md:1):
+TLS is issued by the cert-manager `ClusterIssuer` with a Cloudflare DNS-01 solver and the `authentik-tls`
+secret stays in the same namespace as the workload. The contract is enforced by the repository-only
+[`platform/identity/validate/ch04-5-validate-authentik-ingress-tls.sh`](validate/ch04-5-validate-authentik-ingress-tls.sh:1).
+
+The identity-model bootstrap
+[`platform/identity/scripts/ch04-5-bootstrap-identity-model.sh`](scripts/ch04-5-bootstrap-identity-model.sh:1)
+is decoupled from ingress/TLS reconciliation: it reconciles groups and bootstrap memberships through the
+Authentik API with read-only Kubernetes access, and never touches the route or its certificate.
+
 ### Bounded inputs
 
 | Input | Default | Contract |
@@ -180,4 +194,7 @@ platform/identity/scripts/ch04-5-deploy-authentik-core.sh
 
 # Assert namespace ownership, secrets, rollouts, routing and pinned images.
 platform/identity/validate/ch04-5-validate-authentik-core.sh
+
+# Validate the repository-only ingress/TLS contract (no cluster access).
+platform/identity/validate/ch04-5-validate-authentik-ingress-tls.sh
 ```

@@ -1209,6 +1209,143 @@
       }
     },
     {
+      "id": "P-WF-T09",
+      "track": "platform",
+      "order": 175,
+      "status": "done",
+      "title": "Enforce terminal specialist stages and fresh-dev startup gate",
+      "description": "Make every specialist lifecycle child explicitly terminal at its own controller transition with the orchestrator as sole next-stage router, and make the next-task startup gate refresh dev before resolving a runnable task.",
+      "scope": "workflow-tooling",
+      "branch": "chore/p-wf-t09-workflow",
+      "dependsOn": [
+        "P-WF-T08"
+      ],
+      "acceptanceCriteria": [
+        "each specialist mode contract (coder, reviewer, OWASP reviewer, release manager) is explicitly terminal at its own controller transition and forbids launching the next lifecycle stage",
+        "the orchestrator is documented and statically validated as the only next-stage routing owner",
+        "the fresh-child pipeline smoke separates static/contract proof from runtime parent-routing proof and no longer claims automated provenance proof",
+        "the next-task startup gate orders fetch plus fast-forward-only dev refresh before MCP task resolution and hard stops instead of rewriting history"
+      ],
+      "allowedFiles": [
+        ".roomodes",
+        ".roo/rules/**",
+        ".roo/commands/**",
+        "tools/platforminit_mcp/**",
+        "docs/roo-lab/PLATFORM_WORKFLOW_REFACTOR.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "git",
+          "diff",
+          "--check"
+        ],
+        [
+          "python3",
+          "tools/platforminit_mcp/validate_pipeline_smoke.py"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not modify or rerun P-CH04.5-T03",
+        "do not start P-CH04.5-T04",
+        "never reset --hard, force-push, rebase, or discard dirty work"
+      ],
+      "implementationMode": "platforminit-deepseek-coder",
+      "reviewMode": "platforminit-openai-reviewer",
+      "securityMode": "platforminit-owasp-reviewer",
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-18T20:40:44.921377+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-19T09:35:16.443441+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "python3",
+                "tools/platforminit_mcp/validate_pipeline_smoke.py"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "5730e21a5225f54c5e82e4a182dbdb8c18d237f8938451d40943db420188ebda",
+          "changedFiles": [
+            ".roo/commands/next-task.md",
+            ".roo/commands/pipeline-smoke.md",
+            ".roo/rules/05-lifecycle-routing.md",
+            ".roomodes",
+            "tools/platforminit_mcp/validate_pipeline_smoke.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-19T09:38:31.222177+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T09.md"
+        },
+        "security": {
+          "at": "2026-09-19T09:41:08.447225+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T09.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-19T09:42:28.075249+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "python3",
+                "tools/platforminit_mcp/validate_pipeline_smoke.py"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "5730e21a5225f54c5e82e4a182dbdb8c18d237f8938451d40943db420188ebda",
+          "changedFiles": [
+            ".roo/commands/next-task.md",
+            ".roo/commands/pipeline-smoke.md",
+            ".roo/rules/05-lifecycle-routing.md",
+            ".roomodes",
+            "tools/platforminit_mcp/validate_pipeline_smoke.py"
+          ],
+          "confirmedFingerprint": "5730e21a5225f54c5e82e4a182dbdb8c18d237f8938451d40943db420188ebda",
+          "confirmedFiles": [
+            ".roo/commands/next-task.md",
+            ".roo/commands/pipeline-smoke.md",
+            ".roo/rules/05-lifecycle-routing.md",
+            ".roomodes",
+            "tools/platforminit_mcp/validate_pipeline_smoke.py"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
+    },
+    {
       "id": "P-CH04.5-T03",
       "track": "platform",
       "order": 180,
@@ -1326,5 +1463,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-18T18:58:07.598985+00:00"
+  "updatedAt": "2026-09-19T09:42:28.075286+00:00"
 }

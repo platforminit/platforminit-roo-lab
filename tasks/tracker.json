@@ -1795,7 +1795,7 @@
       "id": "P-CH04.5-T05",
       "track": "platform",
       "order": 200,
-      "status": "pending",
+      "status": "done",
       "title": "Create CH04.5 focused validation and recovery checkpoint",
       "description": "Consolidate focused CH04.5 semantic, repository and recovery checks so the identity foundation agrees with its current CH04.6 and CH05 consumers before the chapter closes.",
       "scope": "platform-identity",
@@ -1829,7 +1829,75 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-20T20:39:24.117883+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-20T20:48:05.716739+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "42ca04737831940e2eec767b95a8dcd7c3be83c55f3c7026296e1f9c8d0d7605",
+          "changedFiles": [
+            "platform/identity/docs/ch04-5-identity-recovery-and-break-glass.md",
+            "platform/identity/validate/ch04-5-validate-focused.sh",
+            "platform/identity/validate/ch04-5-validate-identity-cross-consumer.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-20T20:50:52.555670+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH04.5-T05.md"
+        },
+        "security": {
+          "at": "2026-09-20T20:53:32.955059+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH04.5-T05.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-20T20:54:46.243722+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "42ca04737831940e2eec767b95a8dcd7c3be83c55f3c7026296e1f9c8d0d7605",
+          "changedFiles": [
+            "platform/identity/docs/ch04-5-identity-recovery-and-break-glass.md",
+            "platform/identity/validate/ch04-5-validate-focused.sh",
+            "platform/identity/validate/ch04-5-validate-identity-cross-consumer.sh"
+          ],
+          "confirmedFingerprint": "42ca04737831940e2eec767b95a8dcd7c3be83c55f3c7026296e1f9c8d0d7605",
+          "confirmedFiles": [
+            "platform/identity/docs/ch04-5-identity-recovery-and-break-glass.md",
+            "platform/identity/validate/ch04-5-validate-focused.sh",
+            "platform/identity/validate/ch04-5-validate-identity-cross-consumer.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH04.6-T01",
@@ -2332,5 +2400,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-20T13:29:11.492751+00:00"
+  "updatedAt": "2026-09-20T20:54:46.243834+00:00"
 }

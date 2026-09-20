@@ -1,11 +1,133 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Modes:
+#   runtime (default) - read-only assertions against the live Checkmk operations stack.
+#   static            - repository-contract assertions for the Authentik -> Traefik -> auth-shim
+#                       consumer boundary. Performs no cluster access and no runtime mutation:
+#   CH05_SSO_VALIDATE_MODE=static bash platform/observability/validate/ch05-3-validate-checkmk-trusted-header-sso.sh
 log(){ echo "[$(basename "$0")][$(date -u +%FT%TZ)] $*"; }
 die(){ echo "FATAL: $*" >&2; exit 1; }
 KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 NAMESPACE="${OPERATIONS_NAMESPACE:-operations}"
 BASE_DOMAIN="${BASE_DOMAIN:-}"
 export KUBECONFIG
+
+# --- Static consumer-boundary contract (no cluster access, no runtime mutation) ---
+VALIDATE_MODE="${CH05_SSO_VALIDATE_MODE:-runtime}"
+VALIDATOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${CH05_SSO_REPO_ROOT:-$(cd "${VALIDATOR_DIR}/../../.." && pwd)}"
+CANONICAL_OPERATIONS_GROUP="${CANONICAL_OPERATIONS_GROUP:-PlatformInit Operations}"
+CANONICAL_OPERATIONS_GROUP_SLUG="${CANONICAL_OPERATIONS_GROUP_SLUG:-platforminit-operations}"
+RETIRED_OPERATIONS_GROUPS=("Zabbix Admins" "OpenObserve Admins")
+ENABLE_SCRIPT_REL="platform/observability/scripts/ch05-3-enable-checkmk-trusted-header-sso.sh"
+IDENTITY_MODEL_REL="platform/identity/groups/platforminit-groups.yaml"
+INGRESS_MANIFEST_REL="platform/observability/manifests/templates/checkmk/checkmk-ingress.yaml"
+SHIM_MANIFEST_REL="platform/observability/manifests/templates/checkmk/checkmk-config.yaml"
+
+static_validate(){
+  local rel path
+  for rel in "$ENABLE_SCRIPT_REL" "$IDENTITY_MODEL_REL" "$INGRESS_MANIFEST_REL" "$SHIM_MANIFEST_REL"; do
+    path="${REPO_ROOT}/${rel}"
+    [[ -f "$path" ]] || die "Static contract file is missing: $path (set CH05_SSO_REPO_ROOT to the repository root)"
+  done
+  local enable_script="${REPO_ROOT}/${ENABLE_SCRIPT_REL}"
+  local identity_model="${REPO_ROOT}/${IDENTITY_MODEL_REL}"
+  local ingress_manifest="${REPO_ROOT}/${INGRESS_MANIFEST_REL}"
+  local shim_manifest="${REPO_ROOT}/${SHIM_MANIFEST_REL}"
+
+  # 1) CH04.5 owns the canonical operations identity definition; CH05 must not define a second one.
+  python3 - "$identity_model" "$CANONICAL_OPERATIONS_GROUP" "$CANONICAL_OPERATIONS_GROUP_SLUG" "${RETIRED_OPERATIONS_GROUPS[@]}" <<'PY_IDENTITY'
+import json, sys
+model_path, canonical_name, canonical_slug = sys.argv[1], sys.argv[2], sys.argv[3]
+retired = tuple(sys.argv[4:])
+with open(model_path, encoding='utf-8') as handle:
+    raw = handle.read()
+data = json.loads(raw)
+mgmt = data.get('management', {}) or {}
+groups = data.get('groups', []) or []
+fail = []
+def expect(condition, message):
+    if not condition:
+        fail.append(message)
+expect(mgmt.get('managed_by') == 'ch04-5-bootstrap-identity-model', "identity model managed_by is not ch04-5-bootstrap-identity-model")
+expect(mgmt.get('owner_chapter') == 'CH04.5', "identity model owner_chapter is not CH04.5")
+expect(mgmt.get('reconcile_mode') == 'upsert-no-prune', "identity model reconcile_mode is not upsert-no-prune")
+expect(str(mgmt.get('reconciler', '')).endswith('ch04-5-bootstrap-identity-model.sh'), "identity model reconciler is not the CH04.5 reconciler")
+ops = [g for g in groups if str(g.get('slug')) == canonical_slug]
+expect(len(ops) == 1, f"expected exactly one group with slug {canonical_slug!r}, found {len(ops)}")
+if len(ops) == 1:
+    group = ops[0]
+    expect(group.get('name') == canonical_name, f"canonical operations group name is {group.get('name')!r}, expected {canonical_name!r}")
+    expect(group.get('consumer_chapter') == 'CH05', "canonical operations group consumer_chapter is not CH05")
+    expect(group.get('owner_chapter') == 'CH04.5', "canonical operations group owner_chapter is not CH04.5")
+    expect(group.get('scope') == 'application:operations', "canonical operations group scope is not application:operations")
+    expect(group.get('is_superuser') is False, "canonical operations group must not be a superuser group")
+expect(len([g for g in groups if g.get('scope') == 'application:operations']) == 1, "more than one application:operations group exists in the identity model")
+present = [name for name in retired if any(str(g.get('name')) == name for g in groups)]
+expect(not present, f"retired desired-state group present in the identity model: {present}")
+for name in retired:
+    expect(name not in raw, f"retired identity {name!r} is referenced in the identity model")
+if fail:
+    for item in fail:
+        print(f"FATAL: static identity-ownership check failed: {item}", file=sys.stderr)
+    sys.exit(1)
+print(f"PASS: CH04.5 owns the canonical operations group {canonical_name!r} ({canonical_slug}) consumed by CH05")
+print("PASS: retired Zabbix/OpenObserve desired-state groups are absent from the canonical identity model")
+PY_IDENTITY
+
+  # 2) CH05 consumer contract: resolve the canonical group, never create or re-attribute groups.
+  grep -Fq "$CANONICAL_OPERATIONS_GROUP" "$enable_script" \
+    || die "CH05.3 SSO enable script does not consume the canonical operations group ${CANONICAL_OPERATIONS_GROUP}"
+  grep -Fq 'require_group(' "$enable_script" \
+    || die "CH05.3 SSO enable script must resolve the canonical operations group (require_group) instead of reconciling it"
+  if grep -Eq "ensure_group\(|'POST'[[:space:]]*,[[:space:]]*'/api/v3/core/groups/'|'PATCH'[^,]*,[[:space:]]*f?\"/api/v3/core/groups/" "$enable_script"; then
+    die "CH05.3 SSO enable script still creates or patches Authentik groups; CH04.5 owns the group definition"
+  fi
+  grep -Fq 'RETIRED_OPERATIONS_GROUPS' "$enable_script" \
+    || die "CH05.3 SSO enable script has no guard against retired operations identities"
+  # Retired stack names are allowed only inside the declared retired-identity guard, so a mention
+  # outside that guard means the SSO path actually depends on a retired operations identity.
+  local stale
+  stale="$(grep -Ein 'zabbix|openobserve' "$enable_script" | grep -viE "RETIRED_OPERATIONS_GROUPS|Refusing to reconcile retired" || true)"
+  [[ -z "$stale" ]] || die "CH05.3 SSO enable script depends on retired operations identities: ${stale}"
+  grep -Fq '"internal_host":"http://checkmk.operations.svc.cluster.local"' "$enable_script" \
+    || die "CH05.3 Authentik proxy provider does not target the in-cluster Checkmk service"
+  printf '%s\n' "PASS: CH05.3 consumes the canonical operations group by lookup only and creates no Authentik group"
+  printf '%s\n' "PASS: CH05.3 SSO path defines no Zabbix/OpenObserve identity and guards retired operations groups"
+
+  # 3) Authentik -> Traefik -> auth-shim consumer boundary from the Argo CD-owned manifests.
+  grep -Fq 'name: authentik-forward-auth' "$ingress_manifest" \
+    || die "CH05 ingress manifest has no operations-local Authentik forwardAuth service"
+  grep -Fq 'externalName: {{ .Values.authentik.embeddedOutpostService }}.{{ .Values.authentik.namespace }}.svc.cluster.local' "$ingress_manifest" \
+    || die "CH05 Authentik forwardAuth service is not an ExternalName service into the identity namespace"
+  grep -Fq 'name: checkmk-authentik-forward-auth' "$ingress_manifest" \
+    || die "CH05 ingress manifest has no checkmk-authentik-forward-auth middleware"
+  grep -Fq 'address: "http://authentik-forward-auth.operations.svc.cluster.local' "$ingress_manifest" \
+    || die "CH05 forwardAuth middleware does not target the operations-local Authentik forwardAuth service"
+  grep -Fq '/outpost.goauthentik.io/auth/traefik' "$ingress_manifest" \
+    || die "CH05 forwardAuth middleware does not target the Authentik outpost auth endpoint"
+  grep -Fq 'X-authentik-username' "$ingress_manifest" \
+    || die "CH05 forwardAuth middleware does not forward the Authentik username header to the consumer"
+  [[ "$(grep -Fc 'checkmk-authentik-forward-auth' "$ingress_manifest")" -ge 2 ]] \
+    || die "CH05 IngressRoute does not reference the checkmk-authentik-forward-auth middleware"
+  grep -Eq 'proxy_set_header[[:space:]]+X-Remote-User[[:space:]]+cmkadmin;' "$shim_manifest" \
+    || die "CH05 auth-shim manifest does not map approved Authentik sessions to the deterministic Checkmk user"
+  grep -Eq 'proxy_set_header[[:space:]]+X-Remote-Original-User[[:space:]]+\$http_x_authentik_username;' "$shim_manifest" \
+    || die "CH05 auth-shim manifest does not preserve the original Authentik username"
+  grep -Eq 'proxy_pass_request_headers[[:space:]]+off;' "$shim_manifest" \
+    || die "CH05 auth-shim manifest does not strip unapproved browser/Authentik headers"
+  printf '%s\n' "PASS: Traefik forwardAuth targets the operations-local Authentik outpost service and forwards the Authentik username"
+  printf '%s\n' "PASS: auth-shim consumes only the approved Authentik session and maps it to the deterministic Checkmk principal"
+}
+
+if [[ "$VALIDATE_MODE" == "static" ]]; then
+  log "Static contract mode: proving the Authentik -> Traefik -> auth-shim consumer boundary without cluster access or runtime mutation"
+  static_validate
+  echo "PASS: static CH05 Checkmk SSO consumer-boundary contract holds (no runtime mutation)"
+  exit 0
+fi
+[[ "$VALIDATE_MODE" == "runtime" ]] || die "Unsupported CH05_SSO_VALIDATE_MODE=${VALIDATE_MODE}; expected 'static' or 'runtime'"
+
 [[ -n "$BASE_DOMAIN" ]] || die "Missing BASE_DOMAIN"
 kubectl -n "$NAMESPACE" get middleware.traefik.io checkmk-authentik-forward-auth >/dev/null || die "Missing Checkmk Authentik forwardAuth middleware"
 kubectl -n "$NAMESPACE" get middleware.traefik.io checkmk-authentik-logout-redirect >/dev/null || die "Missing Checkmk Authentik logout redirect middleware"

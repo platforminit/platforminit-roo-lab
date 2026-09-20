@@ -49,6 +49,53 @@ auth_by_http_header = 'X-Remote-User'
 
 Future hardening can replace the deterministic `cmkadmin` mapping with explicit Checkmk local user provisioning and group/role mapping.
 
+## Canonical operations identity consumption (CH04.5 -> CH05)
+
+CH04.5 owns the Authentik identity definitions and is the only writer of the operations group:
+
+```text
+group model : platform/identity/groups/platforminit-groups.yaml
+reconciler  : platform/identity/scripts/ch04-5-bootstrap-identity-model.sh
+group       : PlatformInit Operations (platforminit-operations, consumer_chapter CH05)
+mode        : upsert-no-prune
+```
+
+`05.3 - Enable Checkmk Trusted-Header SSO` consumes that canonical group and must never create,
+rename or re-attribute it. CH05.3 therefore:
+
+- resolves `PlatformInit Operations` by lookup and fails fast when it is missing, pointing the
+  operator at `04.5 - Deploy Identity Foundation` instead of creating a parallel group;
+- writes no group `POST`/`PATCH`, because a competing writer cleared the CH04.5 managed ownership
+  attributes on every run;
+- converges membership only (the configured operations admin is added to the existing canonical
+  group) and keeps the group definition CH04.5-owned;
+- creates and consumes no `Zabbix Admins` / `OpenObserve Admins` group, and refuses any retired
+  operations identity name.
+
+The consumer boundary the CH05 SSO contract relies on is:
+
+```text
+Authentik proxy provider + embedded outpost
+  -> Traefik forwardAuth (checkmk-authentik-forward-auth -> authentik-forward-auth.operations.svc.cluster.local)
+  -> auth-shim (X-Remote-User bridge)
+  -> Checkmk site (auth_by_http_header = 'X-Remote-User')
+```
+
+### Static vs runtime validation
+
+`platform/observability/validate/ch05-3-validate-checkmk-trusted-header-sso.sh` keeps `runtime` as
+the default mode for the release gate. The CH04.5 identity consumption and the
+Authentik -> Traefik -> auth-shim consumer boundary can additionally be proven from repository
+contracts only, with no cluster access and no runtime mutation:
+
+```bash
+CH05_SSO_VALIDATE_MODE=static bash platform/observability/validate/ch05-3-validate-checkmk-trusted-header-sso.sh
+```
+
+Static mode asserts the canonical CH04.5 group ownership (`managed_by`, `owner_chapter`,
+`upsert-no-prune`, slug, `consumer_chapter: CH05`, `is_superuser: false`, no retired groups), that
+CH05.3 consumes the group by lookup only, and that the Argo CD-owned ingress/auth-shim manifests
+declare the forwardAuth address, the Authentik username header and the `X-Remote-User` bridge.
 
 ## ForwardAuth service contract
 

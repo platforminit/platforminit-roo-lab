@@ -13,6 +13,14 @@ AUTHENTIK_OPERATIONS_ADMIN_USERNAME="${AUTHENTIK_OPERATIONS_ADMIN_USERNAME:-akad
 CHECKMK_SITE="${CHECKMK_SITE:-cmk}"
 CHECKMK_LOCAL_PORT="${CHECKMK_LOCAL_PORT:-18085}"
 CHECKMK_REMOTE_USER_HEADER="${CHECKMK_REMOTE_USER_HEADER:-X-Remote-User}"
+# CH04.5 owns the Authentik identity definitions
+# (platform/identity/groups/platforminit-groups.yaml, reconciler
+# platform/identity/scripts/ch04-5-bootstrap-identity-model.sh, reconcile_mode upsert-no-prune).
+# CH05.3 consumes that canonical group by lookup only. A competing group POST/PATCH here made CH05
+# a parallel identity owner and cleared the CH04.5 ownership attributes on every run.
+CANONICAL_OPERATIONS_GROUP="${CANONICAL_OPERATIONS_GROUP:-PlatformInit Operations}"
+CANONICAL_OPERATIONS_GROUP_SLUG="${CANONICAL_OPERATIONS_GROUP_SLUG:-platforminit-operations}"
+RETIRED_OPERATIONS_GROUPS="${RETIRED_OPERATIONS_GROUPS:-Zabbix Admins,OpenObserve Admins}"
 export KUBECONFIG
 [[ -n "${BASE_DOMAIN}" ]] || die "Missing BASE_DOMAIN. Set PLATFORM_BASE_DOMAIN; do not hardcode domains in CH05."
 need kubectl
@@ -49,13 +57,18 @@ done
 curl -fsS "${AUTHENTIK_BASE_URL}/api/v3/core/users/me/" -H "Authorization: Bearer ${AUTHENTIK_BOOTSTRAP_TOKEN}" >/dev/null || { cat /tmp/ch05-checkmk-authentik-port-forward.log >&2 || true; die "Authentik API was not reachable"; }
 
 log "Reconciling Authentik application/provider contract for Checkmk forward auth"
+log "Requiring CH04.5 canonical operations group '${CANONICAL_OPERATIONS_GROUP}' (lookup only; CH05.3 never creates or re-attributes Authentik groups)"
 export BASE_DOMAIN AUTHENTIK_BASE_URL AUTHENTIK_BOOTSTRAP_TOKEN AUTHENTIK_OPERATIONS_ADMIN_USERNAME CHECKMK_SITE
+export CANONICAL_OPERATIONS_GROUP CANONICAL_OPERATIONS_GROUP_SLUG RETIRED_OPERATIONS_GROUPS
 python3 - <<'PY_AUTHENTIK'
 import json, os, sys, urllib.parse, urllib.request, urllib.error
 base_domain=os.environ['BASE_DOMAIN']
 base_url=os.environ['AUTHENTIK_BASE_URL'].rstrip('/')
 token=os.environ['AUTHENTIK_BOOTSTRAP_TOKEN']
 admin_username=os.environ.get('AUTHENTIK_OPERATIONS_ADMIN_USERNAME','akadmin')
+canonical_group=os.environ.get('CANONICAL_OPERATIONS_GROUP','PlatformInit Operations')
+canonical_group_slug=os.environ.get('CANONICAL_OPERATIONS_GROUP_SLUG','platforminit-operations')
+retired_groups=tuple(g.strip() for g in os.environ.get('RETIRED_OPERATIONS_GROUPS','Zabbix Admins,OpenObserve Admins').split(',') if g.strip())
 checkmk_url=f"https://checkmk.{base_domain}"
 headers={"Authorization":f"Bearer {token}","Accept":"application/json","Content-Type":"application/json"}
 
@@ -98,12 +111,26 @@ def flow(slug):
     if not item: raise RuntimeError(f"Required Authentik flow not found: {slug}")
     return item['pk']
 
-def ensure_group(name):
+def require_group(name, slug):
+    # CH04.5 owns the group definition through its upsert-no-prune reconciler, so CH05.3 may only
+    # resolve the canonical object. Creating or patching a group here would make CH05 a second
+    # writer of the canonical identity and would clear the CH04.5 managed ownership attributes.
+    if name in retired_groups or slug in retired_groups:
+        raise RuntimeError(f"Refusing to reconcile retired operations identity {name!r}: the active CH04.5 model defines no retired Zabbix/OpenObserve application group, and no CH05 SSO path may create or consume one")
     existing=first_by('/api/v3/core/groups/','name',name)
-    payload={"name":name,"is_superuser":False,"parent":None,"attributes":{}}
-    if existing:
-        request('PATCH',f"/api/v3/core/groups/{existing['pk']}/",payload); return existing['pk']
-    return request('POST','/api/v3/core/groups/',payload)['pk']
+    if not existing:
+        raise RuntimeError(
+            f"Canonical operations group {name!r} is missing in Authentik. CH04.5 owns that group definition, "
+            "so run 04.5 - Deploy Identity Foundation before 05.3 instead of creating a parallel operations "
+            "identity owner from CH05."
+        )
+    found_slug=str(existing.get('slug') or '')
+    if found_slug != slug:
+        raise RuntimeError(
+            f"Authentik group {name!r} resolves to slug {found_slug!r} instead of the CH04.5 canonical slug "
+            f"{slug!r}. A look-alike group is not the canonical operations identity; reconcile CH04.5 first."
+        )
+    return existing['pk']
 
 def group_pks(raw):
     vals=[]
@@ -117,13 +144,13 @@ def group_pks(raw):
 def ensure_user_in_group(username, group_pk):
     user=first_by('/api/v3/core/users/','username',username)
     if not user:
-        print(f"WARN: Authentik user {username!r} not found; Checkmk SSO group exists but user was not added", file=sys.stderr); return
+        print(f"WARN: Authentik user {username!r} not found; canonical operations group exists but user was not added", file=sys.stderr); return
     detail=request('GET',f"/api/v3/core/users/{user['pk']}/")
     groups=group_pks(detail.get('groups',[]))
     if group_pk not in groups:
         groups.append(group_pk)
         request('PATCH',f"/api/v3/core/users/{user['pk']}/",{"groups":groups})
-        print(f"Added {username} to PlatformInit Operations")
+        print(f"Added {username} to canonical operations group {canonical_group!r} (membership only; group definition stays CH04.5-owned)")
 
 def provider_payload(mode):
     # Authentik proxy providers require both authorization and invalidation flows.
@@ -329,12 +356,13 @@ def ensure_outpost_provider(provider_pk, slug):
             f'errors={errors}'
         )
 request('GET','/api/v3/core/users/me/')
-ops_group=ensure_group('PlatformInit Operations')
+ops_group=require_group(canonical_group, canonical_group_slug)
 ensure_user_in_group(admin_username, ops_group)
 provider=ensure_proxy_provider()
 slug=ensure_application(provider)
 ensure_outpost_provider(provider, slug)
-print('Checkmk Authentik forward-auth contract reconciled')
+print(f"Checkmk Authentik forward-auth contract reconciled against the CH04.5 canonical group {canonical_group!r}")
+print('CH05.3 created or re-attributed no Authentik group: the operations identity definition remains CH04.5-owned')
 PY_AUTHENTIK
 
 log "Using Argo CD-owned Checkmk auth-shim ConfigMap from operations-stack manifest"

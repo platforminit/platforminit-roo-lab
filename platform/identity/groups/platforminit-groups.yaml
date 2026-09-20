@@ -4,7 +4,7 @@
     "managed_by": "ch04-5-bootstrap-identity-model",
     "reconcile_mode": "upsert-no-prune",
     "attribute_prefix": "platforminit",
-    "contract_version": 1,
+    "contract_version": 2,
     "owner_chapter": "CH04.5",
     "reconciler": "platform/identity/scripts/ch04-5-bootstrap-identity-model.sh",
     "contract": "platform/identity/docs/ch04-5-identity-model-contract.md",
@@ -32,6 +32,16 @@
       "consumer_chapter": "platform"
     },
     {
+      "name": "PlatformInit Operations",
+      "slug": "platforminit-operations",
+      "description": "Canonical CH05 operations access group. The CH05 Checkmk trusted-header SSO binding approves a session for this single group; CH04.5 maps no Checkmk admin/viewer role split and no retired Zabbix/OpenObserve application group.",
+      "is_superuser": false,
+      "scope": "application:operations",
+      "owner_chapter": "CH04.5",
+      "owner_role": "operations-platform",
+      "consumer_chapter": "CH05"
+    },
+    {
       "name": "ArgoCD Admins",
       "slug": "argocd-admins",
       "description": "Administrators inside Argo CD via Argo CD RBAC mapping.",
@@ -50,46 +60,6 @@
       "owner_chapter": "CH04.5",
       "owner_role": "argo-cd-readonly",
       "consumer_chapter": "CH04.6"
-    },
-    {
-      "name": "Operations Admins",
-      "slug": "operations-admins",
-      "description": "Administrators for the CH05 operations WebUIs protected by Authentik.",
-      "is_superuser": false,
-      "scope": "application:operations",
-      "owner_chapter": "CH04.5",
-      "owner_role": "operations-platform",
-      "consumer_chapter": "CH05"
-    },
-    {
-      "name": "Operations Viewers",
-      "slug": "operations-viewers",
-      "description": "Read-only users for CH05 operations WebUIs protected by Authentik.",
-      "is_superuser": false,
-      "scope": "application:operations",
-      "owner_chapter": "CH04.5",
-      "owner_role": "operations-readonly",
-      "consumer_chapter": "CH05"
-    },
-    {
-      "name": "Zabbix Admins",
-      "slug": "zabbix-admins",
-      "description": "Administrators for the Zabbix operational monitoring UI.",
-      "is_superuser": false,
-      "scope": "application:zabbix",
-      "owner_chapter": "CH04.5",
-      "owner_role": "zabbix-platform",
-      "consumer_chapter": "CH05"
-    },
-    {
-      "name": "OpenObserve Admins",
-      "slug": "openobserve-admins",
-      "description": "Administrators for the OpenObserve RCA log UI.",
-      "is_superuser": false,
-      "scope": "application:openobserve",
-      "owner_chapter": "CH04.5",
-      "owner_role": "openobserve-platform",
-      "consumer_chapter": "CH05"
     },
     {
       "name": "Authentik Admins",

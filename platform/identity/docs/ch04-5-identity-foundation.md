@@ -46,15 +46,18 @@ The `.yaml` files are YAML-compatible JSON on purpose. This keeps the bootstrap 
 |---|---|---|
 | `PlatformInit Admins` | platform | Transitional platform admin group. |
 | `PlatformInit Operators` | platform | Operational users without global superuser rights. |
+| `PlatformInit Operations` | application:operations | Canonical CH05 operations access group, consumed by the CH05 Checkmk trusted-header SSO binding. |
 | `ArgoCD Admins` | Argo CD | Argo CD admin RBAC group. |
 | `ArgoCD Viewers` | Argo CD | Argo CD read-only RBAC group. |
-| `Operations Admins` | operations | CH05 operations WebUI admin group. |
-| `Operations Viewers` | operations | CH05 operations WebUI viewer group. |
-| `Zabbix Admins` | Zabbix | Zabbix operational monitoring admin group. |
-| `OpenObserve Admins` | OpenObserve | OpenObserve RCA log admin group. |
 | `Authentik Admins` | Authentik | Authentik administration group. |
 
 Only `Authentik Admins` is marked as an Authentik superuser group. Application groups must stay application-scoped.
+
+`PlatformInit Operations` is the single canonical operations group. The retired `Zabbix Admins` and
+`OpenObserve Admins` application groups, and the generic `Operations Admins` / `Operations Viewers`
+role split, are deliberately absent: the active CH05 Checkmk consumer approves one operations group and
+maps no Checkmk admin/viewer role, so CH04.5 must not formalize a role taxonomy the consumer cannot
+enforce.
 
 ## Bootstrap membership
 
@@ -62,9 +65,7 @@ By default, CH04.5 attaches the bootstrap Authentik admin user to the initial op
 
 - `PlatformInit Admins`
 - `ArgoCD Admins`
-- `Operations Admins`
-- `Zabbix Admins`
-- `OpenObserve Admins`
+- `PlatformInit Operations`
 - `Authentik Admins`
 
 The username defaults to `akadmin` and can be overridden:

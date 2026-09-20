@@ -5,7 +5,9 @@ set -euo pipefail
 # CH04.5 - Identity groups and technical users contract validation
 # (repository-only)
 #
-# Task: P-CH04.5-T04. Contract statement:
+# Tasks: P-CH04.5-T04 (identity model contract) and P-CH04.5-T04A (taxonomy
+# alignment with the current CH05 Checkmk operations contract).
+# Contract statement:
 #   platform/identity/docs/ch04-5-identity-model-contract.md
 #
 # Static, deterministic and idempotent. It never touches a cluster, Authentik,
@@ -28,6 +30,11 @@ set -euo pipefail
 #   4. consumer and document consistency: CH04.6 default admin group resolves to
 #      a non-superuser taxonomy group, foundation document taxonomy equals the
 #      model, ownership inventory attribution, contract document content
+#   5. taxonomy alignment: the retired Zabbix/OpenObserve desired-state groups
+#      are absent from the model and from every bootstrap membership, the
+#      canonical operations group consumed by CH05 is defined, and exactly one
+#      application:operations group exists so no unsupported Checkmk role split
+#      (admin/viewer) is formalized
 #############################################################################
 
 PASS=0
@@ -148,6 +155,11 @@ IDENTITY_OWNERSHIP_FIELDS = (
     "rotation_policy",
 )
 CREDENTIAL_SOURCE_LITERALS = ("none-provisioned",)
+# Retired CH05 desired-state groups and the canonical operations group consumed
+# by the CH05 Checkmk trusted-header SSO binding (P-CH04.5-T04A).
+RETIRED_GROUP_NAMES = ("Zabbix Admins", "OpenObserve Admins")
+CANONICAL_OPERATIONS_GROUP = "PlatformInit Operations"
+CANONICAL_OPERATIONS_CONSUMER = "CH05"
 SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -399,6 +411,69 @@ if reference_problems:
     emit("FAIL", "MODEL_GROUP_REFERENCES", "unresolved group references: " + ", ".join(sorted(set(reference_problems))))
 else:
     emit("PASS", "MODEL_GROUP_REFERENCES", "every membership and technical user group reference resolves to a taxonomy group")
+
+# --- Taxonomy alignment with the current CH05 Checkmk operations contract ---
+# The retired Zabbix/OpenObserve CH05 stacks keep their desired-state groups out
+# of the active model, and the single group the CH05 Checkmk trusted-header SSO
+# binding consumes must be the one canonical operations group.
+referenced_names = set()
+for entry in list(memberships) + list(technical_users):
+    if isinstance(entry, dict) and isinstance(entry.get("groups"), list):
+        referenced_names.update(entry["groups"])
+
+retired_in_taxonomy = sorted(name for name in RETIRED_GROUP_NAMES if name in known_group_names)
+retired_in_memberships = sorted(name for name in RETIRED_GROUP_NAMES if name in referenced_names)
+if retired_in_taxonomy or retired_in_memberships:
+    reasons = []
+    if retired_in_taxonomy:
+        reasons.append("taxonomy still defines: " + ", ".join(retired_in_taxonomy))
+    if retired_in_memberships:
+        reasons.append("bootstrap memberships still reference: " + ", ".join(retired_in_memberships))
+    emit("FAIL", "RETIRED_GROUP_STATE", "retired CH05 desired-state groups are still present; " + "; ".join(reasons))
+else:
+    emit(
+        "PASS",
+        "RETIRED_GROUP_STATE",
+        "retired CH05 desired-state groups are absent from the taxonomy and from every bootstrap membership: "
+        + ", ".join(RETIRED_GROUP_NAMES),
+    )
+
+canonical_group = next((group for group in groups if group.get("name") == CANONICAL_OPERATIONS_GROUP), None)
+if canonical_group is None:
+    emit("FAIL", "CANONICAL_OPERATIONS_GROUP", f"the taxonomy must define the canonical CH05 operations group '{CANONICAL_OPERATIONS_GROUP}'")
+elif canonical_group.get("consumer_chapter") != CANONICAL_OPERATIONS_CONSUMER:
+    emit(
+        "FAIL",
+        "CANONICAL_OPERATIONS_GROUP",
+        f"'{CANONICAL_OPERATIONS_GROUP}' must declare consumer_chapter '{CANONICAL_OPERATIONS_CONSUMER}' (found {canonical_group.get('consumer_chapter')!r})",
+    )
+elif canonical_group.get("is_superuser") is not False:
+    emit("FAIL", "CANONICAL_OPERATIONS_GROUP", f"'{CANONICAL_OPERATIONS_GROUP}' must stay a non-superuser application group")
+else:
+    emit(
+        "PASS",
+        "CANONICAL_OPERATIONS_GROUP",
+        f"'{CANONICAL_OPERATIONS_GROUP}' is defined for consumer {CANONICAL_OPERATIONS_CONSUMER} as a non-superuser application group",
+    )
+
+operations_groups = sorted(
+    str(group.get("name"))
+    for group in groups
+    if isinstance(group, dict) and str(group.get("scope", "")).startswith("application:operations")
+)
+if operations_groups == [CANONICAL_OPERATIONS_GROUP]:
+    emit(
+        "PASS",
+        "OPERATIONS_GROUP_SINGLE",
+        f"exactly one application:operations group is defined: {CANONICAL_OPERATIONS_GROUP}",
+    )
+else:
+    emit(
+        "FAIL",
+        "OPERATIONS_GROUP_SINGLE",
+        "the application:operations scope must hold exactly the canonical operations group, found: "
+        + (", ".join(operations_groups) if operations_groups else "<none>"),
+    )
 
 argocd_source = ""
 try:
@@ -669,6 +744,7 @@ required_doc_strings=(
   'PHASE 2'
   'PHASE 3'
   'git diff --check'
+  'PlatformInit Operations'
   'CH04.5'
   'CH04.6'
   'CH05'

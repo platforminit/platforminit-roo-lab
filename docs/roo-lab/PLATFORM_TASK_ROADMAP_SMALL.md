@@ -1,7 +1,7 @@
 # PlatformInit Platform Roadmap — Small-Context Task Plan
 
-**Status:** active platform backlog after P-CH04.5-T04  
-**n8n:** PARKED until an explicit human resume decision  
+**Status:** active platform backlog after P-CH04.5-T04
+**n8n:** PARKED until an explicit human resume decision
 **Canonical runtime task state:** `tasks/tracker.json`
 
 ## Why this roadmap is split this way

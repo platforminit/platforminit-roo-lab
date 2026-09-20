@@ -2,6 +2,8 @@
 
 Task: `P-CH04.5-T04` - Define identity groups and technical users contract.
 
+Taxonomy alignment: `P-CH04.5-T04A` - Align identity taxonomy with current Checkmk operations contract.
+
 This document states the CH04.5 **identity model** as one explicit contract: which groups exist, which
 identities are managed by CH04.5, who owns each object, how the provider templates render
 deterministically, and why a re-run of the identity bootstrap cannot duplicate or drift a managed
@@ -15,7 +17,7 @@ Authentik, Kubernetes, DNS, Cloudflare, a GitHub secret or a GitHub environment.
 
 | Element | Contract value | Artifact |
 |---|---|---|
-| Group taxonomy | `platforminit.identity.groups.v1` - 9 groups, closed name/slug set, explicit ownership per group | [`platform/identity/groups/platforminit-groups.yaml`](../groups/platforminit-groups.yaml:1) |
+| Group taxonomy | `platforminit.identity.groups.v1` - 6 groups, closed name/slug set, explicit ownership per group | [`platform/identity/groups/platforminit-groups.yaml`](../groups/platforminit-groups.yaml:1) |
 | Bootstrap identities and technical users | `platforminit.identity.bootstrap-users.v1` - one break-glass bootstrap admin membership, three documented technical users that are never auto-created | [`platform/identity/users/bootstrap-technical-users.yaml`](../users/bootstrap-technical-users.yaml:1) |
 | Reconciler | [`platform/identity/scripts/ch04-5-bootstrap-identity-model.sh`](../scripts/ch04-5-bootstrap-identity-model.sh:1) - sole writer of groups, memberships and managed ownership attributes | [`platform/identity/scripts/ch04-5-bootstrap-identity-model.sh`](../scripts/ch04-5-bootstrap-identity-model.sh:1) |
 | Ownership model | `management.managed_by`, `management.contract_version`, `management.attribute_prefix`, plus `owner_chapter`, `owner_role`, `consumer_chapter` on every group and identity | Both model files |
@@ -48,13 +50,19 @@ Group ownership table (from the model):
 |---|---|---|---|
 | `PlatformInit Admins` | `platform` | `CH04.5` / `platform-identity-admins` | `platform` |
 | `PlatformInit Operators` | `platform` | `CH04.5` / `platform-operations` | `platform` |
+| `PlatformInit Operations` | `application:operations` | `CH04.5` / `operations-platform` | `CH05` |
 | `ArgoCD Admins` | `application:argocd` | `CH04.5` / `argo-cd-platform` | `CH04.6` |
 | `ArgoCD Viewers` | `application:argocd` | `CH04.5` / `argo-cd-readonly` | `CH04.6` |
-| `Operations Admins` | `application:operations` | `CH04.5` / `operations-platform` | `CH05` |
-| `Operations Viewers` | `application:operations` | `CH04.5` / `operations-readonly` | `CH05` |
-| `Zabbix Admins` | `application:zabbix` | `CH04.5` / `zabbix-platform` | `CH05` |
-| `OpenObserve Admins` | `application:openobserve` | `CH04.5` / `openobserve-platform` | `CH05` |
 | `Authentik Admins` | `identity-platform` | `CH04.5` / `identity-platform-admins` | `identity` |
+
+`PlatformInit Operations` is the canonical operations group and the only group CH05 consumes for
+operations access. Retired desired state is absent by contract, not merely deprecated:
+
+| Retired name | Why it is absent |
+|---|---|
+| `Zabbix Admins` | The Zabbix CH05 stack is retired from the active lifecycle, so its desired-state group is not part of active CH04.5 state or bootstrap membership. |
+| `OpenObserve Admins` | The OpenObserve CH05 stack is retired from the active lifecycle, so its desired-state group is not part of active CH04.5 state or bootstrap membership. |
+| `Operations Admins` / `Operations Viewers` | A generic operations admin/viewer split maps a Checkmk role the current CH05 Checkmk operations contract does not support; `PlatformInit Operations` replaces both. |
 
 Superuser rules:
 
@@ -185,7 +193,7 @@ duplicate stop in phase 3 and by the unique name/slug/usernames rules in phase 1
 |---|---|---|
 | Group taxonomy, technical identity definitions, managed ownership attributes | CH04.5 | Only the CH04.5 reconciler writes these objects. Consumers map the groups, they do not redefine them. |
 | Argo CD SSO provider/application and the Argo CD RBAC group mapping | CH04.6 | `ARGOCD_ADMIN_GROUP` must name an existing CH04.5 group; the SSO binding must not create, rename or delete CH04.5 groups. |
-| CH05 operations WebUI SSO bindings | CH05 | Consumes the `Operations *`, `Zabbix Admins` and `OpenObserve Admins` groups; adds no new platform-wide admin group. |
+| CH05 operations WebUI SSO bindings | CH05 | Consumes the single canonical `PlatformInit Operations` group through the Checkmk trusted-header SSO binding; adds no new platform-wide admin group and defines no Checkmk admin/viewer role split. Consuming the CH04.5-managed definition instead of reconciling a parallel one is tracked as the follow-up `P-CH04.5-T04B`. |
 | Argo CD group claim payload | CH04.6, known advisory | The CH04.6 group reconciliation sends `attributes` as an empty object, which clears CH04.5 managed ownership attributes on an existing group. A re-run of the CH04.5 reconciler re-stamps them, so the identity model self-heals, but the CH04.6 payload must be made attribute-preserving by a follow-up tracked change, which this task does not perform. |
 
 Both consumers keep their own reconciliation and both are outside this contract: this document defines

@@ -4,7 +4,7 @@
     "managed_by": "ch04-5-bootstrap-identity-model",
     "reconcile_mode": "membership-upsert-no-prune",
     "attribute_prefix": "platforminit",
-    "contract_version": 1,
+    "contract_version": 2,
     "owner_chapter": "CH04.5",
     "technical_user_creation": "disabled",
     "reconciler": "platform/identity/scripts/ch04-5-bootstrap-identity-model.sh",
@@ -24,9 +24,7 @@
         "PlatformInit Admins",
         "ArgoCD Admins",
         "Authentik Admins",
-        "Operations Admins",
-        "Zabbix Admins",
-        "OpenObserve Admins"
+        "PlatformInit Operations"
       ]
     }
   ],
@@ -73,9 +71,7 @@
       "rotation_policy": "tracked-task-required",
       "enablement_gate": "requires the tracked CH05 onboarding task that retires the bootstrap operations admin path",
       "groups": [
-        "Operations Admins",
-        "Zabbix Admins",
-        "OpenObserve Admins"
+        "PlatformInit Operations"
       ]
     }
   ]

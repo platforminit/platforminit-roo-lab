@@ -2,29 +2,32 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.5-T05 — Create CH04.5 focused validation and recovery checkpoint
+## P-CH04.5-T04A — Align identity taxonomy with current Checkmk operations contract
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-5-validation-recovery` |
+| Branch | `batch/platform-ch04-5-checkmk-identity-alignment` |
 | Scope | `platform-identity` |
 | Dependencies | P-CH04.5-T04 |
 | Next actor | `platforminit-orchestrator` |
 
-Consolidate only focused CH04.5 checks needed to prove repository contract, expected health signals, and break-glass recovery notes.
+Replace retired Zabbix/OpenObserve desired-state identity semantics with the current CH05 Checkmk/PlatformInit Operations contract while preserving deterministic CH04.5 ownership.
 
 ### Acceptance criteria
 
-- [ ] focused CH04.5 validation covers repository contract and expected runtime health signals
-- [ ] break-glass and recovery prerequisites are documented
-- [ ] validation avoids unrelated full-repository checks
+- [ ] retired Zabbix/OpenObserve groups are absent from active CH04.5 desired state and bootstrap memberships
+- [ ] the canonical identity model defines the current operations group consumed by CH05 without inventing unsupported Checkmk role mappings
+- [ ] focused identity contract validation and active CH04.5 documentation agree with the updated taxonomy
 
 ### Allowed files
 
-- `platform/identity/**`
-- `docs/**`
+- `platform/identity/groups/platforminit-groups.yaml`
+- `platform/identity/users/bootstrap-technical-users.yaml`
+- `platform/identity/docs/ch04-5-identity-foundation.md`
+- `platform/identity/docs/ch04-5-identity-model-contract.md`
+- `platform/identity/validate/ch04-5-validate-identity-model-contract.sh`
 - `tasks/**`
 
 ### Required validators
@@ -36,7 +39,8 @@ Consolidate only focused CH04.5 checks needed to prove repository contract, expe
 - do not run infrastructure workflows
 - do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval
 - do not expose secret values
+- do not run full-repository validation unless explicitly required
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.5-T05 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.5-T04A --actor platforminit-orchestrator`

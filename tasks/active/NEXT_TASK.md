@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-CH04.6-T01` — Audit the existing Authentik OIDC provider contract for Argo CD | `pending` | `batch/platform-ch04-6-oidc-contract-audit` |
+| `platform` | `P-CH04.6-T01` — Audit the existing Authentik OIDC provider contract for Argo CD | `in_progress` | `batch/platform-ch04-6-oidc-contract-audit` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

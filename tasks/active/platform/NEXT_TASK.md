@@ -6,12 +6,12 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Field | Value |
 |---|---|
-| Status | `pending` |
+| Status | `in_progress` |
 | Track | `platform` |
 | Branch | `batch/platform-ch04-6-oidc-contract-audit` |
 | Scope | `platform-identity-sso` |
 | Dependencies | P-CH04.5-T05 |
-| Next actor | `platforminit-orchestrator` |
+| Next actor | `platforminit-deepseek-coder` |
 
 Treat the existing CH04.6 implementation as reference-state to verify and harden, not as greenfield work; make provider/application, issuer, redirect, scope and secret-reference ownership explicit.
 
@@ -42,4 +42,4 @@ Treat the existing CH04.6 implementation as reference-state to verify and harden
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.6-T01 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py submit P-CH04.6-T01 --actor platforminit-deepseek-coder`

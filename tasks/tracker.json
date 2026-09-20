@@ -1686,7 +1686,7 @@
       "id": "P-CH04.5-T04B",
       "track": "platform",
       "order": 197,
-      "status": "pending",
+      "status": "done",
       "title": "Make CH05 consume the canonical operations identity",
       "description": "Remove parallel CH05 ownership of the Authentik operations group so the Checkmk SSO path consumes the CH04.5 canonical identity model instead of creating a competing group definition.",
       "scope": "platform-observability-sso",
@@ -1721,7 +1721,75 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-20T13:18:38.551782+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-20T13:21:13.725131+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "3bffef1912f4210b27e7f026685a894c13c153bf22860fdf5a2fd2dfcb70868d",
+          "changedFiles": [
+            "platform/observability/checkmk/README.md",
+            "platform/observability/scripts/ch05-3-enable-checkmk-trusted-header-sso.sh",
+            "platform/observability/validate/ch05-3-validate-checkmk-trusted-header-sso.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-20T13:24:10.308276+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH04.5-T04B.md"
+        },
+        "security": {
+          "at": "2026-09-20T13:27:13.325713+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH04.5-T04B.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-20T13:29:11.492689+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "3bffef1912f4210b27e7f026685a894c13c153bf22860fdf5a2fd2dfcb70868d",
+          "changedFiles": [
+            "platform/observability/checkmk/README.md",
+            "platform/observability/scripts/ch05-3-enable-checkmk-trusted-header-sso.sh",
+            "platform/observability/validate/ch05-3-validate-checkmk-trusted-header-sso.sh"
+          ],
+          "confirmedFingerprint": "3bffef1912f4210b27e7f026685a894c13c153bf22860fdf5a2fd2dfcb70868d",
+          "confirmedFiles": [
+            "platform/observability/checkmk/README.md",
+            "platform/observability/scripts/ch05-3-enable-checkmk-trusted-header-sso.sh",
+            "platform/observability/validate/ch05-3-validate-checkmk-trusted-header-sso.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH04.5-T05",
@@ -2264,5 +2332,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-20T12:59:20.519845+00:00"
+  "updatedAt": "2026-09-20T13:29:11.492751+00:00"
 }

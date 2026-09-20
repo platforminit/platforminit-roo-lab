@@ -1,16 +1,16 @@
 # PlatformInit Platform Roadmap — Small-Context Task Plan
 
-**Status:** planned platform backlog after P-CH04-T01  
+**Status:** active platform backlog after P-CH04.5-T04  
 **n8n:** PARKED until an explicit human resume decision  
 **Canonical runtime task state:** `tasks/tracker.json`
 
 ## Why this roadmap is split this way
 
 Zoo Code work is intentionally kept small to reduce context-window exhaustion and HTTP 400 failures.
-The default task budget is one subsystem or one operator contract, normally **1–6 primary files**.
-If a task grows beyond **8 unique non-state files**, crosses more than one subsystem, or needs broad
-repository rereads, the Orchestrator should stop with `TASK_TOO_LARGE_SPLIT_REQUIRED` and split the
-work before continuing.
+The default task budget is one subsystem or one operator contract, normally **1–3 primary non-state files**.
+A 4–5 file scope is an explicit warning band. More than **5 unique non-state files**, more than one
+subsystem/operator contract, or a need for broad repository rereads requires
+`TASK_TOO_LARGE_SPLIT_REQUIRED` before implementation continues.
 
 Validation is **focused and changed-scope first**. Full-repository validation is allowed only when a
 task explicitly requires it or a changed shared dependency invalidates earlier evidence. Passing
@@ -21,6 +21,14 @@ checks are not repeated merely for reassurance.
 This task plan expands the CH04.5–CH15 project roadmap into controller-sized work items. Existing
 CH04.5/CH04.6 identity and CH05 Checkmk assets are treated as existing implementation to inventory,
 stabilize, rationalize and validate; the roadmap does not assume they must be recreated from scratch.
+
+`platforminit-platform` is the stable operational reference, not a file-for-file authority. Where
+`platforminit-roo-lab` already contains reviewed hardening (for example CH02/CH03/CH04 contracts and
+validators), that hardening is preserved. Alignment work compares current architecture and known-good
+behaviour rather than blindly copying older files back into roo-lab.
+
+The active CH05 architecture is Checkmk Community + Authentik forwardAuth + trusted-header integration.
+Grafana/VictoriaMetrics/Loki/Alloy and Zabbix/OpenObserve/Vector are historical/retired paths only.
 
 The long-term chapter intent remains:
 
@@ -42,8 +50,9 @@ The long-term chapter intent remains:
 
 | Rule | Default |
 |---|---|
-| Primary changed files | 1–6 |
-| Split threshold | >8 unique non-state files |
+| Primary changed files | target 1–3 |
+| Warning band | 4–5 non-state files |
+| Split threshold | >5 unique non-state files |
 | Scope | one subsystem / one operator contract |
 | Codebase reads | path-scoped indexing first |
 | Validation | focused changed-scope only |
@@ -60,7 +69,9 @@ The long-term chapter intent remains:
 | `P-CH04.5-T02` | Stabilize Authentik core deployment contract | Bound the Authentik core install to pinned chart/image inputs, secret preflight, namespace ownership, and idempotent repository-local deployment behavior. | `P-CH04.5-T01` |
 | `P-CH04.5-T03` | Stabilize Authentik ingress and TLS contract | Define the Authentik ingress, certificate, hostname, and TLS ownership contract independently from identity model bootstrap. | `P-CH04.5-T02` |
 | `P-CH04.5-T04` | Define identity groups and technical users contract | Normalize PlatformInit groups, technical users/service identities, provider templates, and bootstrap idempotence as a small identity-model unit. | `P-CH04.5-T03` |
-| `P-CH04.5-T05` | Create CH04.5 focused validation and recovery checkpoint | Consolidate only the focused CH04.5 checks needed to prove repository contract, expected runtime health signals, and break-glass recovery notes. | `P-CH04.5-T04` |
+| `P-CH04.5-T04A` | Align identity taxonomy with current Checkmk operations contract | Remove retired Zabbix/OpenObserve desired-state identities, define the canonical current operations group, and keep the taxonomy consistent with the actual CH05 Checkmk consumer without inventing unsupported Checkmk roles. | `P-CH04.5-T04` |
+| `P-CH04.5-T04B` | Make CH05 consume the canonical operations identity | Remove parallel CH05 ownership of the Authentik operations group so Checkmk SSO consumes the CH04.5 canonical identity model instead of creating a competing definition. | `P-CH04.5-T04A` |
+| `P-CH04.5-T05` | Create CH04.5 semantic validation and recovery checkpoint | Validate the CH04.5 repository contract, runtime health signals, break-glass recovery, and semantic agreement with active CH04.6 and CH05 consumers. | `P-CH04.5-T04B` |
 
 ### Completion rule
 
@@ -68,12 +79,14 @@ Each task closes independently through implementation → focused review → OWA
 
 ## CH04.6
 
+The implementation already exists. These tasks audit, harden and validate the current Authentik → Argo CD path rather than recreating it.
+
 | Task | Title | Bounded deliverable | Depends on |
 |---|---|---|---|
-| `P-CH04.6-T01` | Define Authentik OIDC application/provider for Argo CD | Isolate the Authentik OIDC provider/application contract for Argo CD, including issuer, redirect URI, scopes, and secret reference handling. | `P-CH04.5-T05` |
-| `P-CH04.6-T02` | Define Argo CD OIDC and RBAC mapping | Configure Argo CD OIDC and group-to-role RBAC as a separate bounded task from provider creation. | `P-CH04.6-T01` |
-| `P-CH04.6-T03` | Validate Argo CD login logout and fallback access | Add focused validation for SSO login, logout/session behavior, redirect correctness, and documented emergency local access without changing unrelated identity services. | `P-CH04.6-T02` |
-| `P-CH04.6-T04` | Close CH04.6 identity integration checkpoint | Produce a compact CH04.6 operator handoff that records SSO ownership, known failure modes, and the exact prerequisite chain for CH05. | `P-CH04.6-T03` |
+| `P-CH04.6-T01` | Audit the existing Authentik OIDC provider contract for Argo CD | Verify the existing provider/application, issuer, redirect URI, scopes and secret-reference ownership as current reference-state. | `P-CH04.5-T05` |
+| `P-CH04.6-T02` | Preserve identity ownership during Argo CD SSO reconciliation | Fix the known consumer behaviour that can clear CH04.5-managed group attributes while keeping OIDC/RBAC reconciliation idempotent and least-privilege. | `P-CH04.6-T01` |
+| `P-CH04.6-T03` | Validate Argo CD SSO login logout and fallback contract | Stabilize focused validation for login, logout/session behaviour, redirects, RBAC and emergency local access; distinguish repository proof from human-approved live SSO testing. | `P-CH04.6-T02` |
+| `P-CH04.6-T04` | Close CH04.6 identity integration checkpoint | Produce a compact operator checkpoint for ownership, failure modes, recovery/fallback and the exact current Checkmk prerequisite chain. | `P-CH04.6-T03` |
 
 ### Completion rule
 
@@ -81,25 +94,30 @@ Each task closes independently through implementation → focused review → OWA
 
 ## CH05
 
+The Checkmk implementation in roo-lab already matches the stable `platforminit-platform` CH05 runtime tree.
+Tasks therefore verify and harden the existing reference-state instead of manufacturing replacement implementation.
+
 | Task | Title | Bounded deliverable | Depends on |
 |---|---|---|---|
-| `P-CH05-T01` | Inventory and rationalize current operations stack | Audit existing Checkmk, legacy Grafana/VictoriaMetrics/Loki/OpenObserve/Zabbix artifacts, and declare the current operator-first ownership model before more implementation. | `P-CH04.6-T04` |
-| `P-CH05-T02` | Stabilize Checkmk GitOps runtime and storage contract | Bound Checkmk runtime manifests, persistent paths, ingress ownership, and Argo CD lifecycle into one small GitOps contract. | `P-CH05-T01` |
-| `P-CH05-T03` | Stabilize Checkmk trusted-header SSO boundary | Define and validate Authentik forwardAuth, Traefik middleware, auth-shim, and X-Remote-User trust boundaries without mixing in host discovery. | `P-CH05-T02` |
-| `P-CH05-T04` | Stabilize Checkmk agent install and host discovery | Isolate Linux agent installation, port/access assumptions, host registration, and service discovery from dashboard customization. | `P-CH05-T03` |
-| `P-CH05-T05` | Define Checkmk operations service model | Define the minimum actionable service checks for host, storage, Kubernetes/platform endpoints, certificates, and backup readiness without adding dashboard noise. | `P-CH05-T04` |
-| `P-CH05-T06` | Tune operations entry point and alert noise | Create a minimal WARN/CRIT-first landing experience and remove known stale/non-actionable noise as a separate UX task. | `P-CH05-T05` |
-| `P-CH05-T07` | Create CH05 runtime validation and recovery checkpoint | Consolidate focused checks that distinguish backend, auth-shim, Traefik/AuthentiK, agent, and service-model failures, plus recovery/fallback notes. | `P-CH05-T06` |
+| `P-CH05-T01` | Verify the current Checkmk GitOps runtime and retired-stack boundary | Prove current Checkmk runtime/storage/GitOps ownership and keep Grafana/VictoriaMetrics/Loki/Alloy and Zabbix/OpenObserve/Vector references historical or negative-guard only. | `P-CH04.6-T04` |
+| `P-CH05-T02` | Define the CH05 stable and rehearsal GitOps source contract | Make stable `platforminit-platform` and roo-lab rehearsal repository/revision selection explicit so Argo CD cannot silently reconcile a different source than the code under test. | `P-CH05-T01` |
+| `P-CH05-T03` | Harden the Checkmk trusted-header trust boundary | Keep Authentik forwardAuth + nginx auth-shim, remove backend bypass paths, constrain ingress to the intended Traefik path, and minimize forwarded identity metadata. | `P-CH05-T02` |
+| `P-CH05-T04` | Define deterministic per-user Checkmk identity and RBAC | Replace shared normal-path `cmkadmin` mapping with deterministic individual identity/role handling while retaining `cmkadmin` only as break-glass. | `P-CH05-T03` |
+| `P-CH05-T05` | Verify Checkmk agent installation and host discovery | Validate the existing Linux agent, TCP datasource, host registration and native discovery path independently from dashboard customization. | `P-CH05-T04` |
+| `P-CH05-T06` | Verify the Checkmk operations service model | Rationalize existing actionable host/service/state checks and avoid duplicate/noisy synthetic vs native services. | `P-CH05-T05` |
+| `P-CH05-T07` | Verify the Checkmk operator entry point and alert-noise model | Preserve the easy-to-understand WARN/CRIT-first UI, landing page, dashboard/session/graph behaviour and bounded noise cleanup. | `P-CH05-T06` |
+| `P-CH05-T08` | Create the CH05 runtime validation and recovery checkpoint | Consolidate focused backend/auth-shim/Traefik-Authentik/agent/service-model diagnostics, recovery and break-glass notes without unrelated full-repo tests. | `P-CH05-T07` |
 
 ### Completion rule
 
-Each task closes independently through implementation → focused review → OWASP/security gate → Release Manager. Do not combine adjacent rows into a single implementation task just because they belong to the same chapter.
+Each task closes independently through implementation → focused review → OWASP/security gate → Release Manager. A task may close as verification-only when the existing reference implementation already satisfies its acceptance criteria; do not create artificial product changes merely to produce a diff.
 
 ## CH06
 
 | Task | Title | Bounded deliverable | Depends on |
 |---|---|---|---|
-| `P-CH06-T01` | Define security v2 threat model and ADR set | Translate CH06 goals into explicit threat boundaries and lightweight decisions for secrets, policy, scanning, audit, and runtime security before implementing tools. | `P-CH05-T07` |
+| `P-CH06-T00` | Retire stale CH06 identity compatibility artifacts | Remove or quarantine executable-looking CH06 identity leftovers (including the stale Argo CD application) so CH06 has one meaning: Security & Compliance v2. | `P-CH05-T08` |
+| `P-CH06-T01` | Define security v2 threat model and ADR set | Translate CH06 goals into explicit threat boundaries and lightweight decisions for secrets, policy, scanning, audit, and runtime security before implementing tools. | `P-CH06-T00` |
 | `P-CH06-T02` | Implement SOPS age GitOps secret contract | Implement the selected lightweight GitOps secret workflow with age key separation, repository rules, and operator documentation; do not introduce Vault unless the ADR chooses it. | `P-CH06-T01` |
 | `P-CH06-T03` | Define Kubernetes RBAC baseline | Create namespace/service-account/RBAC minimums for platform components and document privileged exceptions separately from NetworkPolicy. | `P-CH06-T02` |
 | `P-CH06-T04` | Define namespace and NetworkPolicy baseline | Create a small default network-isolation policy model with explicit ingress/egress exceptions for platform namespaces. | `P-CH06-T03` |
@@ -253,10 +271,10 @@ maintenance. Parking is not deletion and is not completion.
 
 ## Immediate next task
 
-After P-CH04-T01 is merged, the first platform task is:
+After the merged P-CH04.5-T04 identity-model contract, the canonical next task is:
 
-`P-CH04.5-T01 — Inventory current Authentik foundation`
+`P-CH04.5-T04A — Align identity taxonomy with current Checkmk operations contract`
 
-This is intentionally an inventory/rationalization task, not a redeployment. It should use the
-existing identity assets and produce a compact canonical ownership map before any further CH04.5
-changes.
+This intentionally fixes semantic drift before the CH04.5 validation checkpoint: retired Zabbix/OpenObserve
+desired-state identities must not be formalized by later validation, and the current CH05 Checkmk consumer
+must use one canonical operations identity boundary.

@@ -2,32 +2,30 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.5-T04A — Align identity taxonomy with current Checkmk operations contract
+## P-CH04.5-T04B — Make CH05 consume the canonical operations identity
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-5-checkmk-identity-alignment` |
-| Scope | `platform-identity` |
-| Dependencies | P-CH04.5-T04 |
+| Branch | `batch/platform-ch05-identity-consumer` |
+| Scope | `platform-observability-sso` |
+| Dependencies | P-CH04.5-T04A |
 | Next actor | `platforminit-orchestrator` |
 
-Replace retired Zabbix/OpenObserve desired-state identity semantics with the current CH05 Checkmk/PlatformInit Operations contract while preserving deterministic CH04.5 ownership.
+Remove parallel CH05 ownership of the Authentik operations group so the Checkmk SSO path consumes the CH04.5 canonical identity model instead of creating a competing group definition.
 
 ### Acceptance criteria
 
-- [ ] retired Zabbix/OpenObserve groups are absent from active CH04.5 desired state and bootstrap memberships
-- [ ] the canonical identity model defines the current operations group consumed by CH05 without inventing unsupported Checkmk role mappings
-- [ ] focused identity contract validation and active CH04.5 documentation agree with the updated taxonomy
+- [ ] CH05 Checkmk SSO reconciliation requires or reuses the canonical operations group instead of creating a parallel identity owner
+- [ ] no active CH05 SSO path creates Zabbix/OpenObserve groups or depends on retired operations identities
+- [ ] focused validation proves the Authentik to Traefik to auth-shim consumer boundary without runtime mutation
 
 ### Allowed files
 
-- `platform/identity/groups/platforminit-groups.yaml`
-- `platform/identity/users/bootstrap-technical-users.yaml`
-- `platform/identity/docs/ch04-5-identity-foundation.md`
-- `platform/identity/docs/ch04-5-identity-model-contract.md`
-- `platform/identity/validate/ch04-5-validate-identity-model-contract.sh`
+- `platform/observability/scripts/ch05-3-enable-checkmk-trusted-header-sso.sh`
+- `platform/observability/validate/ch05-3-validate-checkmk-trusted-header-sso.sh`
+- `platform/observability/checkmk/README.md`
 - `tasks/**`
 
 ### Required validators
@@ -43,4 +41,4 @@ Replace retired Zabbix/OpenObserve desired-state identity semantics with the cur
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.5-T04A --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.5-T04B --actor platforminit-orchestrator`

@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-CH04.5-T04A` — Align identity taxonomy with current Checkmk operations contract | `pending` | `batch/platform-ch04-5-checkmk-identity-alignment` |
+| `platform` | `P-CH04.5-T04B` — Make CH05 consume the canonical operations identity | `pending` | `batch/platform-ch05-identity-consumer` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

@@ -73,6 +73,15 @@ else
   fail "release evidence reuse marker missing"
 fi
 
+if grep -Fq 'PR-body repository links must be valid from the GitHub PR page' .roo/rules-platforminit-release-manager/rules.md \
+  && grep -Fq '../blob/<PR_HEAD_SHA>/<repo-relative-path>' .roo/rules-platforminit-release-manager/rules.md \
+  && grep -Fq '../commit/<commit-sha>' .roo/rules-platforminit-release-manager/rules.md \
+  && grep -Fq 'Local/transient evidence paths such as `/tmp/**`' .roo/rules-platforminit-release-manager/rules.md; then
+  pass "release PR link contract is explicit"
+else
+  fail "release PR link contract missing or incomplete"
+fi
+
 if python3 tools/platforminit_mcp/validate_mode_access.py; then
   pass "all PlatformInit modes have MCP access"
 else

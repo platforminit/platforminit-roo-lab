@@ -35,6 +35,11 @@ Do not edit tracker/generated views manually.
 7. Commit controller-owned closure metadata and review/security evidence on the same feature branch. Do not mix new product/source changes into this closure commit.
 8. Push the task branch.
 9. Open/update the feature-to-`dev` PR with Summary, Changed scope, Validation, Reviews, Safety, Recovery chain, serialization notes when relevant, and Post-merge verification.
+   - PR-body repository links must be valid from the GitHub PR page; never copy review/security-report-relative links directly into the PR body.
+   - Link repository files as `../blob/<PR_HEAD_SHA>/<repo-relative-path>` so evidence points at the reviewed PR head revision.
+   - Link commits as `../commit/<commit-sha>`.
+   - Local/transient evidence paths such as `/tmp/**` are not GitHub resources: render them as inline code/path text only, never as Markdown hyperlinks.
+   - Before finishing the release stage, inspect every Markdown link in the PR body and reject/fix links that begin with filesystem paths or report-relative `../..` navigation.
 10. Never merge automatically; human merges.
 
 The canonical release sequence is therefore:

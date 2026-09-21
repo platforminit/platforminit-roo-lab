@@ -2,31 +2,30 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.6-T01 — Audit the existing Authentik OIDC provider contract for Argo CD
+## P-CH04.6-T02 — Preserve identity ownership during Argo CD SSO reconciliation
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-6-oidc-contract-audit` |
+| Branch | `batch/platform-ch04-6-preserve-identity-ownership` |
 | Scope | `platform-identity-sso` |
-| Dependencies | P-CH04.5-T05 |
+| Dependencies | P-CH04.6-T01 |
 | Next actor | `platforminit-orchestrator` |
 
-Treat the existing CH04.6 implementation as reference-state to verify and harden, not as greenfield work; make provider/application, issuer, redirect, scope and secret-reference ownership explicit.
+Fix the known CH04.6 consumer behavior that can clear CH04.5-managed Authentik group attributes and keep group/RBAC reconciliation idempotent.
 
 ### Acceptance criteria
 
-- [ ] the existing Authentik provider/application contract for Argo CD is explicit and current
-- [ ] issuer, redirect URI, scopes and secret references are validated without exposing secret values
-- [ ] the task reuses the existing implementation instead of recreating a parallel OIDC path
+- [ ] CH04.6 group reconciliation preserves CH04.5 managed ownership attributes
+- [ ] Argo CD group-to-role mapping remains deterministic and does not broaden privilege
+- [ ] focused validation covers repeat reconciliation and ownership preservation
 
 ### Allowed files
 
 - `platform/identity/scripts/ch04-6-enable-argocd-sso.sh`
-- `platform/identity/integrations/argocd/**`
-- `platform/identity/docs/ch04-6-argocd-sso-runbook.md`
 - `platform/identity/validate/ch04-6-validate-argocd-sso.sh`
+- `platform/identity/docs/ch04-6-argocd-sso-runbook.md`
 - `tasks/**`
 
 ### Required validators
@@ -42,4 +41,4 @@ Treat the existing CH04.6 implementation as reference-state to verify and harden
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.6-T01 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.6-T02 --actor platforminit-orchestrator`

@@ -10,31 +10,91 @@ CH04.6 uses Argo CD's bundled Dex server as the Authentik OIDC broker. This matc
 
 The workflow reconciles the Argo CD OAuth2/OIDC provider and application in Authentik through the Authentik API. Do not create GitHub secrets for the Argo CD client ID or client secret.
 
-Credential ownership model:
+Task `P-CH04.6-T01` audited this surface and made the provider/application
+contract, the issuer derivation, the redirect URI allow-list, the scope set and
+the secret-reference ownership explicit. This section is the contract; the
+reconciliation script [`ch04-6-enable-argocd-sso.sh`](../scripts/ch04-6-enable-argocd-sso.sh:1)
+writes it, and the validator [`ch04-6-validate-argocd-sso.sh`](../validate/ch04-6-validate-argocd-sso.sh:1)
+asserts it against the live objects read-only, without printing a secret value.
 
-| Value | Owner | Storage |
+### Provider and application contract
+
+| Field | Contract value | Owner |
 |---|---|---|
-| Argo CD OAuth client ID | CH04.6 automation | `argocd/argocd-authentik-oidc` Kubernetes secret |
-| Argo CD OAuth client secret | CH04.6 automation | `argocd/argocd-authentik-oidc` and `argocd/argocd-secret` Kubernetes secrets |
-| Dex client secret reference | CH04.6 automation | `argocd/argocd-secret` key `dex.authentik.clientSecret` |
+| Provider type | `OAuth2/OpenID Connect`, `client_type: confidential` | CH04.6 |
+| Provider name | `Argo CD`; exactly one provider may carry this name | CH04.6 |
+| Application name | `Argo CD` | CH04.6 |
+| Application slug | `argocd` by default (`argocd_provider_slug` workflow input) | CH04.6 |
+| Application -> provider link | the one asserted provider primary key, so no parallel OIDC path exists | CH04.6 |
+| Grant types | `authorization_code`, `refresh_token` | CH04.6 |
+| `sub_mode` | `hashed_user_id` | CH04.6 |
+| `issuer_mode` | `per_provider` | CH04.6 |
+| ID token claims | `include_claims_in_id_token: true`, so the `groups` claim reaches Argo CD RBAC | CH04.6 |
+| Signing key | an explicit Authentik certificate/key pair; symmetric-only HS* signing is rejected | CH04.6 |
+| Browser redirect URI | `https://argocd.<PLATFORM_BASE_DOMAIN>/api/dex/callback`, `matching_mode: strict`, type `authorization` | CH04.6 |
+| CLI callback URI | `https://localhost:8085/auth/callback`, `matching_mode: strict`, type `authorization` | CH04.6 |
+| Logout redirect URI | `https://argocd.<PLATFORM_BASE_DOMAIN>/logout`, `matching_mode: strict`, type `logout` | CH04.6 |
+| Logout URI / method | `https://argocd.<PLATFORM_BASE_DOMAIN>/logout` / `frontchannel` | CH04.6 |
+| Scopes | `openid`, `profile`, `email`, `groups`, each backed by an Authentik scope mapping; the `groups` mapping (`PlatformInit Argo CD Groups`) emits Authentik group names into the ID token | CH04.6 |
+
+The redirect URI allow-list is strict: no wildcard, prefix or regex matching.
+Adding, removing or loosening a redirect URI is a contract change, not a routine
+reconciliation.
+
+The validator asserts that allow-list for completeness, not only for inclusion:
+the live provider `redirect_uris` collection must contain exactly the three
+entries above with `matching_mode: strict`. An extra entry such as a wildcard,
+prefix or regex redirect, a duplicate, a non-strict matching mode or an
+unexpected `redirect_uri_type` fails the validation run even when the
+reconciliation writer did not produce the list last.
+
+### Issuer derivation
+
+The issuer is never hardcoded. The reconciliation resolves `AUTHENTIK_BASE_URL`
+(default `https://auth.<PLATFORM_BASE_DOMAIN>`), derives the expected issuer as
+`<AUTHENTIK_BASE_URL>/application/o/<provider slug>/`, fetches
+`<issuer>/.well-known/openid-configuration` and fails closed when the advertised
+`issuer` differs from that expected value. The discovered issuer is the value
+written into `argocd-cm` `dex.config`, and the validator asserts both the
+discovery issuer and the rendered connector issuer against the same derived
+value.
+
+### Secret reference ownership
+
+| Value | Owner | Storage (key names only) |
+|---|---|---|
+| Argo CD OAuth client ID | CH04.6 automation | `argocd/argocd-authentik-oidc` key `ARGOCD_OIDC_CLIENT_ID` (non-secret identifier) |
+| Argo CD OAuth client secret | CH04.6 automation | `argocd/argocd-authentik-oidc` key `ARGOCD_OIDC_CLIENT_SECRET` |
+| Dex client secret reference | CH04.6 automation | `argocd/argocd-secret` key `dex.authentik.clientSecret`, referenced from `dex.config` as `$dex.authentik.clientSecret` |
 | Argo CD session signing key | CH04 / CH04.6 automation | `argocd/argocd-secret` key `server.secretkey` |
-| Authentik API token | CH04.5 identity foundation | `identity/authentik-bootstrap` Kubernetes secret |
+| Authentik API token | CH04.5 identity foundation | `identity/authentik-bootstrap` key `AUTHENTIK_BOOTSTRAP_TOKEN` |
 
-The workflow input `argocd_provider_slug` controls the Authentik application slug. The default is `argocd`.
+Rules:
 
-The reconciled Authentik values are:
-
-| Field | Value |
-|---|---|
-| Application name | `Argo CD` |
-| Application slug | `argocd` by default |
-| Provider type | `OAuth2/OpenID Connect` |
-| Redirect URI mode | `Strict` |
-| Redirect URI | `https://argocd.<PLATFORM_BASE_DOMAIN>/api/dex/callback` |
-| CLI callback URI | `https://localhost:8085/auth/callback` |
-| Logout URI | `https://argocd.<PLATFORM_BASE_DOMAIN>/logout` |
-| Logout method | `Front-channel` |
-| Scopes | `openid`, `profile`, `email`, `groups` |
+1. No secret value is read, printed, committed or copied into a report. The
+   validator asserts key presence and non-secret identifiers only.
+2. Exactly one OIDC client secret reference exists. CH04.6 removes the legacy
+   direct-OIDC key `oidc.authentik.clientSecret` from `argocd-secret` when an
+   earlier direct-OIDC configuration left it behind, because the Dex-backed path
+   is the only supported path.
+3. A client ID or client secret supplied through the environment is written into
+   the `argocd-authentik-oidc` secret; when none is supplied, CH04.6 generates the
+   credential and stores it there. That secret is the single source of truth for
+   the Argo CD OAuth client credential.
+4. Failure output is credential-safe by construction. When the Authentik API
+   rejects a request, the reconciliation reports the HTTP status code and the
+   response field names, and every value whose key names a credential
+   (`client_secret`, `clientSecret`, `secret`, token/authorization fields,
+   `attributes`, API/private key keys) is replaced by `<redacted>` before the
+   error reaches stdout/stderr or the workflow log. The same filter is applied to
+   the `dex.config` summary, to `kubectl` response bodies that are echoed and to
+   the `argocd-server` log tails collected on a failed rollout. A response that
+   echoes the submitted provider payload therefore cannot print the client
+   secret, and the values CH04.6 holds are additionally scrubbed from any
+   rendered string so a credential repeated under an unexpected key still cannot
+   be printed. Operator-visible consequence: an error line shows which field
+   failed, not its value, and the remainder of a log line that carries a
+   credential key is withheld with it.
 
 ## Argo CD Dex connector
 
@@ -69,14 +129,35 @@ g, PlatformInit Admins, role:admin
 
 The workflow input `argocd_admin_group` controls the group name. Keep this group small and use local `admin` only for break-glass recovery.
 
-CH04.6 also reconciles the matching Authentik group as an application-scoped group:
+### The admin group is consumed from CH04.5, not redefined
 
-- group name: `PlatformInit Admins` by default
-- `is_superuser`: `false`
-- parent group: empty
-- default direct member: `akadmin`
+`argocd_admin_group` must name an existing CH04.5 identity-model group. CH04.5
+owns the group taxonomy, and its reconciler
+[`ch04-5-bootstrap-identity-model.sh`](../scripts/ch04-5-bootstrap-identity-model.sh:1)
+is the only writer of groups, memberships and the managed ownership attributes
+(see [`ch04-5-identity-model-contract.md`](ch04-5-identity-model-contract.md:1),
+section 6).
 
-The default direct member can be overridden with `AUTHENTIK_ARGOCD_ADMIN_USERNAME` if the bootstrap administrator username differs. This avoids the post-login state where Authentik SSO succeeds but Argo CD sync is denied because the user only receives `role:readonly`.
+CH04.6 therefore:
+
+- resolves the group by **exact-name lookup only**;
+- never creates, renames, patches or deletes the group, and never writes group
+  attributes, so a CH04.6 run cannot clear CH04.5 ownership stamps;
+- fails closed, naming the CH04.5 remedy, when the group is missing, is an
+  Authentik superuser group or inherits from a parent group;
+- converges only the **membership** of the Argo CD admin identity
+  (`authentik_argocd_admin_username`, default `akadmin`) in that group.
+
+Because the group is CH04.5 state, run `04.5 - Deploy Identity Foundation` before
+`04.6 - Enable Argo CD SSO`. The default `PlatformInit Admins` group is a
+non-superuser platform group in the CH04.5 taxonomy; `ArgoCD Admins` and
+`ArgoCD Viewers` are the CH04.5-owned `application:argocd` groups that an operator
+can pass through `argocd_admin_group` for a narrower Argo CD mapping. Either way
+the group definition stays with CH04.5.
+
+Converging the membership avoids the post-login state where Authentik SSO
+succeeds but Argo CD sync is denied because the user only receives
+`role:readonly`.
 
 ## Workflow
 
@@ -100,7 +181,37 @@ Recommended inputs:
 
 ## Validation
 
-After the workflow succeeds:
+The single focused validator for this scope is
+[`ch04-6-validate-argocd-sso.sh`](../validate/ch04-6-validate-argocd-sso.sh:1).
+The workflow runs it directly after the reconciliation, so this path and
+invocation contract are stable:
+
+```bash
+bash platform/identity/validate/ch04-6-validate-argocd-sso.sh
+```
+
+It is read-only (`kubectl get` plus Authentik `GET` requests) and exits non-zero on
+the first `FAIL`. It asserts the Authentik rollout, the `argocd-authentik-oidc`
+secret and `argocd-secret` key presence, `argocd-cm` `data.url`, the Dex connector
+contract (issuer, client ID match, `$dex.authentik.clientSecret` reference,
+`insecureEnableGroups`, all four scopes), the absence of a direct `oidc.config`,
+the RBAC admin mapping and scopes, the discovery issuer and signing-algorithm
+posture, the absence of the legacy direct-OIDC secret key, the CH04.5 admin group
+consumption and admin membership, the single provider/application, the strict
+redirect URI allow-list, the scope mappings, the provider/application link and the
+Argo CD HTTPS endpoint. It never prints a secret value. `FAIL` is blocking;
+`WARN` is informative, for example a legacy secret key that has not been retired
+yet.
+
+Repository-only companion checks for the same contract:
+
+```bash
+bash platform/identity/validate/ch04-5-validate-identity-model-contract.sh
+bash platform/identity/validate/ch04-5-validate-identity-cross-consumer.sh
+git diff --check
+```
+
+After the workflow succeeds, read-only spot checks:
 
 ```bash
 kubectl -n argocd get secret argocd-authentik-oidc
@@ -114,6 +225,8 @@ kubectl -n argocd rollout status deploy/argocd-server
 ```
 
 The direct `oidc.config` check should be empty. CH04.6 intentionally uses Dex-backed Authentik SSO.
+The workflow keeps the validator output as
+`<PLATFORMINIT_IDENTITY_PATH>/platforminit/reports/ch04-6-argocd-sso-validate-<SHORT_SHA>.log`.
 
 Browser test:
 
@@ -137,3 +250,23 @@ kubectl -n argocd get cm argocd-cm -o jsonpath='{.data.oidc\.config}'
 ```
 
 `dex.config` should exist and direct `oidc.config` should be empty.
+
+## Contract drift reconciled by P-CH04.6-T01
+
+The audit reconciled four disagreements between the script, the validator and this
+runbook, all inside the CH04.6-owned files:
+
+| Drift before the audit | Reconciled state |
+|---|---|
+| The validator derived the expected issuer from a hardcoded `https://auth.<domain>` host, while the script derived it from `AUTHENTIK_BASE_URL`. | Both derive the issuer from `AUTHENTIK_BASE_URL` (default `https://auth.<domain>`), and the discovered issuer must equal it. A non-default `AUTHENTIK_BASE_URL` no longer produces a false failure. |
+| The script created or patched the CH04.5-managed admin group and sent `attributes: {}`, which could clear CH04.5 ownership stamps. | The group is resolved by exact-name lookup only and is never written. The CH04.6 group payload advisory of the CH04.5 identity-model validator is resolved. |
+| The script wrote the unused direct-OIDC key `oidc.authentik.clientSecret` into `argocd-secret` while removing `oidc.config`, leaving a second, inert client-secret path. | The script writes only `dex.authentik.clientSecret` and removes the legacy key when present; the validator asserts exactly one OIDC client-secret key. |
+| The connector scopes and the provider scope mappings were two independent literals, and the validator only checked the `groups` scope. | Both come from one scope contract, and the validator asserts all four scopes plus the provider scope mappings. |
+
+Residual notes for the next reviewer:
+
+- [`platform/identity/README.md`](../README.md:86) still states that the workflow
+  patches `oidc.authentik.clientSecret`. That file is outside the CH04.6 task
+  scope and is a follow-up documentation fix.
+- The provider and application are reconciled with an unconditional `PATCH`
+  (no `UNCHANGED` short-circuit), so a re-run is convergent but not write-free.

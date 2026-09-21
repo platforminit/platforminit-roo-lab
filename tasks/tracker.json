@@ -1903,7 +1903,7 @@
       "id": "P-CH04.6-T01",
       "track": "platform",
       "order": 210,
-      "status": "pending",
+      "status": "done",
       "title": "Audit the existing Authentik OIDC provider contract for Argo CD",
       "description": "Treat the existing CH04.6 implementation as reference-state to verify and harden, not as greenfield work; make provider/application, issuer, redirect, scope and secret-reference ownership explicit.",
       "scope": "platform-identity-sso",
@@ -1939,7 +1939,75 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-20T21:05:37.740232+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-21T19:48:30.924535+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "b960198da70b3fb87470b275b6b428240218b8fff9b031521183562870bb8e30",
+          "changedFiles": [
+            "platform/identity/docs/ch04-6-argocd-sso-runbook.md",
+            "platform/identity/scripts/ch04-6-enable-argocd-sso.sh",
+            "platform/identity/validate/ch04-6-validate-argocd-sso.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-21T19:52:17.991928+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH04.6-T01.md"
+        },
+        "security": {
+          "at": "2026-09-21T19:55:46.474104+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH04.6-T01.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-21T19:58:02.531630+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "b960198da70b3fb87470b275b6b428240218b8fff9b031521183562870bb8e30",
+          "changedFiles": [
+            "platform/identity/docs/ch04-6-argocd-sso-runbook.md",
+            "platform/identity/scripts/ch04-6-enable-argocd-sso.sh",
+            "platform/identity/validate/ch04-6-validate-argocd-sso.sh"
+          ],
+          "confirmedFingerprint": "b960198da70b3fb87470b275b6b428240218b8fff9b031521183562870bb8e30",
+          "confirmedFiles": [
+            "platform/identity/docs/ch04-6-argocd-sso-runbook.md",
+            "platform/identity/scripts/ch04-6-enable-argocd-sso.sh",
+            "platform/identity/validate/ch04-6-validate-argocd-sso.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH04.6-T02",
@@ -2400,5 +2468,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-20T20:54:46.243834+00:00"
+  "updatedAt": "2026-09-21T19:58:02.531666+00:00"
 }

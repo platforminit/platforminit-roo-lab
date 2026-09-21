@@ -1,9 +1,74 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+#############################################################################
+# CH04.6 - Argo CD SSO binding: Authentik OIDC provider -> Argo CD Dex
+#
+# Task: P-CH04.6-T01 (Authentik OIDC provider/application contract audit).
+#
+# This script is the single writer of the CH04.6 Argo CD SSO surface:
+#
+#   Authentik side (objects CH04.6 owns)
+#     - OAuth2/OIDC provider named "Argo CD" (client_type confidential)
+#     - application with slug $ARGOCD_OIDC_PROVIDER_SLUG linked to that provider
+#     - scope mapping "PlatformInit Argo CD Groups" (scope_name "groups")
+#   Authentik side (objects CH04.5 owns, consumed read-only here)
+#     - the Argo CD admin group $ARGOCD_ADMIN_GROUP and its ownership attributes
+#     - only the *membership* of the Argo CD admin identity is converged here
+#   Cluster side
+#     - argocd-cm data.url, data.dex.config
+#     - argocd-rbac-cm data.policy.csv, data.scopes (rendered from *.yaml.tpl)
+#     - argocd-secret key dex.authentik.clientSecret and key server.secretkey
+#
+# Ownership rules (contract: platform/identity/docs/ch04-6-argocd-sso-runbook.md
+# and platform/identity/docs/ch04-5-identity-model-contract.md section 6):
+#   1. CH04.5 owns the identity group taxonomy and is the only writer of groups,
+#      memberships and managed ownership attributes. This script resolves
+#      $ARGOCD_ADMIN_GROUP by exact-name lookup only: it never creates, renames,
+#      patches or deletes a CH04.5 group and never writes group attributes, so
+#      CH04.5 ownership stamps cannot be cleared by CH04.6.
+#   2. The direct Argo CD oidc.config path is removed: CH04.6 uses the Dex-backed
+#      broker path only, so exactly one client secret key (dex.authentik.
+#      clientSecret) is owned and maintained in argocd-secret.
+#   3. No secret value is ever logged, rendered into a template or written into a
+#      repository file. Only secret names and key names appear in this script,
+#      and every diagnostic path that can carry a response body or a request
+#      payload passes through redact_secret_fields() (bash side) or
+#      safe_response_body() (Python side), so an Authentik validation response
+#      that echoes submitted provider fields cannot print a credential value.
+#
+# Focused validator: platform/identity/validate/ch04-6-validate-argocd-sso.sh
+#############################################################################
+
 log(){ echo "[CH04.6][$(date -u +%FT%TZ)] $*"; }
 die(){ echo "FATAL: $*" >&2; exit 1; }
 need(){ command -v "$1" >/dev/null 2>&1 || die "Missing binary: $1"; }
+
+# Credential-safe diagnostics for anything that carries a remote response body,
+# a rendered config or a pod log. Redaction is by key name, never by position: a
+# `<key>: <value>` or `<key>=<value>` pair whose key names a credential keeps its
+# key and loses its value, so an operator still sees which field failed while the
+# value can never reach stdout/stderr or the workflow log. `attributes` is
+# treated as secret-bearing because Authentik echoes provider/group attribute
+# bags there and their keys are arbitrary.
+#
+# Rule order matters and is deliberate: the credential scheme (`Bearer`) is
+# consumed first, then compound container values are withheld whole, then quoted
+# values, and only afterwards a bare value consumes the remainder of the line.
+# A credential value is always removed in full, because a partially matched token
+# would leak its remainder. The trade-off is that the remainder of a line that
+# carries a credential key is withheld as well; the key names, which are what an
+# operator diagnoses by, always survive.
+REDACT_SECRET_KEY_RE='[A-Za-z0-9_.-]*(client_?secret|secret|token|password|passwd|credential|authorization|api_?key|private_?key|attributes)[A-Za-z0-9_.-]*'
+
+redact_secret_fields() {
+  sed -E \
+    -e 's/([Bb]earer[[:space:]]+)[^[:space:]]+/\1<redacted>/g' \
+    -e "s/(${REDACT_SECRET_KEY_RE}[\"]?[[:space:]]*[:=][[:space:]]*)[[:space:]]*[{\[].*/\\1<redacted>/Ig" \
+    -e "s/(${REDACT_SECRET_KEY_RE}[\"]?[[:space:]]*[:=][[:space:]]*)\"[^\"]*\"?/\\1\"<redacted>\"/Ig" \
+    -e "s/(${REDACT_SECRET_KEY_RE}[\"]?[[:space:]]*[:=][[:space:]]*).*/\\1<redacted>/Ig" \
+    -e 's/([Cc]lient[ _]?[Ss]ecret[[:space:]]+).*/\1<redacted>/g'
+}
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -20,6 +85,27 @@ AUTHENTIK_ARGOCD_SIGNING_KEY_NAME="${AUTHENTIK_ARGOCD_SIGNING_KEY_NAME:-}"
 AUTHENTIK_BASE_URL="${AUTHENTIK_BASE_URL:-https://auth.${BASE_DOMAIN}}"
 KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
 export KUBECONFIG
+
+# --- CH04.6 Argo CD SSO contract constants ---------------------------------
+# Single source of truth for the provider/application/connector contract. The
+# focused validator derives the same values independently and asserts them
+# against the live provider, application and argocd-cm/argocd-secret keys.
+ARGOCD_PUBLIC_URL="${ARGOCD_PUBLIC_URL:-https://argocd.${BASE_DOMAIN}}"
+ARGOCD_OIDC_PROVIDER_NAME="${ARGOCD_OIDC_PROVIDER_NAME:-Argo CD}"
+ARGOCD_OIDC_REDIRECT_PATH="${ARGOCD_OIDC_REDIRECT_PATH:-/api/dex/callback}"
+ARGOCD_OIDC_CLI_CALLBACK_URI="${ARGOCD_OIDC_CLI_CALLBACK_URI:-https://localhost:8085/auth/callback}"
+ARGOCD_OIDC_LOGOUT_PATH="${ARGOCD_OIDC_LOGOUT_PATH:-/logout}"
+ARGOCD_OIDC_SCOPES="${ARGOCD_OIDC_SCOPES:-openid profile email groups}"
+ARGOCD_OIDC_GROUPS_SCOPE_NAME="${ARGOCD_OIDC_GROUPS_SCOPE_NAME:-groups}"
+ARGOCD_OIDC_GROUPS_MAPPING_NAME="${ARGOCD_OIDC_GROUPS_MAPPING_NAME:-PlatformInit Argo CD Groups}"
+# The provider issuer is derived from the Authentik base URL and must equal the
+# issuer advertised by the discovery document; it is never a hardcoded host.
+AUTHENTIK_OIDC_EXPECTED_ISSUER="${AUTHENTIK_BASE_URL%/}/application/o/${ARGOCD_OIDC_PROVIDER_SLUG}/"
+export ARGOCD_PUBLIC_URL ARGOCD_OIDC_PROVIDER_NAME ARGOCD_OIDC_REDIRECT_PATH \
+  ARGOCD_OIDC_CLI_CALLBACK_URI ARGOCD_OIDC_LOGOUT_PATH ARGOCD_OIDC_SCOPES \
+  ARGOCD_OIDC_GROUPS_SCOPE_NAME ARGOCD_OIDC_GROUPS_MAPPING_NAME \
+  AUTHENTIK_OIDC_EXPECTED_ISSUER
+
 ARGOCD_CONFIG_CHANGED=0
 ARGOCD_PREVIOUS_CM_FILE=""
 ARGOCD_PREVIOUS_RBAC_FILE=""
@@ -121,15 +207,24 @@ if not secret:
     print("ARGOCD_OIDC_CLIENT_SECRET is empty; refusing to render argocd-secret patch", file=sys.stderr)
     sys.exit(1)
 
+# CH04.6 consumes this one key only. The value is written, never printed.
 encoded = base64.b64encode(secret.encode()).decode()
-print(json.dumps({"data": {
-    "dex.authentik.clientSecret": encoded,
-    "oidc.authentik.clientSecret": encoded,
-}}))
+print(json.dumps({"data": {"dex.authentik.clientSecret": encoded}}))
 PY
 )"
 
   kubectl -n "${ARGOCD_NAMESPACE}" patch secret argocd-secret --type='merge' -p "${patch_payload}" >/dev/null
+
+  # CH04.6 uses the Dex-backed broker path only. The legacy direct-OIDC key
+  # oidc.authentik.clientSecret is read by nothing here, so reconcile it away
+  # when a previous direct-OIDC configuration left it behind. Field-scoped JSON
+  # patch, idempotent: the guard skips the call when the key is already absent.
+  if kubectl -n "${ARGOCD_NAMESPACE}" get secret argocd-secret \
+      -o jsonpath='{.data.oidc\.authentik\.clientSecret}' 2>/dev/null | grep -q .; then
+    log "Removing legacy direct-OIDC key oidc.authentik.clientSecret; the Dex-backed path is authoritative"
+    kubectl -n "${ARGOCD_NAMESPACE}" patch secret argocd-secret --type=json \
+      -p='[{"op":"remove","path":"/data/oidc.authentik.clientSecret"}]' >/dev/null 2>&1 || true
+  fi
 }
 
 resolve_authentik_api_token() {
@@ -144,10 +239,12 @@ resolve_authentik_api_token() {
 configure_authentik_argocd_provider() {
   log "Reconciling Authentik Argo CD provider/application via Authentik API"
   export BASE_DOMAIN AUTHENTIK_BASE_URL ARGOCD_OIDC_PROVIDER_SLUG ARGOCD_OIDC_CLIENT_ID ARGOCD_OIDC_CLIENT_SECRET ARGOCD_ADMIN_GROUP AUTHENTIK_ARGOCD_ADMIN_USERNAME AUTHENTIK_ARGOCD_SIGNING_KEY_NAME
+  export ARGOCD_PUBLIC_URL ARGOCD_OIDC_PROVIDER_NAME ARGOCD_OIDC_REDIRECT_PATH ARGOCD_OIDC_CLI_CALLBACK_URI ARGOCD_OIDC_LOGOUT_PATH ARGOCD_OIDC_SCOPES ARGOCD_OIDC_GROUPS_SCOPE_NAME ARGOCD_OIDC_GROUPS_MAPPING_NAME
 
   python3 - <<'PY'
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -163,14 +260,107 @@ admin_group_name = os.environ.get("ARGOCD_ADMIN_GROUP", "PlatformInit Admins")
 admin_username = os.environ.get("AUTHENTIK_ARGOCD_ADMIN_USERNAME", "akadmin")
 preferred_signing_key_name = os.environ.get("AUTHENTIK_ARGOCD_SIGNING_KEY_NAME", "").strip()
 
-argocd_url = f"https://argocd.{base_domain}"
-redirect_uri = f"{argocd_url}/api/dex/callback"
-logout_uri = f"{argocd_url}/logout"
+# Contract values resolved once and asserted live by the focused validator.
+provider_name = os.environ.get("ARGOCD_OIDC_PROVIDER_NAME", "Argo CD")
+groups_scope_name = os.environ.get("ARGOCD_OIDC_GROUPS_SCOPE_NAME", "groups")
+groups_mapping_name = os.environ.get("ARGOCD_OIDC_GROUPS_MAPPING_NAME", "PlatformInit Argo CD Groups")
+scopes = [scope for scope in os.environ.get("ARGOCD_OIDC_SCOPES", "").split() if scope]
+
+argocd_url = os.environ.get("ARGOCD_PUBLIC_URL", f"https://argocd.{base_domain}").rstrip("/")
+redirect_uri = f"{argocd_url}{os.environ.get('ARGOCD_OIDC_REDIRECT_PATH', '/api/dex/callback')}"
+cli_callback_uri = os.environ.get(
+    "ARGOCD_OIDC_CLI_CALLBACK_URI", "https://localhost:8085/auth/callback"
+)
+logout_uri = f"{argocd_url}{os.environ.get('ARGOCD_OIDC_LOGOUT_PATH', '/logout')}"
 headers = {
     "Authorization": f"Bearer {token}",
     "Accept": "application/json",
     "Content-Type": "application/json",
 }
+
+# --- Secret-safe diagnostics -------------------------------------------------
+# Any response body that can reach stdout/stderr is rendered through these
+# helpers first. Two independent layers protect the client secret:
+#   1. key-name redaction: a value whose key names a credential
+#      (client_secret/clientSecret, secret, token, authorization, password,
+#      credential, api/private key, and the echo-prone `attributes` bag) becomes
+#      <redacted> while the key names stay visible, so a failure stays
+#      diagnosable;
+#   2. value redaction: every rendered string is scrubbed of the credential
+#      values this process holds, so a secret that Authentik repeats under an
+#      unexpected key still cannot be printed.
+# Bodies are never printed raw and never truncated positionally.
+REDACTED = "<redacted>"
+SECRET_KEY_MARKERS = (
+    "secret", "token", "password", "passwd", "pwd", "credential",
+    "authorization", "cookie", "apikey", "privatekey", "accesskey", "signingkey",
+)
+SECRET_ATTRIBUTE_KEYS = ("attributes", "attribute")
+DIAGNOSTIC_STRING_LIMIT = 200
+DIAGNOSTIC_DEPTH_LIMIT = 6
+DIAGNOSTIC_LIST_LIMIT = 20
+
+
+def is_secret_key(name):
+    normalized = re.sub(r"[^a-z0-9]", "", str(name).lower())
+    if not normalized:
+        return False
+    if normalized in SECRET_ATTRIBUTE_KEYS:
+        # Authentik echoes provider/group attribute bags; their keys are
+        # arbitrary and can carry credentials, so the whole bag is withheld.
+        return True
+    return any(marker in normalized for marker in SECRET_KEY_MARKERS)
+
+
+def known_secret_values():
+    # Credential values this process holds: the submitted OIDC client secret and
+    # the Authentik API token. They are compared and replaced, never printed.
+    values = [
+        client_secret,
+        os.environ.get("ARGOCD_OIDC_CLIENT_SECRET", ""),
+        token,
+    ]
+    return [value for value in values if value and len(value) >= 8]
+
+
+def redact_secret_values(text):
+    redacted = str(text)
+    for secret in known_secret_values():
+        redacted = redacted.replace(secret, REDACTED)
+    return redacted
+
+
+def redact_field(key, value, depth=0):
+    if is_secret_key(key):
+        return REDACTED
+    if isinstance(value, dict):
+        if depth >= DIAGNOSTIC_DEPTH_LIMIT:
+            return "<nested>"
+        return {str(name): redact_field(name, item, depth + 1) for name, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        if depth >= DIAGNOSTIC_DEPTH_LIMIT:
+            return "<nested>"
+        return [redact_field(key, item, depth + 1) for item in list(value)[:DIAGNOSTIC_LIST_LIMIT]]
+    if isinstance(value, str):
+        return redact_secret_values(value)[:DIAGNOSTIC_STRING_LIMIT]
+    return value
+
+
+def safe_response_body(body):
+    """Render a response body for an error message without exposing a value.
+
+    A JSON body keeps its field names because operators diagnose by field name,
+    while every credential-bearing value is replaced. A non-JSON body cannot be
+    redacted by key name, so it is summarised by size instead of printed.
+    """
+    if not body:
+        return "<empty body>"
+    text = redact_secret_values(body)
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return f"<non-JSON body withheld: {len(body)} bytes, field names unavailable>"
+    return json.dumps(redact_field("", parsed), sort_keys=True, default=str)
 
 
 def request(method, path, payload=None):
@@ -179,10 +369,26 @@ def request(method, path, payload=None):
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode("utf-8")
-            return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {body}") from exc
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        # The raw body is never interpolated: Authentik can echo the submitted
+        # provider payload, which carries client_secret. Status code, sanitized
+        # field names and redacted values are the whole diagnostic surface.
+        raise RuntimeError(
+            f"{method} {path} failed with HTTP {exc.code}: {safe_response_body(body)}"
+        ) from exc
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{method} {path} returned a non-JSON body ({len(raw)} bytes): "
+            f"{safe_response_body(raw)}"
+        ) from exc
 
 
 def paginated_results(path):
@@ -231,7 +437,7 @@ def default_scope_pks():
 
 
 def ensure_argocd_groups_scope_mapping():
-    mapping_name = "PlatformInit Argo CD Groups"
+    mapping_name = groups_mapping_name
     expression = '''
 # Emit Authentik group names into the OIDC ID token for Argo CD RBAC.
 # Argo CD maps these values through argocd-rbac-cm policy.csv.
@@ -241,7 +447,7 @@ return {
 '''.strip()
     payload = {
         "name": mapping_name,
-        "scope_name": "groups",
+        "scope_name": groups_scope_name,
         "description": "PlatformInit Argo CD RBAC groups claim",
         "expression": expression,
     }
@@ -255,26 +461,41 @@ return {
     print(f"Created Authentik scope mapping {mapping_name} pk={created['pk']}")
     return created["pk"]
 
-def ensure_authentik_group(name):
-    existing = first_by_field("/api/v3/core/groups/", "name", name)
-    desired_payload = {
-        "name": name,
-        "is_superuser": False,
-        "parent": None,
-        "attributes": {},
-    }
+def require_authentik_admin_group(name):
+    """Resolve the CH04.5-managed Argo CD admin group by exact name (read-only).
 
-    if existing:
-        # Keep the Argo CD RBAC group application-scoped. It must not inherit
-        # broad Authentik administrator privileges and must not become an
-        # Authentik superuser group. Argo CD only needs the group claim name.
-        request("PATCH", f"/api/v3/core/groups/{existing['pk']}/", desired_payload)
-        print(f"Reconciled Authentik group {name} pk={existing['pk']} as non-superuser application group")
-        return existing["pk"]
+    CH04.5 owns the identity group taxonomy
+    (platform/identity/groups/platforminit-groups.yaml) and its reconciler is the
+    only writer of groups, memberships and managed ownership attributes
+    (platform/identity/docs/ch04-5-identity-model-contract.md, section 6).
 
-    created = request("POST", "/api/v3/core/groups/", desired_payload)
-    print(f"Created Authentik group {name} pk={created['pk']}")
-    return created["pk"]
+    CH04.6 therefore consumes the group by lookup only. It never creates,
+    renames, patches or deletes a CH04.5 group and never writes group
+    attributes, so a CH04.6 run cannot clear CH04.5 ownership stamps. A missing
+    or contract-violating group is a hard stop with the owning chapter's remedy.
+    """
+    group = first_by_field("/api/v3/core/groups/", "name", name)
+    if not group:
+        raise RuntimeError(
+            f"CH04.5-managed group not found: {name!r}. CH04.5 owns the identity group "
+            "taxonomy and CH04.6 consumes it; run '04.5 - Deploy Identity Foundation' "
+            "(scripts/ch04-5-bootstrap-identity-model.sh) or point argocd_admin_group at an "
+            "existing CH04.5 group name, then re-run CH04.6."
+        )
+
+    if group.get("is_superuser"):
+        raise RuntimeError(
+            f"CH04.5 group {name!r} is an Authentik superuser group; the Argo CD admin mapping "
+            "must use a non-superuser application group"
+        )
+    if group.get("parent"):
+        raise RuntimeError(
+            f"CH04.5 group {name!r} inherits from parent {group.get('parent')!r}; the Argo CD "
+            "admin mapping must use a non-inheriting application group"
+        )
+
+    print(f"Consuming CH04.5-managed group {name!r} pk={group['pk']} read-only (no group write)")
+    return group["pk"]
 
 
 def group_pk_list(raw_groups):
@@ -396,21 +617,24 @@ argocd_groups_mapping_pk = ensure_argocd_groups_scope_mapping()
 if argocd_groups_mapping_pk not in property_mappings:
     property_mappings.append(argocd_groups_mapping_pk)
 
-argocd_admin_group_pk = ensure_authentik_group(admin_group_name)
+argocd_admin_group_pk = require_authentik_admin_group(admin_group_name)
 ensure_argocd_admin_membership(argocd_admin_group_pk, admin_group_name, admin_username)
 argocd_signing_key_pk = resolve_oauth_signing_key()
 
+# Provider contract. Every value below is asserted live by the focused validator.
 provider_payload = {
-    "name": "Argo CD",
+    "name": provider_name,
     "authorization_flow": authorization_flow,
     "invalidation_flow": invalidation_flow,
     "client_type": "confidential",
     "grant_types": ["authorization_code", "refresh_token"],
     "client_id": client_id,
     "client_secret": client_secret,
+    # Strict redirect URI allow-list: the Argo CD Dex callback, the Argo CD CLI
+    # login callback and the Argo CD logout URI. No wildcard redirect is allowed.
     "redirect_uris": [
         {"matching_mode": "strict", "url": redirect_uri, "redirect_uri_type": "authorization"},
-        {"matching_mode": "strict", "url": "https://localhost:8085/auth/callback", "redirect_uri_type": "authorization"},
+        {"matching_mode": "strict", "url": cli_callback_uri, "redirect_uri_type": "authorization"},
         {"matching_mode": "strict", "url": logout_uri, "redirect_uri_type": "logout"},
     ],
     "logout_uri": logout_uri,
@@ -423,18 +647,18 @@ provider_payload = {
 if property_mappings:
     provider_payload["property_mappings"] = property_mappings
 
-provider = first_by_field("/api/v3/providers/oauth2/", "name", "Argo CD")
+provider = first_by_field("/api/v3/providers/oauth2/", "name", provider_name)
 if provider:
     provider_pk = provider["pk"]
     request("PATCH", f"/api/v3/providers/oauth2/{provider_pk}/", provider_payload)
-    print(f"Updated Authentik OAuth provider Argo CD pk={provider_pk}")
+    print(f"Updated Authentik OAuth provider {provider_name} pk={provider_pk}")
 else:
     provider = request("POST", "/api/v3/providers/oauth2/", provider_payload)
     provider_pk = provider["pk"]
-    print(f"Created Authentik OAuth provider Argo CD pk={provider_pk}")
+    print(f"Created Authentik OAuth provider {provider_name} pk={provider_pk}")
 
 app_payload = {
-    "name": "Argo CD",
+    "name": provider_name,
     "slug": provider_slug,
     "provider": provider_pk,
     "open_in_new_tab": True,
@@ -453,14 +677,16 @@ PY
 }
 
 validate_authentik_oidc_discovery() {
-  local provider_issuer="${AUTHENTIK_BASE_URL%/}/application/o/${ARGOCD_OIDC_PROVIDER_SLUG}/"
+  # The expected issuer is the contract constant, so the Dex connector issuer
+  # can only ever be the issuer Authentik actually advertises.
+  local provider_issuer="${AUTHENTIK_OIDC_EXPECTED_ISSUER}"
   local discovery_url="${provider_issuer}.well-known/openid-configuration"
   local discovery_json=""
 
   log "Validating Authentik OIDC discovery endpoint for Argo CD"
   discovery_json="$(curl -fsSL --retry 3 --retry-delay 2 "${discovery_url}")" || die "Failed to fetch OIDC discovery document: ${discovery_url}"
 
-  AUTHENTIK_OIDC_ISSUER="$(DISCOVERY_JSON="${discovery_json}" python3 - <<'PY'
+  AUTHENTIK_OIDC_ISSUER="$(DISCOVERY_JSON="${discovery_json}" EXPECTED_ISSUER="${provider_issuer}" python3 - <<'PY'
 import json
 import os
 import sys
@@ -485,6 +711,15 @@ missing = [name for name, value in {
 }.items() if not value]
 if missing:
     print(f"OIDC discovery document is missing required keys: {', '.join(missing)}", file=sys.stderr)
+    sys.exit(1)
+
+expected_issuer = os.environ.get("EXPECTED_ISSUER", "").rstrip("/")
+if expected_issuer and issuer.rstrip("/") != expected_issuer:
+    print(
+        f"OIDC discovery issuer {issuer!r} does not match the CH04.6 contract issuer "
+        f"{expected_issuer!r}; the dex.config issuer would drift from the discovered provider issuer",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 if algorithms:
@@ -524,7 +759,7 @@ validate_authentik_oidc_discovery_from_cluster() {
       --quiet \
       --pod-running-timeout=90s \
       --command -- sh -c "curl -fsSL --connect-timeout 10 --max-time 30 '${discovery_url}' | grep -q '\"issuer\"'" 2>&1)"; then
-    echo "${probe_output}" >&2
+    printf '%s\n' "${probe_output}" | redact_secret_fields >&2
     remove_argocd_oidc_config_for_recovery || true
     die "OIDC discovery is reachable from the host workflow but not from inside the cluster: ${discovery_url}"
   fi
@@ -552,7 +787,7 @@ render_and_apply_argocd_config() {
   local previous_url=""
   local previous_dex=""
   local next_oidc=""
-  local argocd_url="https://argocd.${BASE_DOMAIN}"
+  local argocd_url="${ARGOCD_PUBLIC_URL}"
 
   previous_oidc="$(kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{.data.dex\.config}' 2>/dev/null || true)"
   previous_url="$(kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{.data.url}' 2>/dev/null || true)"
@@ -562,11 +797,16 @@ render_and_apply_argocd_config() {
   # packaging or line-ending differences can make exact text-marker parsing
   # brittle and previously caused false failures such as:
   #   template did not render dex.config
-  next_oidc="$(AUTHENTIK_OIDC_ISSUER="${AUTHENTIK_OIDC_ISSUER}" ARGOCD_OIDC_CLIENT_ID="${ARGOCD_OIDC_CLIENT_ID}" python3 - <<'PYCODE'
+  next_oidc="$(AUTHENTIK_OIDC_ISSUER="${AUTHENTIK_OIDC_ISSUER}" ARGOCD_OIDC_CLIENT_ID="${ARGOCD_OIDC_CLIENT_ID}" ARGOCD_OIDC_SCOPES="${ARGOCD_OIDC_SCOPES}" python3 - <<'PYCODE'
 import os
 
 issuer = os.environ["AUTHENTIK_OIDC_ISSUER"]
 client_id = os.environ["ARGOCD_OIDC_CLIENT_ID"]
+# The connector scope list is generated from the same contract constant that
+# drives the Authentik provider scope mappings, so the requested scopes and the
+# mapped scopes cannot drift apart.
+scopes = [scope for scope in os.environ["ARGOCD_OIDC_SCOPES"].split() if scope]
+scopes_block = "\n".join(f"        - {scope}" for scope in scopes)
 
 print(f"""connectors:
   - type: oidc
@@ -579,10 +819,7 @@ print(f"""connectors:
       insecureEnableGroups: true
       getUserInfo: true
       scopes:
-        - openid
-        - profile
-        - email
-        - groups
+{scopes_block}
 """.rstrip() + "\n")
 PYCODE
 )"
@@ -611,7 +848,8 @@ PYCODE
   local rbac_apply_output=""
   rbac_apply_output="$(kubectl apply -f "${tmp_dir}/argocd-authentik-rbac-cm.yaml")"
   echo "configmap/argocd-cm field-patched"
-  echo "${rbac_apply_output}"
+  # kubectl's response body is redacted by key name before it is echoed.
+  printf '%s\n' "${rbac_apply_output}" | redact_secret_fields
 
   if [[ "${previous_oidc}" != "${next_oidc}" || "${previous_url}" != "${argocd_url}" || -n "${previous_dex}" ]] \
     || echo "${rbac_apply_output}" | grep -Eq ' configured| created'; then
@@ -629,8 +867,10 @@ print_argocd_oidc_config_summary() {
   echo "--- argocd-cm data keys ---"
   kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{range $k,$v := .data}{"- "}{$k}{"\n"}{end}' 2>/dev/null || true
   echo "--- dex.config redacted ---"
+  # Single redaction contract for the whole script: key-name based, so every
+  # credential-bearing key (not only clientSecret) loses its value.
   kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{.data.dex\.config}' 2>/dev/null \
-    | sed -E 's/(clientSecret:[[:space:]]*).*/\1<redacted>/' || true
+    | redact_secret_fields || true
   if kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{.data.oidc\.config}' 2>/dev/null | grep -q .; then
     echo "WARN: direct oidc.config is still present"
   else
@@ -647,6 +887,11 @@ print_argocd_oidc_config_summary() {
     echo "argocd-secret key dex.authentik.clientSecret: present"
   else
     echo "argocd-secret key dex.authentik.clientSecret: MISSING"
+  fi
+  if kubectl -n "${ARGOCD_NAMESPACE}" get secret argocd-secret -o jsonpath='{.data.oidc\.authentik\.clientSecret}' 2>/dev/null | grep -q .; then
+    echo "WARN: legacy direct-OIDC key oidc.authentik.clientSecret is still present"
+  else
+    echo "argocd-secret key oidc.authentik.clientSecret: absent (Dex-backed path only)"
   fi
 }
 
@@ -763,14 +1008,16 @@ collect_argocd_server_crash_logs() {
 
   while IFS=$'\t' read -r _order pod_name ready_state wait_reason; do
     [[ -n "${pod_name:-}" ]] || continue
+    # Pod logs are a remote response stream: a credential echoed into
+    # argocd-server/argocd-dex-server logs must not reach the workflow log.
     if [[ "${ready_state}" != "true" ]]; then
       log "Previous logs for unhealthy ${pod_name} reason=${wait_reason:-unknown}"
-      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --previous --tail=240 || true
+      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --previous --tail=240 | redact_secret_fields || true
       log "Current logs for unhealthy ${pod_name} reason=${wait_reason:-unknown}"
-      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --tail=240 || true
+      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --tail=240 | redact_secret_fields || true
     else
       log "Current logs for ready ${pod_name} (tail only, to avoid hiding crash logs)"
-      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --since=10m --tail=60 || true
+      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --since=10m --tail=60 | redact_secret_fields || true
     fi
   done <<< "${pod_rows}"
 
@@ -778,7 +1025,7 @@ collect_argocd_server_crash_logs() {
   kubectl -n "${ARGOCD_NAMESPACE}" get deploy argocd-server -o wide || true
   kubectl -n "${ARGOCD_NAMESPACE}" get rs -l app.kubernetes.io/name=argocd-server -o wide || true
   kubectl -n "${ARGOCD_NAMESPACE}" get pods -l app.kubernetes.io/name=argocd-server -o wide || true
-  kubectl -n "${ARGOCD_NAMESPACE}" get events --sort-by=.lastTimestamp | tail -60 || true
+  kubectl -n "${ARGOCD_NAMESPACE}" get events --sort-by=.lastTimestamp | tail -60 | redact_secret_fields || true
 }
 
 repair_argocd_server_rollout() {

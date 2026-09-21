@@ -74,6 +74,20 @@ Rules:
    the `argocd-authentik-oidc` secret; when none is supplied, CH04.6 generates the
    credential and stores it there. That secret is the single source of truth for
    the Argo CD OAuth client credential.
+4. Failure output is credential-safe by construction. When the Authentik API
+   rejects a request, the reconciliation reports the HTTP status code and the
+   response field names, and every value whose key names a credential
+   (`client_secret`, `clientSecret`, `secret`, token/authorization fields,
+   `attributes`, API/private key keys) is replaced by `<redacted>` before the
+   error reaches stdout/stderr or the workflow log. The same filter is applied to
+   the `dex.config` summary, to `kubectl` response bodies that are echoed and to
+   the `argocd-server` log tails collected on a failed rollout. A response that
+   echoes the submitted provider payload therefore cannot print the client
+   secret, and the values CH04.6 holds are additionally scrubbed from any
+   rendered string so a credential repeated under an unexpected key still cannot
+   be printed. Operator-visible consequence: an error line shows which field
+   failed, not its value, and the remainder of a log line that carries a
+   credential key is withheld with it.
 
 ## Argo CD Dex connector
 

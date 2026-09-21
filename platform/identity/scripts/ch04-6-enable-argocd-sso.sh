@@ -31,7 +31,11 @@ set -euo pipefail
 #      broker path only, so exactly one client secret key (dex.authentik.
 #      clientSecret) is owned and maintained in argocd-secret.
 #   3. No secret value is ever logged, rendered into a template or written into a
-#      repository file. Only secret names and key names appear in this script.
+#      repository file. Only secret names and key names appear in this script,
+#      and every diagnostic path that can carry a response body or a request
+#      payload passes through redact_secret_fields() (bash side) or
+#      safe_response_body() (Python side), so an Authentik validation response
+#      that echoes submitted provider fields cannot print a credential value.
 #
 # Focused validator: platform/identity/validate/ch04-6-validate-argocd-sso.sh
 #############################################################################
@@ -39,6 +43,32 @@ set -euo pipefail
 log(){ echo "[CH04.6][$(date -u +%FT%TZ)] $*"; }
 die(){ echo "FATAL: $*" >&2; exit 1; }
 need(){ command -v "$1" >/dev/null 2>&1 || die "Missing binary: $1"; }
+
+# Credential-safe diagnostics for anything that carries a remote response body,
+# a rendered config or a pod log. Redaction is by key name, never by position: a
+# `<key>: <value>` or `<key>=<value>` pair whose key names a credential keeps its
+# key and loses its value, so an operator still sees which field failed while the
+# value can never reach stdout/stderr or the workflow log. `attributes` is
+# treated as secret-bearing because Authentik echoes provider/group attribute
+# bags there and their keys are arbitrary.
+#
+# Rule order matters and is deliberate: the credential scheme (`Bearer`) is
+# consumed first, then compound container values are withheld whole, then quoted
+# values, and only afterwards a bare value consumes the remainder of the line.
+# A credential value is always removed in full, because a partially matched token
+# would leak its remainder. The trade-off is that the remainder of a line that
+# carries a credential key is withheld as well; the key names, which are what an
+# operator diagnoses by, always survive.
+REDACT_SECRET_KEY_RE='[A-Za-z0-9_.-]*(client_?secret|secret|token|password|passwd|credential|authorization|api_?key|private_?key|attributes)[A-Za-z0-9_.-]*'
+
+redact_secret_fields() {
+  sed -E \
+    -e 's/([Bb]earer[[:space:]]+)[^[:space:]]+/\1<redacted>/g' \
+    -e "s/(${REDACT_SECRET_KEY_RE}[\"]?[[:space:]]*[:=][[:space:]]*)[[:space:]]*[{\[].*/\\1<redacted>/Ig" \
+    -e "s/(${REDACT_SECRET_KEY_RE}[\"]?[[:space:]]*[:=][[:space:]]*)\"[^\"]*\"?/\\1\"<redacted>\"/Ig" \
+    -e "s/(${REDACT_SECRET_KEY_RE}[\"]?[[:space:]]*[:=][[:space:]]*).*/\\1<redacted>/Ig" \
+    -e 's/([Cc]lient[ _]?[Ss]ecret[[:space:]]+).*/\1<redacted>/g'
+}
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -214,6 +244,7 @@ configure_authentik_argocd_provider() {
   python3 - <<'PY'
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -247,6 +278,90 @@ headers = {
     "Content-Type": "application/json",
 }
 
+# --- Secret-safe diagnostics -------------------------------------------------
+# Any response body that can reach stdout/stderr is rendered through these
+# helpers first. Two independent layers protect the client secret:
+#   1. key-name redaction: a value whose key names a credential
+#      (client_secret/clientSecret, secret, token, authorization, password,
+#      credential, api/private key, and the echo-prone `attributes` bag) becomes
+#      <redacted> while the key names stay visible, so a failure stays
+#      diagnosable;
+#   2. value redaction: every rendered string is scrubbed of the credential
+#      values this process holds, so a secret that Authentik repeats under an
+#      unexpected key still cannot be printed.
+# Bodies are never printed raw and never truncated positionally.
+REDACTED = "<redacted>"
+SECRET_KEY_MARKERS = (
+    "secret", "token", "password", "passwd", "pwd", "credential",
+    "authorization", "cookie", "apikey", "privatekey", "accesskey", "signingkey",
+)
+SECRET_ATTRIBUTE_KEYS = ("attributes", "attribute")
+DIAGNOSTIC_STRING_LIMIT = 200
+DIAGNOSTIC_DEPTH_LIMIT = 6
+DIAGNOSTIC_LIST_LIMIT = 20
+
+
+def is_secret_key(name):
+    normalized = re.sub(r"[^a-z0-9]", "", str(name).lower())
+    if not normalized:
+        return False
+    if normalized in SECRET_ATTRIBUTE_KEYS:
+        # Authentik echoes provider/group attribute bags; their keys are
+        # arbitrary and can carry credentials, so the whole bag is withheld.
+        return True
+    return any(marker in normalized for marker in SECRET_KEY_MARKERS)
+
+
+def known_secret_values():
+    # Credential values this process holds: the submitted OIDC client secret and
+    # the Authentik API token. They are compared and replaced, never printed.
+    values = [
+        client_secret,
+        os.environ.get("ARGOCD_OIDC_CLIENT_SECRET", ""),
+        token,
+    ]
+    return [value for value in values if value and len(value) >= 8]
+
+
+def redact_secret_values(text):
+    redacted = str(text)
+    for secret in known_secret_values():
+        redacted = redacted.replace(secret, REDACTED)
+    return redacted
+
+
+def redact_field(key, value, depth=0):
+    if is_secret_key(key):
+        return REDACTED
+    if isinstance(value, dict):
+        if depth >= DIAGNOSTIC_DEPTH_LIMIT:
+            return "<nested>"
+        return {str(name): redact_field(name, item, depth + 1) for name, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        if depth >= DIAGNOSTIC_DEPTH_LIMIT:
+            return "<nested>"
+        return [redact_field(key, item, depth + 1) for item in list(value)[:DIAGNOSTIC_LIST_LIMIT]]
+    if isinstance(value, str):
+        return redact_secret_values(value)[:DIAGNOSTIC_STRING_LIMIT]
+    return value
+
+
+def safe_response_body(body):
+    """Render a response body for an error message without exposing a value.
+
+    A JSON body keeps its field names because operators diagnose by field name,
+    while every credential-bearing value is replaced. A non-JSON body cannot be
+    redacted by key name, so it is summarised by size instead of printed.
+    """
+    if not body:
+        return "<empty body>"
+    text = redact_secret_values(body)
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return f"<non-JSON body withheld: {len(body)} bytes, field names unavailable>"
+    return json.dumps(redact_field("", parsed), sort_keys=True, default=str)
+
 
 def request(method, path, payload=None):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -254,10 +369,26 @@ def request(method, path, payload=None):
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode("utf-8")
-            return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {body}") from exc
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        # The raw body is never interpolated: Authentik can echo the submitted
+        # provider payload, which carries client_secret. Status code, sanitized
+        # field names and redacted values are the whole diagnostic surface.
+        raise RuntimeError(
+            f"{method} {path} failed with HTTP {exc.code}: {safe_response_body(body)}"
+        ) from exc
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{method} {path} returned a non-JSON body ({len(raw)} bytes): "
+            f"{safe_response_body(raw)}"
+        ) from exc
 
 
 def paginated_results(path):
@@ -628,7 +759,7 @@ validate_authentik_oidc_discovery_from_cluster() {
       --quiet \
       --pod-running-timeout=90s \
       --command -- sh -c "curl -fsSL --connect-timeout 10 --max-time 30 '${discovery_url}' | grep -q '\"issuer\"'" 2>&1)"; then
-    echo "${probe_output}" >&2
+    printf '%s\n' "${probe_output}" | redact_secret_fields >&2
     remove_argocd_oidc_config_for_recovery || true
     die "OIDC discovery is reachable from the host workflow but not from inside the cluster: ${discovery_url}"
   fi
@@ -717,7 +848,8 @@ PYCODE
   local rbac_apply_output=""
   rbac_apply_output="$(kubectl apply -f "${tmp_dir}/argocd-authentik-rbac-cm.yaml")"
   echo "configmap/argocd-cm field-patched"
-  echo "${rbac_apply_output}"
+  # kubectl's response body is redacted by key name before it is echoed.
+  printf '%s\n' "${rbac_apply_output}" | redact_secret_fields
 
   if [[ "${previous_oidc}" != "${next_oidc}" || "${previous_url}" != "${argocd_url}" || -n "${previous_dex}" ]] \
     || echo "${rbac_apply_output}" | grep -Eq ' configured| created'; then
@@ -735,8 +867,10 @@ print_argocd_oidc_config_summary() {
   echo "--- argocd-cm data keys ---"
   kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{range $k,$v := .data}{"- "}{$k}{"\n"}{end}' 2>/dev/null || true
   echo "--- dex.config redacted ---"
+  # Single redaction contract for the whole script: key-name based, so every
+  # credential-bearing key (not only clientSecret) loses its value.
   kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{.data.dex\.config}' 2>/dev/null \
-    | sed -E 's/(clientSecret:[[:space:]]*).*/\1<redacted>/' || true
+    | redact_secret_fields || true
   if kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-cm -o jsonpath='{.data.oidc\.config}' 2>/dev/null | grep -q .; then
     echo "WARN: direct oidc.config is still present"
   else
@@ -874,14 +1008,16 @@ collect_argocd_server_crash_logs() {
 
   while IFS=$'\t' read -r _order pod_name ready_state wait_reason; do
     [[ -n "${pod_name:-}" ]] || continue
+    # Pod logs are a remote response stream: a credential echoed into
+    # argocd-server/argocd-dex-server logs must not reach the workflow log.
     if [[ "${ready_state}" != "true" ]]; then
       log "Previous logs for unhealthy ${pod_name} reason=${wait_reason:-unknown}"
-      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --previous --tail=240 || true
+      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --previous --tail=240 | redact_secret_fields || true
       log "Current logs for unhealthy ${pod_name} reason=${wait_reason:-unknown}"
-      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --tail=240 || true
+      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --tail=240 | redact_secret_fields || true
     else
       log "Current logs for ready ${pod_name} (tail only, to avoid hiding crash logs)"
-      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --since=10m --tail=60 || true
+      kubectl -n "${ARGOCD_NAMESPACE}" logs "${pod_name}" --since=10m --tail=60 | redact_secret_fields || true
     fi
   done <<< "${pod_rows}"
 
@@ -889,7 +1025,7 @@ collect_argocd_server_crash_logs() {
   kubectl -n "${ARGOCD_NAMESPACE}" get deploy argocd-server -o wide || true
   kubectl -n "${ARGOCD_NAMESPACE}" get rs -l app.kubernetes.io/name=argocd-server -o wide || true
   kubectl -n "${ARGOCD_NAMESPACE}" get pods -l app.kubernetes.io/name=argocd-server -o wide || true
-  kubectl -n "${ARGOCD_NAMESPACE}" get events --sort-by=.lastTimestamp | tail -60 || true
+  kubectl -n "${ARGOCD_NAMESPACE}" get events --sort-by=.lastTimestamp | tail -60 | redact_secret_fields || true
 }
 
 repair_argocd_server_rollout() {

@@ -1,239 +1,234 @@
-# Implementation and validation evidence: P-CH04.6-T01
+# Review: P-CH04.6-T01
 
-Audit the existing Authentik OIDC provider contract for Argo CD.
+- **Task:** Audit the existing Authentik OIDC provider contract for Argo CD
+- **Reviewer:** `platforminit-openai-reviewer`
+- **Base / commits:** `8371154..HEAD` (`4b9fa38`, `fbf22de`)
+- **Verdict:** `request_changes`
 
-## Scope and lifecycle
+## Consolidated finding
 
-- Task: `P-CH04.6-T01`, track `platform`, stage `implementation`.
-- Branch: `batch/platform-ch04-6-oidc-contract-audit` (checked out from fresh `dev` @ `8371154`).
-- Allowed-file scope: `platform/identity/scripts/ch04-6-enable-argocd-sso.sh`,
-  `platform/identity/integrations/argocd/**`,
-  `platform/identity/docs/ch04-6-argocd-sso-runbook.md`,
-  `platform/identity/validate/ch04-6-validate-argocd-sso.sh`, `tasks/**`.
-- Changed non-state files (3 of 4; target was 1-3):
-  - [`platform/identity/scripts/ch04-6-enable-argocd-sso.sh`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1)
-  - [`platform/identity/validate/ch04-6-validate-argocd-sso.sh`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:1)
-  - [`platform/identity/docs/ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:1)
-- Not changed: `platform/identity/integrations/argocd/**`. The two provider templates
-  already carry the contract correctly (closed four-placeholder inventory, no inlined
-  secret, `$dex.authentik.clientSecret` reference), so touching them would have been a
-  needless contract change under the CH04.5 template rules.
-- The uncommitted controller state from `taskctl start`
-  (`tasks/tracker.json`, `tasks/active/NEXT_TASK.md`,
-  `tasks/active/platform/NEXT_TASK.md`) is preserved unchanged and committed as-is.
-- No infrastructure workflow was run. No Authentik, Kubernetes, DNS, Cloudflare, GitHub
-  secret or GitHub environment was mutated. No secret value was read, printed or
-  committed.
+### P1 — Authentik API error handling can disclose the client secret
 
-## 1. What was audited (reference state, not greenfield)
+[`request()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:251) catches an HTTP error and includes the complete response body in the raised exception at [`line 260`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:260). The same request helper sends `provider_payload`, which includes `client_secret` at [`line 501`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:501). If Authentik echoes submitted fields in a validation/error response, the uncensored body can reach workflow logs through the Python exception/traceback. This violates the task's secret-safety acceptance criterion even though the normal success path redacts values.
 
-The existing CH04.6 implementation was read as reference-state and checked against the
-CH04.5 identity model that `P-CH04.5-T05` closed and merged on `dev`:
+Fix the error path to log only HTTP status and a sanitized/non-secret error summary, or explicitly redact secret-bearing fields before raising. Add a focused negative test/harness assertion that an error response containing a client-secret value cannot appear in output.
 
-- [`ch04-5-identity-model-contract.md`](../../platform/identity/docs/ch04-5-identity-model-contract.md:190)
-  section 6 states that CH04.5 owns the group taxonomy and that the CH04.6 SSO binding
-  "must not create, rename or delete CH04.5 groups", and records an advisory that the
-  CH04.6 group payload sends `attributes: {}` and clears CH04.5 ownership stamps.
-- [`deploy-04-5-identity-foundation.yml`](../../.github/workflows/deploy-04-5-identity-foundation.yml:273)
-  runs `ch04-5-bootstrap-identity-model.sh`, which creates the taxonomy groups, so the
-  admin group already exists before CH04.6 runs.
-- [`deploy-04-6-argocd-sso.yml`](../../.github/workflows/deploy-04-6-argocd-sso.yml:219)
-  renders the SSO script and then runs
-  [`ch04-6-validate-argocd-sso.sh`](../../.github/workflows/deploy-04-6-argocd-sso.yml:227)
-  on the host, so the validator's path, environment and exit-code contract had to stay
-  stable.
-- The CH04.5 repository-only validators statically inspect the CH04.6 script
-  (`ARGOCD_ADMIN_GROUP` default declaration, the four template `sed` substitutions), so
-  those anchors were preserved deliberately.
+## Acceptance-criteria assessment
 
-### Drift found
+1. **Provider/application contract:** Satisfied by the changed runbook and reconciliation/validator contract. The provider and application are unique, linked, and use the existing Authentik-to-Argo-Dex path.
+2. **Issuer, redirects, scopes, and secret references:** Substantially satisfied. The implementation derives the issuer from `AUTHENTIK_BASE_URL`, checks discovery, enforces strict redirect entries, checks all four scopes and mappings, and checks key presence/reference without normally printing values. The P1 error-path disclosure prevents approval.
+3. **Reuse of existing implementation:** Satisfied. The patch retains the existing CH04.6 script, validator invocation, four template anchors, and Dex-backed `argocd-cm` path; no parallel integration path was added.
 
-| # | Drift | Consequence |
+## Evidence run
+
+- Environment/branch gate: WSL confirmed; branch is `batch/platform-ch04-6-oidc-contract-audit`; working tree was clean before the report write.
+- `git diff --check 8371154..HEAD -- <three changed files>`: pass.
+- `bash -n` on both changed scripts: pass.
+- Offline contract harness: pass, six controls (`6/6`), including secret-value non-disclosure and negative cases for missing redirect, missing CH04.5 group, duplicate provider path, and symmetric signing.
+- `bash platform/identity/validate/ch04-5-validate-identity-model-contract.sh`: pass (`41` pass, `0` warn, `0` fail).
+- `bash platform/identity/validate/ch04-5-validate-identity-cross-consumer.sh`: pass (`27` pass, `0` warn, `0` fail).
+- Live CH04.6 validator was not treated as passing; the expected WSL result is `FAIL | AUTHENTIK_ROLLOUT` because `kubectl` is unavailable.
+
+## Residual risks and follow-ups
+
+- No live cluster/runtime evidence exists; the future `04.6` workflow run remains required.
+- CH04.6 now consumes the CH04.5 group read-only and fails closed when it is absent. The runbook ordering and CH04.5 remedy are documented consistently.
+- Unconditional provider/application `PATCH` is convergent but not write-free. It is acceptable for this task; operational audit noise remains a residual risk.
+- The validator's documented `WARN` behavior for Authentik fields not serialized by a deployed API version can reduce drift detection. The security reviewer should assess whether version-specific compatibility needs an independent proof or stricter minimum API contract.
+- [`platform/identity/README.md`](../../platform/identity/README.md:86) still describes the retired `oidc.authentik.clientSecret` key. This is an out-of-scope documentation follow-up, not a separate blocker for this task.
+
+---
+
+# Rework addendum — round 2 (`platforminit-deepseek-coder`)
+
+- **Stage:** implementation (rework) for `P-CH04.6-T01`, addressing the single P1 in the verdict above.
+- **Branch:** `batch/platform-ch04-6-oidc-contract-audit` (not switched); review base `8371154`; pre-rework head `fbf22de`.
+- **Round-1 content above is preserved verbatim.** This addendum only records the defect, the fix, the new negative control and the re-run evidence.
+- **Scope actually changed:** [`ch04-6-enable-argocd-sso.sh`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1) (primary fix), [`ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:1) (operator-visible behaviour), this evidence file, and `tasks/**` controller state. The validator and `platform/identity/integrations/argocd/**` were **not** touched.
+
+## R1. Defect (restated precisely)
+
+[`request()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:366) raised
+`RuntimeError(f"{method} {path} failed with HTTP {exc.code}: {body}")` with the complete
+Authentik response body, while the reconciliation submits `provider_payload` containing
+`client_secret`. An Authentik validation/error response that echoes submitted fields
+printed the client secret into the workflow log through the Python traceback. The same
+class of exposure existed on the bash side, where remote response bodies were echoed
+raw (the `dex.config` dump redacted only the single literal key `clientSecret`).
+
+## R2. Fix
+
+**Python side — key-name redaction plus value redaction** (helpers at
+[`line 293`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:293) onward,
+[`safe_response_body()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:349)):
+
+1. `is_secret_key()` redacts any value whose key name matches a credential marker
+   (`client_secret`/`clientSecret`, `secret`, token, authorization, password,
+   credential, api/private key) and withholds the whole `attributes` bag, because
+   Authentik echoes provider/group attributes there and their keys are arbitrary.
+2. `redact_field()` walks JSON responses recursively, keeps every **field name** and
+   replaces only credential-bearing values with `<redacted>`; the response is re-emitted
+   as sorted JSON, so operators still see which field failed.
+3. `known_secret_values()` + `redact_secret_values()` scrub the credential values this
+   process holds (submitted client secret, Authentik API token) from every rendered
+   string, so a secret that Authentik repeats under an unexpected key is still not
+   printed.
+4. A non-JSON error body is no longer eligible for printing at all: it is summarised as
+   `<non-JSON body withheld: N bytes, field names unavailable>`.
+5. The success path was hardened the same way: a 200 response that is not JSON now
+   raises a sanitized `RuntimeError` instead of an unhandled decode error.
+
+**Bash side — one shared redaction contract**
+([`redact_secret_fields()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:64),
+key pattern at [`line 62`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:62)),
+applied to every path in the script where a response body or payload reaches
+stdout/stderr:
+
+| Path | Before | After |
 |---|---|---|
-| 1 | The validator derived the expected issuer from a hardcoded `https://auth.<BASE_DOMAIN>` host, while the script derived it from `AUTHENTIK_BASE_URL`. | A non-default `AUTHENTIK_BASE_URL` produced a false validator failure. |
-| 2 | The script created the group (`POST /api/v3/core/groups/`) and PATCHed it with `attributes: {}` and `is_superuser`/`parent`. | CH04.6 wrote a CH04.5-owned object, restating the identity model and able to clear CH04.5 ownership stamps. |
-| 3 | The script patched the unused direct-OIDC key `oidc.authentik.clientSecret` into `argocd-secret` while removing `oidc.config`. | A second, inert client-secret path contradicted "one Dex-backed path only". |
-| 4 | Connector scopes and provider scope mappings were two independent literals, and the validator asserted only the `groups` scope. | Scope drift between the request and the provider mapping was undetectable. |
-| 5 | The validator never asserted the provider/application contract at all: no redirect URI, no provider identity, no scope mappings, no provider/application link. | Acceptance gap 1 and the redirect/scope half of acceptance gap 2 had no live evidence. |
+| In-cluster discovery probe output | `echo "${probe_output}" >&2` | [`line 762`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:762) filtered through `redact_secret_fields` |
+| `kubectl apply` response body | printed raw | [`line 852`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:852) filtered |
+| `dex.config` summary dump | one literal key (`clientSecret`) redacted | [`line 873`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:873) same shared filter, so every credential key is covered |
+| `argocd-server` log tails (3 call sites) | printed raw | [`lines 1015-1020`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1015) filtered |
+| `kubectl get events` tail | printed raw | [`line 1028`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1028) filtered |
 
-## 2. What was hardened
+Redaction is by key name and always removes the **whole** value: a partially matched
+token would leak its remainder. Rule order is deliberate (`Bearer` scheme first, then
+compound container values, then quoted values, then the bare value to end of line), which
+is why an echoed JSON body and an `Authorization: Bearer …` line both lose their value.
+Trade-off, documented in the runbook: the remainder of a line that carries a credential
+key is withheld with it, and key names (what an operator diagnoses by) always survive.
 
-### Script: [`ch04-6-enable-argocd-sso.sh`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1)
+Reviewed and deliberately unchanged (no credential can reach them): the reconciliation's
+captured payload variables (`patch_payload`, `next_oidc`, `cm_patch_payload` are piped to
+`kubectl`, never echoed), the emitted `print()`/`log()` lines that contain only object
+`pk`s, scope/mapping/group/user names, `kubectl get deploy|rs|pods -o wide` status output,
+and `argocd-secret` key **presence** checks (`grep -q`, no output).
 
-- Contract header plus single-source contract constants
-  ([`ARGOCD_OIDC_SCOPES`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:68),
-  [`AUTHENTIK_OIDC_EXPECTED_ISSUER`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:73)),
-  documenting which objects CH04.6 owns, which CH04.5 owns and which keys exist.
-- [`require_authentik_admin_group()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:333)
-  replaces the group writer: exact-name lookup only, no `POST`/`PATCH` on
-  `/api/v3/core/groups/`, no group attributes written, and a fail-closed error naming the
-  CH04.5 remedy when the group is missing, is a superuser group or inherits a parent.
-  Only the admin identity's membership is still converged, which keeps the documented
-  `authentik_argocd_admin_username` input working and idempotent.
-- [`resolve_or_create_argocd_oidc_secret()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:194)
-  now writes exactly one key (`dex.authentik.clientSecret`) and removes the legacy
-  `oidc.authentik.clientSecret` key when an earlier direct-OIDC configuration left it
-  behind (presence-guarded, field-scoped JSON patch, idempotent).
-- The discovery validation asserts the advertised `issuer` equals the derived contract
-  issuer, and the connector scope list is generated from the same scope constant
-  ([`scopes_block`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:678)), so
-  the requested scopes and the provider mappings cannot drift apart.
-- Redirect URI entries are now named contract values: browser Dex callback, Argo CD CLI
-  callback, logout, all `matching_mode: strict`.
+## R3. New negative control (offline, same evidence channel)
 
-### Validator: [`ch04-6-validate-argocd-sso.sh`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:1)
+The round-1 harness was extended, not replaced:
+`/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py` now drives **11** controls.
+Controls 1-6 are the unchanged validator/PYCONTRACT controls. The new controls extract the
+reconciliation `PY` block, stub `urllib.request.urlopen` so the first call raises
+`HTTPError` whose body echoes the submitted payload, and capture the exception text
+exactly the way a Python traceback would print it into the workflow log:
 
-Still the single focused validator for this scope; same path, same environment, same
-`PASS | CODE | detail` lines, same fail-fast non-zero exit. It now asserts, read-only:
+- `rework-7-error-body-client-secret-not-printed` — the echoed `client_secret` sentinel **and** the API-token sentinel echoed inside the `attributes` bag are absent from output, while the failure still raises;
+- `rework-8-error-still-diagnosable` — `HTTP 400` and the non-secret field name `redirect_uris` still reported;
+- `rework-9-non-json-body-withheld` — a non-JSON body containing the sentinel is withheld by size;
+- `rework-10-token-echo-under-unexpected-key` — the API token echoed under `detail` is scrubbed by value, while `detail`/`HTTP 400` survive;
+- `rework-11-bash-diagnostic-redactor` — `redact_secret_fields` run as the real pipe filter over nine leak vectors (YAML key, JSON quoted key, `KEY=value`, `server.secretkey`, `attributes` bag, `Authorization: Bearer`, prose `client secret …`); no sentinel survives and non-secret diagnostics (including `client_id`, `detail:` and `kubectl` output lines) are preserved.
 
-- `argocd-cm` `data.url`, the Dex connector contract (issuer derived from
-  `AUTHENTIK_BASE_URL` at
-  [`EXPECTED_ISSUER`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:54),
-  client ID match, the `$dex.authentik.clientSecret` reference, `insecureEnableGroups`)
-  and all four scopes at
-  [`for scope in ${EXPECTED_SCOPES}`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:117)).
-- The discovery issuer (`AUTHENTIK_OIDC_ISSUER_MATCH`) alongside the existing signing
-  algorithm check, so a symmetric-only or drifting issuer fails closed.
-- Secret-reference ownership: the `argocd-authentik-oidc` secret, the
-  `dex.authentik.clientSecret` key, the `server.secretkey` key, and the absence of the
-  legacy direct-OIDC key
-  ([`ARGOCD_LEGACY_OIDC_SECRET_ABSENT`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:143)).
-  Only key presence and the non-secret client ID are read; the provider client secret is
-  probed for presence only and never printed.
-- The Authentik provider contract
-  ([`PYCONTRACT`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:222)):
-  exactly one provider
-  ([`AUTHENTIK_PROVIDER_UNIQUE`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:359)),
-  `client_type confidential`, `authorization_code` grant, `sub_mode hashed_user_id`,
-  `issuer_mode per_provider`, ID-token claims, an asymmetric `signing_key`, the strict
-  redirect allow-list (browser, CLI, logout), and every scope mapping.
-- The application contract: exactly one application for the slug and the
-  provider link
-  ([`AUTHENTIK_APPLICATION_PROVIDER_LINK`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:485)),
-  which is the "no parallel OIDC path" proof.
-- The CH04.5 consumption rule
-  ([`AUTHENTIK_ADMIN_GROUP_EXISTS`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:316)):
-  the group must exist, be non-superuser, have no parent, and the admin identity must be
-  a direct member. Missing ownership stamps are a `WARN` (the CH04.5 reconciler re-stamps
-  them), not a blocking failure.
-- Fields an Authentik version may not serialize (`client_type`, `sub_mode`,
-  `issuer_mode`, `include_claims_in_id_token`, `logout_uri`, `logout_method`,
-  `grant_types`, `client_secret`) use
-  [`expect_field()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:260):
-  `WARN` when the API does not expose the field, `FAIL` when it exposes a wrong value.
-  This makes the extended validator safe to enable on an existing host.
+The controls are shown to be real detectors: the harness accepts `HARNESS_SCRIPT`, and
+running the same file against the **pre-fix** revision (`git show 4b9fa38:…`) fails
+`rework-7`, `rework-9`, `rework-10` and `rework-11`.
 
-### Runbook: [`ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:1)
-
-Added the explicit contract: provider/application table, issuer derivation rule, secret
-reference ownership table with key names, the CH04.5 consumption rule with the ordering
-prerequisite, the stable validator invocation plus repository-only companions, and a
-drift-reconciliation section recording the five findings above and the residual notes.
-
-## 3. Exact commands run and observed results
+## R4. Exact commands and observed results
 
 ```bash
+git branch --show-current
+# batch/platform-ch04-6-oidc-contract-audit
+
 bash -n platform/identity/scripts/ch04-6-enable-argocd-sso.sh
-# BASH_SYNTAX_OK
+# rc=0
 
-python3 -  # extract each <<'TAG' heredoc and compile() it
-# OK PY:13 lines / OK PY:330 lines / OK PY:46 lines / OK PYCODE:23 lines / OK PYCODE:3 lines
+python3 -  # compile every heredoc block in the changed script
+# PY_BLOCKS_COMPILE_OK count=5
 
-grep -n 'ensure_authentik_group\|"attributes": {}' platform/identity/scripts/ch04-6-enable-argocd-sso.sh
-# no match: the group writer and the attributes-clearing payload are gone
+grep -n 'ARGOCD_ADMIN_GROUP="\${ARGOCD_ADMIN_GROUP:-' platform/identity/scripts/ch04-6-enable-argocd-sso.sh
+# 82:ARGOCD_ADMIN_GROUP="${ARGOCD_ADMIN_GROUP:-PlatformInit Admins}"   (default preserved)
 
-bash platform/identity/validate/ch04-5-validate-identity-model-contract.sh
-# pass=41 warn=0 fail=0, rc=0
-#   The previous "CH04.6_GROUP_PAYLOAD_ADVISORY" WARN is resolved; warn is now 0 and
-#   CONSUMER_ARGOCD_ADMIN_GROUP still PASSes for the default 'PlatformInit Admins'.
-
-bash platform/identity/validate/ch04-5-validate-identity-cross-consumer.sh
-# pass=27 warn=0 fail=0, rc=0
-
-bash -n platform/identity/validate/ch04-6-validate-argocd-sso.sh
-# BASH_SYNTAX_OK
-
-python3 -  # compile the PYCONTRACT heredoc
-# OK PYCONTRACT: 270 lines
-
-python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py
-# PASS | control-1-correct-provider          | rc=0 | PASS=28 WARN=0 FAIL=0
-# PASS | control-2-secret-value-never-printed| rc=0 | client_secret sentinel absent from output
-# PASS | negative-3-missing-redirect-uri     | rc=1 | fails closed
-# PASS | negative-4-missing-ch04-5-group     | rc=1 | fails closed
-# PASS | negative-5-duplicate-provider-path  | rc=1 | fails closed
-# PASS | negative-6-symmetric-signing-risk   | rc=1 | fails closed
-# harness overall: PASS (6 controls)
-
-bash platform/identity/validate/ch04-6-validate-argocd-sso.sh
-# FAIL | AUTHENTIK_ROLLOUT | authentik-server rollout is not healthy
-# validator_rc=1
+grep -n 's|__[A-Z_]*__|' platform/identity/scripts/ch04-6-enable-argocd-sso.sh
+# __BASE_DOMAIN__, __AUTHENTIK_OIDC_ISSUER__, __ARGOCD_OIDC_CLIENT_ID__, __ARGOCD_ADMIN_GROUP__ (all four sed anchors preserved)
 
 git diff --check
 # required validator: rc=0, no output
+
+python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py
+# PASS | control-1-correct-provider                  | rc=0 | PASS=28 WARN=0 FAIL=0
+# PASS | control-2-secret-value-never-printed        | rc=0 | client_secret sentinel absent from output
+# PASS | negative-3-missing-redirect-uri             | rc=1 | fails closed
+# PASS | negative-4-missing-ch04-5-group              | rc=1 | fails closed
+# PASS | negative-5-duplicate-provider-path           | rc=1 | fails closed
+# PASS | negative-6-symmetric-signing-risk            | rc=1 | fails closed
+# PASS | rework-7-error-body-client-secret-not-printed| rc=1 | echoed client_secret and the attributes-bag token never reach the error output while the failure still raises
+# PASS | rework-8-error-still-diagnosable             | rc=1 | status code and non-secret field names still reported
+# PASS | rework-9-non-json-body-withheld              | rc=1 | non-JSON body summarised by size
+# PASS | rework-10-token-echo-under-unexpected-key    | rc=1 | credential under a non-secret key scrubbed by value
+# PASS | rework-11-bash-diagnostic-redactor           | rc=0 | removed every sentinel, kept non-secret context
+# harness overall: PASS (11 controls)   rc=0
+
+git show 4b9fa38:platform/identity/scripts/ch04-6-enable-argocd-sso.sh > /tmp/platforminit-evidence/P-CH04.6-T01-prefix-reconciler.sh
+HARNESS_SCRIPT=/tmp/platforminit-evidence/P-CH04.6-T01-prefix-reconciler.sh python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py
+# FAIL | rework-7  | echoed client_secret reached the error output          <- pre-fix defect reproduced
+# FAIL | rework-9  | non-JSON body printed raw
+# FAIL | rework-10 | token echo printed raw
+# FAIL | rework-11 | redact_secret_fields helper is not present
+# harness overall: FAIL (11 controls)   rc=1
+
+bash platform/identity/validate/ch04-5-validate-identity-model-contract.sh
+# pass=41 warn=0 fail=0   rc=0
+bash platform/identity/validate/ch04-5-validate-identity-cross-consumer.sh
+# pass=27 warn=0 fail=0   rc=0
+
+bash platform/identity/validate/ch04-6-validate-argocd-sso.sh
+# FAIL | AUTHENTIK_ROLLOUT | authentik-server rollout is not healthy   rc=1
+# (not treated as passing: kubectl is absent in this WSL workspace — command -v kubectl -> KUBECTL_NOT_AVAILABLE)
 ```
 
-### Why the live validator cannot pass in this environment
-
-`kubectl` is absent from this WSL workspace (`command -v kubectl` -> absent; there is no
-cluster and no `/etc/rancher/k3s/k3s.yaml`), and the task forbids running infrastructure
-workflows. The validator is therefore **not** claimed as passed: it executed, failed
-closed at its first check and returned `1`. The exact command and the exact result are
-recorded above. The provider/application contract logic of that same validator is
-exercised instead by the offline harness, which extracts the embedded `PYCONTRACT` block,
-stubs the read-only Authentik GET surface and drives six positive/negative controls.
+Reused unchanged evidence: the six round-1 harness controls and the validator/PYCONTRACT
+`bash -n` result. Re-run because this change invalidates them: both CH04.5 validators,
+which read [`ch04-6-enable-argocd-sso.sh`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1)
+statically (template anchors, `ARGOCD_ADMIN_GROUP` default, group-payload advisory) — both
+still report `41/0/0` and `27/0/0`.
 
 Evidence artifacts (outside the repository, transient):
 
-- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py`
-- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py` (extended, 11 controls)
+- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness-rework.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness-prefix.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-ch04-5-model-contract-rework.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-ch04-5-cross-consumer-rework.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-live-validator-rework.log`
 
-## 4. Acceptance criteria
+## R5. Acceptance criteria after rework
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| 1. The existing Authentik provider/application contract for Argo CD is explicit and current | MET | Contract constants in the script, the provider/application tables in [`ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:20), and live assertions in the validator. |
-| 2. Issuer, redirect URI, scopes and secret references are validated without exposing secret values | MET | Issuer derived once and asserted twice; strict redirect allow-list; all four scopes plus mappings; secret keys asserted as presence only; harness control 2 proves no secret value is printed. |
-| 3. The task reuses the existing implementation instead of recreating a parallel OIDC path | MET | No new script, validator, runbook, template or provider path. The same script and validator were hardened; `AUTHENTIK_PROVIDER_UNIQUE`, `AUTHENTIK_APPLICATION_UNIQUE` and the provider link assertion prove single-path topology. The group is now consumed from CH04.5 rather than restated. |
+| 1. Provider/application contract explicit and current | MET (unchanged) | Round-1 evidence retained; this rework does not alter the contract. |
+| 2. Issuer, redirect URI, scopes and secret references are validated without exposing secret values | MET | Round-1 checks unchanged **plus** the P1 error path fixed on both sides and proven by `rework-7/9/10/11`; the sentinel is absent from every output path touched (`request()` error and non-JSON paths, probe echo, `kubectl apply` echo, `dex.config` summary, pod-log tails, events tail). |
+| 3. Reuses the existing implementation instead of a parallel OIDC path | MET (unchanged) | No new script, validator, template, workflow or provider path; no change under `platform/identity/integrations/argocd/**`. |
 
-## 5. Unresolved risks and what a reviewer must check
+## R6. Residual risk the reviewer and the security reviewer must check
 
-1. **Runtime evidence is missing by construction.** The live validator was not executed
-   against `platforminit-dev-01`. A reviewer or the orchestrator must not treat the
-   offline harness as live evidence; the next `04.6 - Enable Argo CD SSO` run produces the
-   real verdict at
-   `<PLATFORMINIT_IDENTITY_PATH>/platforminit/reports/ch04-6-argocd-sso-validate-<SHORT_SHA>.log`.
-2. **Behavioural change on a host without the CH04.5 group.** CH04.6 now fails closed
-   instead of creating `PlatformInit Admins`. Ordering (`04.5` before `04.6`) is
-   documented and matches the existing `authentik-bootstrap` secret prerequisite, but a
-   host that never ran the CH04.5 model bootstrap will now stop with a CH04.5 pointer.
-3. **`docs/reviews` evidence file is outside the controller `allowedFiles`.** It was
-   produced because the task explicitly required this evidence path; a reviewer should
-   confirm that this matches the orchestrator's expectation.
-4. **Stale pointer outside the allowed scope:**
-   [`platform/identity/README.md`](../../platform/identity/README.md:86) still states that
-   the workflow patches `oidc.authentik.clientSecret`. That file was not in scope and the
-   statement is now inaccurate; it needs a follow-up documentation fix.
-5. **Provider/application reconciliation is convergent but not write-free.** The
-   provider and application `PATCH` runs unconditionally, so a re-run produces no drift
-   but is not a no-op. Adding an `UNCHANGED` short-circuit is a follow-up, deliberately not
-   done here to keep this audit patch bounded.
-6. **Provider field availability is version-dependent.** The new provider assertions
-   `WARN` when an Authentik version does not serialize a field, so the reviewer should
-   confirm on the next live run whether any `WARN | AUTHENTIK_PROVIDER_*` line appears; a
-   consistently missing field would mean the contract is only enforced on the write path.
-7. **`is_superuser`/parent checks assume the API field names** the CH04.5 validator
-   already uses. If an Authentik version renames them, the object is reported as absent
-   fields rather than failing loudly.
+1. **Live evidence still does not exist.** All rework evidence is offline/static; the live
+   validator cannot run here (`AUTHENTIK_ROLLOUT`, no `kubectl`). The next real
+   `04.6 - Enable Argo CD SSO` run is still the only live proof.
+2. **Bash redaction is key-name based, not JSON-aware.** A credential echoed in free prose
+   under no credential-like key and with a value the process does not hold (for example a
+   *returned* secret that differs from the submitted one and whose key is not
+   credential-like) would not be caught by the bash filter. The Python error path is not
+   affected: it redacts by key and additionally by known value. Worth a security-reviewer
+   opinion on whether the pod-log tail path needs value-level knowledge too.
+3. **Diagnostics cost of the fix.** A line that carries a credential key loses the rest of
+   that line; a JSON error body is re-emitted sorted, with secret values (and the whole
+   `attributes` bag) replaced. Operators keep the status code and field names, but a
+   reviewer should confirm this is acceptable troubleshooting UX.
+4. **`client_secret` still travels through argv.** The script patches
+   `dex.authentik.clientSecret` via `kubectl … -p "<base64 payload>"`, so the value is
+   visible in the process table on the host. Out of scope for this P1 (no output path) and
+   unchanged by this rework; flagged for the security reviewer.
+5. **`docs/reviews` remains outside the controller `allowedFiles`.** Same exception as
+   round 1, required by the task's evidence path; unchanged.
 
-## 6. Controller transition
+## R7. Controller transition
 
-This implementation stage records exactly one transition and routes nothing onward:
+This rework child records exactly one transition and routes nothing onward:
 
 ```text
 python3 tools/task_controller/taskctl.py submit P-CH04.6-T01 --actor platforminit-deepseek-coder
 ```
 
-The next mode returned by the controller is `platforminit-deepseek-coder` as a fresh
-review-bound child; the orchestrator owns all next-stage routing. No branch was switched,
-no `git push` was performed, and no controller state was edited by hand.
+Round-1 findings above were not altered, no branch was switched, no `git push` was
+performed, and no controller state was edited by hand.

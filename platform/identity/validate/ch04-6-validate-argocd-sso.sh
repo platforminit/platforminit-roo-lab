@@ -13,9 +13,12 @@ set -euo pipefail
 #      oidc.config path
 #   C. the Argo CD RBAC contract in argocd-rbac-cm (admin group, scopes)
 #   D. the Authentik OIDC provider/application contract, including the strict
-#      redirect URI allow-list, the scope mappings, the provider/application
-#      link and the single-provider/single-application rule that proves no
-#      parallel OIDC path exists
+#      redirect URI allow-list and its completeness (the live redirect_uris
+#      collection must contain exactly the three contract entries, so an extra,
+#      duplicate, non-strict or unexpected-type entry fails closed even when the
+#      reconciliation writer was not the last writer), the scope mappings, the
+#      provider/application link and the single-provider/single-application rule
+#      that proves no parallel OIDC path exists
 #   E. the ambiguous secret-reference checks: the dex client secret key and the
 #      stable session key are present, and the legacy direct-OIDC key is absent
 #
@@ -422,29 +425,111 @@ if provider:
                  "provider logout_method is frontchannel",
                  f"provider logout_method is {provider.get('logout_method')!r}, expected 'frontchannel'")
 
-    # Strict redirect allow-list. A wildcard or a missing entry is a FAIL: the
-    # redirect URI is the contract's anti-open-redirect boundary.
+    # Strict redirect allow-list, asserted in two steps: every expected entry must
+    # be present with matching_mode `strict`, and the complete live redirect_uris
+    # collection must contain nothing else. The second step is the completeness
+    # boundary: an extra wildcard/prefix/regex entry, a duplicate, a non-strict
+    # matching mode or an unexpected redirect_uri_type fails closed, so an
+    # already-drifted provider cannot pass merely because the reconciliation
+    # writer normally replaces the list. The redirect URI list is the contract's
+    # anti-open-redirect boundary (runbook: "no wildcard, prefix or regex
+    # matching").
     redirect_uris = provider.get("redirect_uris") or []
+    expected_redirect_targets = (
+        (expected_redirect, "authorization"),
+        (expected_cli_callback, "authorization"),
+        (expected_logout, "logout"),
+    )
 
-    def redirect_registered(url, uri_type):
-        for entry in redirect_uris:
-            if not isinstance(entry, dict):
-                continue
-            if same_url(entry.get("url"), url) \
-                    and str(entry.get("redirect_uri_type")) == uri_type \
-                    and str(entry.get("matching_mode")) == "strict":
-                return True
-        return False
+    def normalize_redirect_url(url):
+        # Same normalization the entry matcher always applied: a trailing slash
+        # is not a different redirect target.
+        return str(url or "").rstrip("/")
 
-    expect(redirect_registered(expected_redirect, "authorization"), "AUTHENTIK_PROVIDER_REDIRECT_URI",
+    def redirect_tuple(entry):
+        """Normalize one API entry into the comparable (url, type, mode) tuple."""
+        if not isinstance(entry, dict):
+            return (f"<malformed entry: {type(entry).__name__}>", "", "")
+        return (
+            normalize_redirect_url(entry.get("url")),
+            str(entry.get("redirect_uri_type", "")),
+            str(entry.get("matching_mode", "")),
+        )
+
+    def render_redirect(entry_tuple):
+        url, uri_type, matching_mode = entry_tuple
+        return (f"(url={url!r}, redirect_uri_type={uri_type!r}, "
+                f"matching_mode={matching_mode!r})")
+
+    def render_redirect_list(entries, limit=5):
+        rendered = ", ".join(entries[:limit])
+        if len(entries) > limit:
+            rendered += f", ... (+{len(entries) - limit} more)"
+        return rendered
+
+    expected_redirect_tuples = [
+        (normalize_redirect_url(url), uri_type, "strict")
+        for url, uri_type in expected_redirect_targets
+    ]
+    actual_redirect_tuples = [redirect_tuple(entry) for entry in redirect_uris]
+
+    def strict_entry_registered(url, uri_type):
+        return (normalize_redirect_url(url), uri_type, "strict") in actual_redirect_tuples
+
+    expect(strict_entry_registered(expected_redirect, "authorization"), "AUTHENTIK_PROVIDER_REDIRECT_URI",
            f"strict authorization redirect URI {expected_redirect} is registered",
            f"the strict authorization redirect URI {expected_redirect} is not registered")
-    expect(redirect_registered(expected_cli_callback, "authorization"), "AUTHENTIK_PROVIDER_CLI_CALLBACK_URI",
+    expect(strict_entry_registered(expected_cli_callback, "authorization"), "AUTHENTIK_PROVIDER_CLI_CALLBACK_URI",
            f"strict Argo CD CLI callback URI {expected_cli_callback} is registered",
            f"the strict Argo CD CLI callback URI {expected_cli_callback} is not registered")
-    expect(redirect_registered(expected_logout, "logout"), "AUTHENTIK_PROVIDER_LOGOUT_REDIRECT_URI",
+    expect(strict_entry_registered(expected_logout, "logout"), "AUTHENTIK_PROVIDER_LOGOUT_REDIRECT_URI",
            f"strict logout redirect URI {expected_logout} is registered",
            f"the strict logout redirect URI {expected_logout} is not registered")
+
+    # Completeness of the collection: exactly the expected strict tuples, once
+    # each. Only non-secret contract values are rendered in the detail.
+    expected_rendered_redirects = sorted(render_redirect(item) for item in expected_redirect_tuples)
+    actual_rendered_redirects = sorted(render_redirect(item) for item in actual_redirect_tuples)
+    extra_redirects = sorted(set(actual_rendered_redirects) - set(expected_rendered_redirects))
+    missing_redirects = sorted(set(expected_rendered_redirects) - set(actual_rendered_redirects))
+    duplicate_redirects = sorted(
+        {item for item in actual_rendered_redirects if actual_rendered_redirects.count(item) > 1}
+    )
+    non_strict_redirects = sorted(
+        render_redirect(item) for item in actual_redirect_tuples if item[2] != "strict"
+    )
+    unexpected_type_redirects = sorted(
+        render_redirect(item) for item in actual_redirect_tuples
+        if item[1] not in ("authorization", "logout")
+    )
+
+    if not (extra_redirects or missing_redirects or duplicate_redirects
+            or non_strict_redirects or unexpected_type_redirects):
+        emit("PASS", "AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST",
+             f"the provider redirect_uris allow-list is exactly the three strict contract entries "
+             f"({len(actual_redirect_tuples)} entries; no extra, duplicate, non-strict or unexpected-type entry)")
+    else:
+        reasons = []
+        if extra_redirects:
+            reasons.append(f"unexpected extra entries: {render_redirect_list(extra_redirects)}")
+        if missing_redirects:
+            reasons.append(f"missing expected entries: {render_redirect_list(missing_redirects)}")
+        if duplicate_redirects:
+            reasons.append(f"duplicate entries: {render_redirect_list(duplicate_redirects)}")
+        if non_strict_redirects:
+            reasons.append(
+                "entries whose matching_mode is not 'strict': "
+                f"{render_redirect_list(non_strict_redirects)}"
+            )
+        if unexpected_type_redirects:
+            reasons.append(
+                "entries with an unexpected redirect_uri_type: "
+                f"{render_redirect_list(unexpected_type_redirects)}"
+            )
+        emit("FAIL", "AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST",
+             "the provider redirect_uris allow-list is not exactly the three strict contract entries; "
+             + "; ".join(reasons))
+        failures.append("AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST")
 
     mapped_pks = [str(item.get("pk") if isinstance(item, dict) else item)
                   for item in (provider.get("property_mappings") or [])]

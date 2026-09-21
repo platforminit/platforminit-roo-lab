@@ -232,3 +232,252 @@ python3 tools/task_controller/taskctl.py submit P-CH04.6-T01 --actor platformini
 
 Round-1 findings above were not altered, no branch was switched, no `git push` was
 performed, and no controller state was edited by hand.
+
+---
+
+# Round-2 reviewer verdict (`platforminit-openai-reviewer`)
+
+- **Review scope:** rework diff `fbf22de..HEAD`; changed non-state files remain the two files shown by the diff, with `platform/identity/validate/ch04-6-validate-argocd-sso.sh` unchanged and inspected for compatibility. The requested three-file scope remains within the controller budget; no product source or validator file was modified by this review.
+- **Verdict:** **APPROVE**
+
+## Findings
+
+No remaining correctness, integration, regression, idempotence, workflow-UX, or acceptance-criteria defect was found in the changed scope.
+
+The round-1 P1 is genuinely closed. The Python `request()` error path no longer interpolates the raw Authentik body. JSON responses are recursively redacted by credential-bearing key name and known client-secret/API-token values; non-JSON bodies are withheld by size; and non-JSON successful responses become sanitized errors. The Bash diagnostic filter is applied to each newly identified remote-response/log echo path. Captured payload variables are only sent to `kubectl` and are not echoed. The output-sink inspection found no remaining raw response-body echo that bypasses either the Python sanitizer or the Bash filter.
+
+Acceptance criteria remain satisfied:
+
+1. The provider/application contract remains explicit and current; the round-2 changes do not regress the issuer, redirect, scope, signing, provider/application-link, or single-provider assertions.
+2. Issuer, strict redirect URIs, scopes, and secret references remain validated without printing secret values. The P1 error-path and diagnostic-output controls now cover the previously unprotected paths.
+3. The existing CH04.6 Authentik-to-Argo-Dex implementation remains the only OIDC path; no parallel provider, validator, template, or workflow path was introduced.
+
+The unchanged validator is justified: the rework changes only reconciliation error handling and diagnostic filtering, while the validator's contract assertions and read-only behavior are unaffected. The CH04.5 validators were rerun because they statically consume the changed reconciler and both retained their passing results.
+
+## Evidence independently verified
+
+- WSL/environment and branch gate passed; current branch is `batch/platform-ch04-6-oidc-contract-audit`.
+- `git diff --check fbf22de..HEAD -- <three changed paths>`: rc 0.
+- `bash -n platform/identity/scripts/ch04-6-enable-argocd-sso.sh`: rc 0.
+- `python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py`: 11 controls PASS overall, rc 0.
+- Anti-vacuity: the same harness with `HARNESS_SCRIPT` pointing to the `4b9fa38` pre-fix script: overall FAIL, rc 1; rework controls 7, 9, 10 and 11 failed as expected while the unchanged controls passed.
+- The recorded CH04.5 evidence is reused: identity-model-contract `pass=41 warn=0 fail=0`, and cross-consumer `pass=27 warn=0 fail=0`; no inspection finding invalidated that evidence.
+- The live CH04.6 validator remains intentionally unpassed: `FAIL | AUTHENTIK_ROLLOUT`, rc 1, because `kubectl` is unavailable in this WSL workspace.
+
+## Residual risks handed to security review / release
+
+- Live cluster/runtime behavior remains unproven and requires the future approved workflow run.
+- Bash redaction is key-name based and not JSON-aware; unknown returned credentials in free prose under non-credential-like keys can remain a residual concern. Python's API error path additionally scrubs values held by the process.
+- Diagnostic usability is intentionally reduced for credential-bearing lines, and JSON error bodies are re-emitted with values replaced.
+- The client secret remains present in a `kubectl -p` argument and may be visible in the host process table; this is unchanged and is handed to the security reviewer as a separate exposure concern, not a blocker for this output-disclosure P1.
+- `docs/reviews/**` is the mandated evidence exception outside controller `allowedFiles`.
+- The stale `platform/identity/README.md` statement about `oidc.authentik.clientSecret` remains an out-of-scope follow-up.
+
+## Required controller transition
+
+The exact transition command to record this verdict is:
+
+```bash
+python3 tools/task_controller/taskctl.py review P-CH04.6-T01 --actor platforminit-openai-reviewer --verdict approve --report docs/reviews/P-CH04.6-T01.md
+```
+
+---
+
+# Security-remediation addendum — round 3 (`platforminit-deepseek-coder`)
+
+- **Stage:** implementation (security remediation) for `P-CH04.6-T01`, addressing the single `SEC-01`
+  finding of [`docs/security-reviews/P-CH04.6-T01.md`](../../docs/security-reviews/P-CH04.6-T01.md:10).
+- **Branch:** `batch/platform-ch04-6-oidc-contract-audit` (not switched); change base `8371154`;
+  pre-remediation head `734dcc7`.
+- **Round-1 and round-2 content above is preserved verbatim**; no earlier finding was removed, rewritten
+  or downgraded.
+- **Changed non-state files (2):** [`ch04-6-validate-argocd-sso.sh`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:1)
+  (primary fix) and [`ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:40)
+  (contract text now states the completeness assertion). This evidence file, the previously untracked
+  security report and `tasks/**` complete the commit. The reconciliation script and
+  `platform/identity/integrations/argocd/**` were **not** touched, so the round-1 P1 fix at
+  [`request()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:366) is untouched and cannot
+  regress; no controller state was edited by hand.
+
+## S1. Defect (restated precisely)
+
+`SEC-01` (Medium): the validator's redirect assertions were inclusive only. `redirect_registered()` proved
+that each expected callback/logout URI existed with `matching_mode: strict`, but nothing asserted that the
+provider's complete `redirect_uris` collection contained **only** those three entries. An already-drifted
+provider carrying an extra wildcard/prefix/regex redirect therefore passed all three redirect checks,
+contradicting the runbook contract "no wildcard, prefix or regex matching". The validator must not depend
+solely on the reconciliation writer's `PATCH` having replaced the list.
+
+## S2. Fix (one assertion path, still inside `PYCONTRACT`)
+
+The existing `PYCONTRACT` block was extended — no second parsing path, no new validator, no new script:
+
+1. The three expected contract targets are declared once at
+   [`expected_redirect_targets`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:438) and
+   normalized through `normalize_redirect_url()` (trailing-slash insensitive, the normalization the entry
+   matcher always applied).
+2. Each live entry is normalized into a comparable `(url, redirect_uri_type, matching_mode)` tuple by
+   `redirect_tuple()`; a non-dict entry becomes a malformed tuple, so it fails closed instead of being
+   skipped as before.
+3. The three unchanged per-URI checks now read from that tuple set via
+   [`strict_entry_registered()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:476), so
+   their check codes, `PASS | CODE | detail` shape and pass criteria are preserved.
+4. The completeness assertion at
+   [`AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:489)
+   compares the **full sorted rendered set** live-vs-expected and fails on any of: extra entry, duplicate
+   entry, `matching_mode` other than `strict`, `redirect_uri_type` outside `authorization`/`logout`. The
+   failure detail lists each reason with the offending tuples (contract URLs and modes only — no secret
+   value is read, printed or hashed). The check emits `PASS` at
+   [`line 508`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:508), emits `FAIL` and
+   appends the check name to `failures` at
+   [`line 529`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:529), so the block's
+   existing `exit 1` fail-fast and the validator's invocation contract
+   (`bash platform/identity/validate/ch04-6-validate-argocd-sso.sh`, `0` = all PASS/WARN, `1` = first FAIL)
+   are unchanged.
+5. The file header documents the new completeness assertion, and the runbook states the same invariant for
+   operators at
+   [`ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:44).
+
+Expected set (unchanged from the reviewed contract): `(https://argocd.<base>/api/dex/callback, authorization, strict)`,
+`(https://localhost:8085/auth/callback, authorization, strict)`, `(https://argocd.<base>/logout, logout, strict)`.
+
+## S3. New regression controls (same offline evidence channel)
+
+The round-1/round-2 harness was extended, not replaced, at the same path
+`/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py` (transient, outside the repository). It now
+drives **18** controls: the unchanged `control-1..6`, `negative-3..6` and `rework-7..11`, plus seven new
+`SEC-01` controls that feed a stubbed Authentik API model into the validator's own `PYCONTRACT` block:
+
+| Control | Fixture | Expected |
+|---|---|---|
+| `remediation-12-extra-wildcard-redirect-fails` | three strict entries + `https://*.evil.example/cb`, `strict` | FAIL closed |
+| `remediation-13-extra-prefix-redirect-fails` | three strict entries + `https://argocd.<base>/api`, `prefix` | FAIL closed |
+| `remediation-14-extra-regex-redirect-fails` | three strict entries + `^https://evil\.example/.*$`, `regex` | FAIL closed |
+| `remediation-15-duplicate-redirect-fails` | three strict entries + duplicate dex callback | FAIL closed |
+| `remediation-16-non-strict-matching-mode-fails` | dex callback loosened to `prefix` | FAIL closed |
+| `remediation-17-unexpected-redirect-type-fails` | three strict entries + `/device` with type `token` | FAIL closed |
+| `remediation-18-normalized-order-and-trailing-slash-passes` | same three entries reordered, callback with a trailing slash | PASS (no false positive) |
+
+Anti-vacuity: `HARNESS_SCRIPT` points the same harness at a pre-fix copy of the validator, so the new
+controls are shown to be real detectors rather than always-green assertions.
+
+## S4. Exact commands and observed results
+
+```bash
+# environment/branch gate
+pwd && (grep -Eiq "microsoft|wsl" /proc/version && echo WSL_OK) && id -un && git branch --show-current
+# /mnt/d/SYSADMIN/platforminit-roo-lab
+# WSL_OK
+# hattila
+# batch/platform-ch04-6-oidc-contract-audit        (HEAD 734dcc7)
+
+bash -n platform/identity/validate/ch04-6-validate-argocd-sso.sh
+# rc=0   (BASH_N_VALIDATOR_OK)
+
+python3 /tmp/platforminit-evidence/P-CH04.6-T01-py-block-check.py
+# PY_BLOCK_COMPILE_OK PYALGS lines=10
+# PY_BLOCK_COMPILE_OK PYISSUER lines=11
+# PY_BLOCK_COMPILE_OK PYCONTRACT lines=352
+# PY_BLOCKS_COMPILE_OK count=3   rc=0
+
+git diff --check
+# required validator: rc=0, no output
+
+python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py
+# PASS | control-1-correct-provider                   | rc=0 | PASS=29 WARN=0 FAIL=0
+# PASS | control-2-secret-value-never-printed         | client_secret and API-token sentinels absent from validator output
+# PASS | negative-3-missing-redirect-uri              | rc=1 | fails closed on a missing CLI callback entry
+# PASS | negative-4-missing-ch04-5-group              | rc=1 | fails closed when the CH04.5 group is absent
+# PASS | negative-5-duplicate-provider-path           | rc=1 | fails closed on a duplicate provider path
+# PASS | negative-6-symmetric-signing-risk            | rc(RS256)=0 rc(HS256)=1 | symmetric-only HS* signing rejected
+# PASS | rework-7-error-body-client-secret-not-printed| echoed client_secret and the attributes-bag token never reach the error output while the failure still raises
+# PASS | rework-8-error-still-diagnosable             | status code and non-secret field names still reported
+# PASS | rework-9-non-json-body-withheld              | non-JSON body summarised by size
+# PASS | rework-10-token-echo-under-unexpected-key    | credential under a non-secret key scrubbed by value
+# PASS | rework-11-bash-diagnostic-redactor           | removed every sentinel, kept non-secret context
+# PASS | remediation-12-extra-wildcard-redirect-fails | FAIL | AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST | ... unexpected extra entries: (url='https://*.evil.example/cb', redirect_uri_type='authorization', matching_mode='strict')
+# PASS | remediation-13-extra-prefix-redirect-fails   | FAIL | AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST | ... unexpected extra entries: (url='https://argocd.sysadminhomelab.hu/api', ... matching_mode='prefix'); entries whose matching_mode is not 'strict': (same entry)
+# PASS | remediation-14-extra-regex-redirect-fails    | FAIL | AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST | ... unexpected extra entries: (url='^https://evil\\.example/.*$', ... matching_mode='regex'); entries whose matching_mode is not 'strict': (same entry)
+# PASS | remediation-15-duplicate-redirect-fails      | FAIL | AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST | ... duplicate entries: (url='https://argocd.sysadminhomelab.hu/api/dex/callback', ... matching_mode='strict')
+# PASS | remediation-16-non-strict-matching-mode-fails| FAIL | AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST | ... unexpected extra entries + missing expected entries + entries whose matching_mode is not 'strict': (url='https://argocd.sysadminhomelab.hu/api/dex/callback', ... matching_mode='prefix')
+# PASS | remediation-17-unexpected-redirect-type-fails| FAIL | AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST | ... entries with an unexpected redirect_uri_type: (url='https://argocd.sysadminhomelab.hu/device', redirect_uri_type='token', matching_mode='strict')
+# PASS | remediation-18-normalized-order-and-trailing-slash-passes | allowlist PASS emitted, exact set accepted
+# harness overall: PASS (18 controls)   rc=0
+
+git show 734dcc7:platform/identity/validate/ch04-6-validate-argocd-sso.sh \
+  > /tmp/platforminit-evidence/P-CH04.6-T01-prefix-validator.sh
+HARNESS_SCRIPT=/tmp/platforminit-evidence/P-CH04.6-T01-prefix-validator.sh \
+  python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py
+# FAIL | control-1-correct-provider                  | rc=0 | PASS=28 WARN=0 FAIL=0        <- pre-fix revision has 28 checks, no allowlist assertion
+# PASS | control-2-secret-value-never-printed        | ...  (unchanged controls still pass)
+# PASS | rework-7..11                              | ...  (reconciler untouched, redaction controls still pass)
+# FAIL | remediation-12-extra-wildcard-redirect-fails | no allowlist FAIL emitted        <- SEC-01 reproduced
+# FAIL | remediation-13-extra-prefix-redirect-fails  | no allowlist FAIL emitted        <- SEC-01 reproduced
+# FAIL | remediation-14-extra-regex-redirect-fails   | no allowlist FAIL emitted        <- SEC-01 reproduced
+# FAIL | remediation-15-duplicate-redirect-fails     | no allowlist FAIL emitted        <- SEC-01 reproduced
+# FAIL | remediation-16-non-strict-matching-mode-fails | no allowlist FAIL emitted      <- SEC-01 reproduced
+# FAIL | remediation-17-unexpected-redirect-type-fails | no allowlist FAIL emitted      <- SEC-01 reproduced
+# FAIL | remediation-18-normalized-order-and-trailing-slash-passes | rc=0 fails=0   (positive marker absent pre-fix)
+# harness overall: FAIL (18 controls)   rc=1
+
+bash platform/identity/validate/ch04-6-validate-argocd-sso.sh
+# FAIL | AUTHENTIK_ROLLOUT | authentik-server rollout is not healthy   rc=1
+# (not treated as passing: kubectl is absent in this WSL workspace)
+```
+
+Anti-vacuity conclusion: against the pre-fix revision every `SEC-01` fixture is accepted
+(`rc=0`, no allowlist line at all) and the new controls fail, so they genuinely detect the missing
+completeness assertion; against the fixed revision the same fixtures fail closed while the correct
+three-entry set still passes.
+
+Reused unchanged evidence (explicitly **not** re-run):
+
+- `rework-7..11` and the `control-1..6`/`negative-3..6` controls: re-executed in this pass and still
+  passing, and the round-2 recorded results for the rework controls remain valid because the
+  reconciliation script is byte-identical to the reviewed revision.
+- CH04.5 validators: the earlier `41/0/0` and `27/0/0` results are **reused, not re-run** — both
+  statically consume only the untouched reconciliation script
+  (`grep -n ch04-6 platform/identity/validate/ch04-5-validate-*.sh` → `scripts/ch04-6-enable-argocd-sso.sh`
+  at lines 54, 138 and 49); neither reads the validator changed here.
+
+Evidence artifacts (outside the repository, transient):
+
+- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py` (extended, 18 controls)
+- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness-remediation.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness-prefix.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-prefix-validator.sh` (pre-fix revision `734dcc7`)
+- `/tmp/platforminit-evidence/P-CH04.6-T01-py-block-check.py`
+
+## S5. Acceptance criteria after remediation
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| 1. Provider/application contract explicit and current | MET (unchanged) | Redirect contract now includes completeness; runbook states it; nothing else in the contract moved. |
+| 2. Issuer, redirect URI, scopes and secret references validated without exposing secret values | MET | Inclusive checks preserved **plus** the completeness assertion; `control-2` proves no client-secret/API-token sentinel reaches validator output, and the new failure detail renders only contract URLs/modes. |
+| 3. Reuses the existing implementation instead of a parallel OIDC path | MET (unchanged) | Same validator, same `PYCONTRACT` block, same invocation contract; no new script, provider path, template or workflow. |
+
+Explicitly out of scope for this batch (unchanged accepted residual risks): `kubectl -p` argv credential
+exposure; key-name/prose-dependent bash redaction; legacy `oidc.authentik.clientSecret` warning vs removal;
+[`platform/identity/README.md`](../../platform/identity/README.md:78) documentation drift; and the absence of
+live evidence because `kubectl` is unavailable in this workspace.
+
+## S6. Residual risk handed to the reviewers
+
+1. **Live evidence still does not exist.** All remediation evidence is offline/static; the live validator
+   reports `FAIL | AUTHENTIK_ROLLOUT` (no `kubectl`). The next approved `04.6 - Enable Argo CD SSO` run
+   remains the only live proof that the real provider carries exactly the three strict entries.
+2. **Field-absence behaviour is unchanged.** If a deployed Authentik API version does not serialize
+   `redirect_uris`, the empty collection still fails the per-URI checks (and now also the completeness
+   check) rather than warning; this preserves the previous fail-closed stance but is worth reviewer
+   confirmation against the deployed API version.
+3. **Malformed entries fail closed.** A non-dict `redirect_uris` element now fails the completeness check
+   instead of being skipped by the entry matcher.
+4. `docs/reviews/**` remains the mandated evidence exception outside the controller `allowedFiles`.
+
+## S7. Controller transition
+
+This remediation child records exactly one transition and routes nothing onward:
+
+```text
+python3 tools/task_controller/taskctl.py submit P-CH04.6-T01 --actor platforminit-deepseek-coder
+```

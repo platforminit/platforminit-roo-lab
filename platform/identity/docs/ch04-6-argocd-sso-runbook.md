@@ -41,6 +41,13 @@ The redirect URI allow-list is strict: no wildcard, prefix or regex matching.
 Adding, removing or loosening a redirect URI is a contract change, not a routine
 reconciliation.
 
+The validator asserts that allow-list for completeness, not only for inclusion:
+the live provider `redirect_uris` collection must contain exactly the three
+entries above with `matching_mode: strict`. An extra entry such as a wildcard,
+prefix or regex redirect, a duplicate, a non-strict matching mode or an
+unexpected `redirect_uri_type` fails the validation run even when the
+reconciliation writer did not produce the list last.
+
 ### Issuer derivation
 
 The issuer is never hardcoded. The reconciliation resolves `AUTHENTIK_BASE_URL`

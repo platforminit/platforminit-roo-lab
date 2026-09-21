@@ -481,3 +481,217 @@ This remediation child records exactly one transition and routes nothing onward:
 ```text
 python3 tools/task_controller/taskctl.py submit P-CH04.6-T01 --actor platforminit-deepseek-coder
 ```
+
+---
+
+# Round-3 reviewer verdict (`platforminit-openai-reviewer`)
+
+- **Review scope:** remediation diff `734dcc7..HEAD`; three requested paths were checked. The diff contains only [`ch04-6-validate-argocd-sso.sh`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:1) and [`ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:1); [`ch04-6-enable-argocd-sso.sh`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1) is byte-identical to `734dcc7`.
+- **Verdict:** **REQUEST_CHANGES**
+
+## Consolidated finding
+
+### P1 — Redirect URI normalization is incomplete and can produce false failures
+
+The new tuple comparison at [`normalize_redirect_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:444) removes trailing slashes only. It does not normalize the case-insensitive URL components (at minimum the scheme and authority/host), while the expected values are constructed in lowercase at [`expected_redirect_targets`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:438). Consequently, a semantically equivalent live entry such as `HTTPS://ARGOCD.<domain>/api/dex/callback` or a host-cased equivalent is represented as an extra tuple and the lowercase expected tuple is represented as missing. The completeness assertion at [`line 506`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:506) then fails despite the provider carrying the same three redirect targets. This contradicts the round-3 requirement that normalization avoid false failures.
+
+Fix the normalizer to canonicalize only URL semantics that are case-insensitive (scheme and hostname, while preserving case-sensitive path/query/fragment semantics), then add a focused positive harness control covering equivalent scheme/host casing. Do not lowercase the complete URL, because redirect paths remain case-sensitive.
+
+## SEC-01 assessment
+
+The remediation closes the original inclusive-only gap for the tested contract: the full live collection is converted to `(url, redirect_uri_type, matching_mode)` tuples; extra wildcard/prefix/regex entries, duplicates, non-strict modes, unexpected types, malformed entries, and missing entries fail closed. Ordering is harmless, and trailing-slash normalization is consistent with the existing matcher. The duplicate check is separate from set subtraction, so duplicate collapsing cannot hide an exact duplicate.
+
+SEC-01 is therefore **not fully closed for approval** until the case-normalization false-positive is fixed and tested. The failure detail itself is credential-safe for the reviewed contract: it renders only redirect URL/type/mode tuples and no client secret, API token, or secret reference value. The absent/empty `redirect_uris` behavior is intentionally fail-closed: the three per-entry checks and completeness assertion fail rather than downgrade the contract to a warning when an API response omits the field. That behavior is documented in the existing round-3 residual-risk text and is acceptable.
+
+## Acceptance criteria
+
+1. **Provider/application contract explicit and current:** met for the reviewed changes; the runbook and validator state the exact three-entry strict allow-list and preserve the existing provider/application linkage.
+2. **Issuer, redirect URI, scopes and secret references validated without exposing secret values:** not yet approvable because the redirect validator can falsely reject semantically equivalent URL casing. Secret safety and the round-1 error-path redaction remain intact.
+3. **Reuse of existing implementation:** met; no parallel OIDC path, script, workflow, or template was introduced.
+
+## Evidence independently run
+
+- WSL, repository, branch, and remote gate passed; current branch is `batch/platform-ch04-6-oidc-contract-audit`.
+- `git diff --check 734dcc7..HEAD -- <three paths>`: rc 0.
+- `bash -n platform/identity/validate/ch04-6-validate-argocd-sso.sh`: rc 0.
+- `python3 /tmp/platforminit-evidence/P-CH04.6-T01-py-block-check.py`: `PY_BLOCKS_COMPILE_OK count=3`, rc 0; the three blocks were `PYALGS`, `PYISSUER`, and `PYCONTRACT` (`352` lines).
+- `python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py`: all 18 controls passed, overall rc 0, including controls 12–17 for extra/duplicate/non-strict/unexpected entries and control 18 for reordered entries plus trailing slash.
+- Anti-vacuity with `HARNESS_SCRIPT=/tmp/platforminit-evidence/P-CH04.6-T01-prefix-validator.sh`: overall rc 1 as required; controls 12–17 reported `no allowlist FAIL emitted` against `734dcc7`.
+- Round-1 P1 fix verified intact: the reconciler is byte-identical to `734dcc7`; its [`request()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:366) sanitized error path and [`redact_secret_fields()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:64) diagnostic sinks remain present.
+- CH04.5 validator evidence is reused, not rerun: path-scoped inspection confirms both validators statically read only the unchanged CH04.6 reconciler, not the changed validator.
+- Live validation remains unavailable and was not treated as a pass: the expected `AUTHENTIK_ROLLOUT` failure occurs because `kubectl` is unavailable in this WSL workspace.
+
+## Residual-risk classification
+
+- **Blocker for approval:** incomplete URL normalization at [`normalize_redirect_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:444), as detailed above.
+- **Accepted follow-up, not a new blocker:** no live runtime evidence; only an approved `04.6` workflow run proves the deployed provider's exact three strict entries.
+- **Accepted intentional behavior:** absent/empty or unserialized `redirect_uris` fails closed rather than warns; this is safer for the redirect allow-list and is documented.
+- **Accepted security-review follow-ups, not re-raised:** [`kubectl -p`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1) argv exposure, key-name/prose-dependent bash redaction, legacy `oidc.authentik.clientSecret` warning-versus-removal, and [`platform/identity/README.md`](../../platform/identity/README.md:78) drift. The round-1 security acceptance remains unchanged.
+- **Evidence-path exception:** [`docs/reviews/**`](P-CH04.6-T01.md:1) and [`docs/security-reviews/**`](../security-reviews/P-CH04.6-T01.md:1) remain mandated evidence paths outside controller `allowedFiles`.
+
+## Required controller transition
+
+```bash
+python3 tools/task_controller/taskctl.py review P-CH04.6-T01 --actor platforminit-openai-reviewer --verdict request_changes --report docs/reviews/P-CH04.6-T01.md
+```
+
+---
+
+# Round-4 remediation (`platforminit-deepseek-coder`)
+
+Round-4 implements the single consolidated defect from the round-3 verdict above and changes nothing
+else. The round-3 reviewer verdict was committed as-is; no reviewer text was rewritten or deleted.
+
+## R1. Defect (restated precisely)
+
+The round-3 normalizer at `normalize_redirect_url()` applied `str(url or "").rstrip("/")` only. Because
+the expected targets are built in lowercase at
+[`expected_redirect_targets`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:468), a live
+provider entry written as `HTTPS://ARGOCD.<domain>/api/dex/callback` — or any equivalent differing only
+in scheme/host casing — canonicalized to itself instead of to the lowercase contract value. The
+completeness comparison at
+[`AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:558)
+then reported the same three targets simultaneously as `unexpected extra entries` and
+`missing expected entries`, so a provider carrying exactly the correct three strict targets failed.
+
+## R2. Fix — one canonical normalizer for every URL comparison
+
+A single module-level helper now owns URL normalization:
+
+- [`canonical_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:316) strips the
+  trailing slash (unchanged behaviour) and then canonicalizes only the case-insensitive URL semantics
+  through `urllib.parse.urlsplit`/`urlunsplit`: `scheme` and `netloc` (host/authority) are lowercased,
+  while `path`, `query` and `fragment` are re-emitted byte-exact, so redirect paths stay
+  case-sensitive. A value without scheme and netloc (relative, placeholder, or a regex-shaped entry such
+  as `^https://evil\.example/.*$`) is returned unchanged, so extra-entry detection and the
+  credential-free failure rendering are unaffected.
+- Every URL comparison in the block consumes that one helper, so no path can disagree about casing and
+  none can be bypassed by casing:
+  [`same_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:343) (the `logout_uri`
+  field check), [`redirect_tuple()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:478)
+  (each live entry), [`expected_redirect_tuples`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:499)
+  (expected side of the completeness comparison) and
+  [`strict_entry_registered()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:505) (the
+  per-URI matcher). The nested `normalize_redirect_url()` shim was removed rather than duplicated, so the
+  validator now contains exactly one normalization implementation.
+- Unchanged: the `PASS | CODE | detail` output format, the fail-fast `exit 1`, the single `PYCONTRACT`
+  parsing path, the completeness assertion itself (extra / duplicate / non-strict / unexpected-type
+  entries), the round-1 error-path redaction, and the validator invocation contract.
+- The file header documents the normalization semantics for the operator reading the validator.
+
+Deliberately not implemented by lowercasing the whole URL: a path-cased difference must still fail
+closed, which control 20 asserts.
+
+## R3. New harness controls (same offline evidence channel)
+
+The harness at `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py` (transient, outside the
+repository) was extended, not replaced: controls 1-6, `rework-7..11` and `remediation-12..18` are
+unchanged, and two controls were added.
+
+| Control | Fixture | Expected |
+|---|---|---|
+| `remediation-19-scheme-and-host-case-variant-passes` | the same three contract entries, reordered, with scheme+host uppercased (`HTTPS://ARGOCD.SYSADMINHOMELAB.HU/api/dex/callback`, `HTTPS://LOCALHOST:8085/auth/callback`, `HTTPS://ARGOCD.SYSADMINHOMELAB.HU/logout`), paths untouched | PASS: allowlist `PASS` emitted, no extra/missing tuple |
+| `remediation-20-path-case-difference-still-fails` | dex callback path written `/API/dex/callback` | FAIL closed with both `unexpected extra entries` and `missing expected entries` |
+
+## R4. Exact commands and observed results
+
+```bash
+# environment/branch gate
+pwd && (grep -Eiq "microsoft|wsl" /proc/version && echo WSL_OK) && id -un && git branch --show-current
+# /mnt/d/SYSADMIN/platforminit-roo-lab
+# WSL_OK
+# hattila
+# batch/platform-ch04-6-oidc-contract-audit        (HEAD ab3565d)
+
+bash -n platform/identity/validate/ch04-6-validate-argocd-sso.sh
+# BASH_N_VALIDATOR_OK   rc=0
+
+python3 /tmp/platforminit-evidence/P-CH04.6-T01-py-block-check.py
+# PY_BLOCK_COMPILE_OK PYALGS lines=10
+# PY_BLOCK_COMPILE_OK PYISSUER lines=11
+# PY_BLOCK_COMPILE_OK PYCONTRACT lines=378
+# PY_BLOCKS_COMPILE_OK count=3   rc=0
+
+git diff --check
+# required validator: rc=0, no output
+
+python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py
+# PASS | control-1-correct-provider                       | rc=0 | PASS=29 WARN=0 FAIL=0
+# PASS | control-2-secret-value-never-printed             | ... (unchanged)
+# PASS | negative-3..6 / rework-7..11 / remediation-12..18 | ... (unchanged, still passing)
+# PASS | remediation-19-scheme-and-host-case-variant-passes | scheme/host-upper-cased three-entry set accepted as equivalent
+# PASS | remediation-20-path-case-difference-still-fails | FAIL | AUTHENTIK_PROVIDER_REDIRECT_URI_ALLOWLIST | ... unexpected extra entries: (url='https://argocd.sysadminhomelab.hu/API/dex/callback', redirect_uri_type='authorization', matching_mode='strict'); missing expected entries: (url='https://argocd.sysadminhomelab.hu/api/dex/callback', ...) | path case difference rejected (extra + missing reported)
+# harness overall: PASS (20 controls)   rc=0
+
+# anti-vacuity: the new positive control must fail against the pre-fix validator
+git show ab3565d:platform/identity/validate/ch04-6-validate-argocd-sso.sh \
+  > /tmp/platforminit-evidence/P-CH04.6-T01-round3-prefix-validator.sh
+HARNESS_SCRIPT=/tmp/platforminit-evidence/P-CH04.6-T01-round3-prefix-validator.sh \
+  python3 /tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py
+# FAIL | remediation-19-scheme-and-host-case-variant-passes | rc=1 fails=4    <- P1 reproduced (3 per-URI checks + allowlist fail on casing)
+# PASS | remediation-20-path-case-difference-still-fails | ... path case difference rejected
+# harness overall: FAIL (20 controls)   rc=1
+
+bash platform/identity/validate/ch04-6-validate-argocd-sso.sh
+# FAIL | AUTHENTIK_ROLLOUT | authentik-server rollout is not healthy   rc=1
+# (not treated as passing: kubectl is absent in this WSL workspace)
+```
+
+Anti-vacuity: `remediation-19` fails against the `ab3565d` validator copy (`rc=1`, four failures — the
+three per-URI checks plus the completeness assertion), so the control genuinely detects the casing
+defect; the same control passes against the fixed validator. `remediation-20` passes on both revisions,
+confirming the fix canonicalizes scheme/host without collapsing path case.
+
+Reused unchanged evidence (explicitly **not** re-run):
+
+- CH04.5 validators: the recorded `41/0/0` (identity-model-contract) and `27/0/0` (cross-consumer)
+  results remain valid because this round changes no input they consume. `grep -n ch04-6` shows both
+  statically read only `platform/identity/scripts/ch04-6-enable-argocd-sso.sh` (lines 54/138 and 49),
+  which is byte-identical to `ab3565d` (sha256
+  `270c761f77daa0b5355d587a1667f1a30143e060acab7cbccb2f0c0822fd8945`); no CH04.5 validator references
+  the changed validator.
+- The `rework-7..11` redaction controls were re-executed in this pass and still pass; the reconciler is
+  untouched.
+
+Evidence artifacts (outside the repository, transient):
+
+- `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py` (extended, 20 controls)
+- `/tmp/platforminit-evidence/P-CH04.6-T01-round4-harness.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-round4-harness-prefix.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-round3-prefix-validator.sh` (pre-fix `ab3565d`)
+- `/tmp/platforminit-evidence/P-CH04.6-T01-round4-py-block-check.log`
+- `/tmp/platforminit-evidence/P-CH04.6-T01-round4-live.log`
+
+## R5. Acceptance criteria after the round-4 remediation
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| 1. Provider/application contract explicit and current | MET (unchanged) | The three strict entries are asserted per-URI and as a complete collection; normalization semantics are now documented in the file header. |
+| 2. Issuer, redirect URI, scopes and secret references validated without exposing secret values | MET | Case-insensitive scheme/host and case-sensitive path behaviour asserted by controls 19/20; `control-2` still proves no client-secret/API-token sentinel reaches output; failure details render contract URLs/types/modes only. |
+| 3. Reuses the existing implementation instead of a parallel OIDC path | MET (unchanged) | Same validator, same `PYCONTRACT` block, same invocation contract; no new script, provider path, template or workflow. |
+
+## R6. Residual risk handed to the reviewers
+
+1. **Live evidence still does not exist.** All round-4 evidence is offline/static; the live validator
+   reports `FAIL | AUTHENTIK_ROLLOUT` because `kubectl` is absent. Only an approved
+   `04.6 - Enable Argo CD SSO` run proves the deployed provider carries exactly the three strict entries.
+2. **`same_url()` semantics widened for `logout_uri`.** The `logout_uri` field check now also accepts a
+   case-variant scheme/host on that one value. This applies the same RFC 3986 rule the redirect matcher
+   uses and removes the previous inconsistency where the allow-list accepted such an entry while the
+   `logout_uri` check rejected it; a differently cased *path* still fails. Reviewers should confirm they
+   accept this as part of the same fix rather than as a behaviour expansion.
+3. **Unchanged accepted risks:** `matching_mode` and `redirect_uri_type` remain compared
+   case-sensitively (fail-closed); an absent or empty `redirect_uris` collection still fails closed
+   rather than warns; the `kubectl -p` argv exposure, the key-name/prose-dependent bash redaction, the
+   legacy `oidc.authentik.clientSecret` warn-vs-remove choice and the
+   [`platform/identity/README.md`](../../platform/identity/README.md:78) drift remain accepted
+   follow-ups.
+4. `docs/reviews/**` remains the mandated evidence exception outside the controller `allowedFiles`.
+
+## R7. Controller transition
+
+This remediation child records exactly one transition and routes nothing onward:
+
+```text
+python3 tools/task_controller/taskctl.py submit P-CH04.6-T01 --actor platforminit-deepseek-coder
+```

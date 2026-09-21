@@ -16,7 +16,10 @@ set -euo pipefail
 #      redirect URI allow-list and its completeness (the live redirect_uris
 #      collection must contain exactly the three contract entries, so an extra,
 #      duplicate, non-strict or unexpected-type entry fails closed even when the
-#      reconciliation writer was not the last writer), the scope mappings, the
+#      reconciliation writer was not the last writer). Every URL comparison uses
+#      one canonical normalizer: scheme and host/authority are case-insensitive,
+#      path/query/fragment stay case-sensitive, and a trailing slash is not a
+#      different target. The block also asserts the scope mappings, the
 #      provider/application link and the single-provider/single-application rule
 #      that proves no parallel OIDC path exists
 #   E. the ambiguous secret-reference checks: the dex client secret key and the
@@ -310,8 +313,35 @@ def group_ids(raw):
     return out
 
 
+def canonical_url(value):
+    """Canonicalize only the case-insensitive URL semantics.
+
+    Scheme and host/authority are case-insensitive (RFC 3986), so a live entry
+    written as `HTTPS://ARGOCD.<domain>/api/dex/callback` is the same redirect
+    target as the lowercase contract value. Path, query and fragment stay
+    byte-exact, because redirect paths are case-sensitive, and a trailing slash
+    is still not a different target. This single helper is used by every URL
+    comparison - the logout_uri field check, the per-entry strict matcher and
+    the completeness comparison - so a casing difference can neither produce a
+    false failure nor bypass a check.
+    """
+    raw = str(value or "").rstrip("/")
+    parts = urllib.parse.urlsplit(raw)
+    if not parts.scheme and not parts.netloc:
+        # Relative, placeholder or regex-shaped value: nothing case-insensitive
+        # to canonicalize, so the value is compared exactly as received.
+        return raw
+    return urllib.parse.urlunsplit((
+        parts.scheme.lower(),
+        parts.netloc.lower(),
+        parts.path,
+        parts.query,
+        parts.fragment,
+    ))
+
+
 def same_url(left, right):
-    return str(left or "").rstrip("/") == str(right or "").rstrip("/")
+    return canonical_url(left) == canonical_url(right)
 
 
 # --- A. CH04.5-owned admin group: consumed, never redefined ----------------
@@ -441,17 +471,16 @@ if provider:
         (expected_logout, "logout"),
     )
 
-    def normalize_redirect_url(url):
-        # Same normalization the entry matcher always applied: a trailing slash
-        # is not a different redirect target.
-        return str(url or "").rstrip("/")
-
+    # Both redirect comparisons below (the per-entry matcher and the
+    # completeness comparison) normalize through the single module-level
+    # `canonical_url()` helper, so they cannot disagree about scheme/host casing
+    # or a trailing slash, and neither can be bypassed by casing.
     def redirect_tuple(entry):
         """Normalize one API entry into the comparable (url, type, mode) tuple."""
         if not isinstance(entry, dict):
             return (f"<malformed entry: {type(entry).__name__}>", "", "")
         return (
-            normalize_redirect_url(entry.get("url")),
+            canonical_url(entry.get("url")),
             str(entry.get("redirect_uri_type", "")),
             str(entry.get("matching_mode", "")),
         )
@@ -468,13 +497,13 @@ if provider:
         return rendered
 
     expected_redirect_tuples = [
-        (normalize_redirect_url(url), uri_type, "strict")
+        (canonical_url(url), uri_type, "strict")
         for url, uri_type in expected_redirect_targets
     ]
     actual_redirect_tuples = [redirect_tuple(entry) for entry in redirect_uris]
 
     def strict_entry_registered(url, uri_type):
-        return (normalize_redirect_url(url), uri_type, "strict") in actual_redirect_tuples
+        return (canonical_url(url), uri_type, "strict") in actual_redirect_tuples
 
     expect(strict_entry_registered(expected_redirect, "authorization"), "AUTHENTIK_PROVIDER_REDIRECT_URI",
            f"strict authorization redirect URI {expected_redirect} is registered",

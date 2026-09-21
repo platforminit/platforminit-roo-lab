@@ -1903,7 +1903,7 @@
       "id": "P-CH04.6-T01",
       "track": "platform",
       "order": 210,
-      "status": "needs_review",
+      "status": "in_progress",
       "title": "Audit the existing Authentik OIDC provider contract for Argo CD",
       "description": "Treat the existing CH04.6 implementation as reference-state to verify and harden, not as greenfield work; make provider/application, issuer, redirect, scope and secret-reference ownership explicit.",
       "scope": "platform-identity-sso",
@@ -1966,9 +1966,9 @@
           ]
         },
         "review": {
-          "at": "2026-09-21T18:04:42.284199+00:00",
+          "at": "2026-09-21T19:30:39.663765+00:00",
           "actor": "platforminit-openai-reviewer",
-          "verdict": "approve",
+          "verdict": "request_changes",
           "report": "docs/reviews/P-CH04.6-T01.md"
         },
         "security": {
@@ -2438,5 +2438,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-21T19:26:51.553646+00:00"
+  "updatedAt": "2026-09-21T19:30:39.663801+00:00"
 }

@@ -695,3 +695,53 @@ This remediation child records exactly one transition and routes nothing onward:
 ```text
 python3 tools/task_controller/taskctl.py submit P-CH04.6-T01 --actor platforminit-deepseek-coder
 ```
+
+---
+
+# Round-4 reviewer verdict (`platforminit-openai-reviewer`)
+
+- **Review scope:** `ab3565d..HEAD` for the three declared paths. Only [`platform/identity/validate/ch04-6-validate-argocd-sso.sh`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:316) differs; [`platform/identity/scripts/ch04-6-enable-argocd-sso.sh`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:1) and [`platform/identity/docs/ch04-6-argocd-sso-runbook.md`](../../platform/identity/docs/ch04-6-argocd-sso-runbook.md:1) are byte-identical/unchanged from `ab3565d`.
+- **Verdict:** **APPROVE**
+- **Consolidated findings:** None. The round-3 P1 defect is fixed. [`canonical_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:316) lowercases only scheme and netloc/authority after removing the trailing slash; path, query and fragment remain byte-exact. The same helper is used by [`same_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:343), [`redirect_tuple()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:478), [`expected_redirect_tuples`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:499) and [`strict_entry_registered()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:505). There is no parallel normalization path.
+
+## Independent normalization assessment
+
+Scheme/authority case variants are now accepted without weakening the allow-list: the exact three-entry completeness assertion still independently rejects extras, duplicates, non-strict modes, unexpected types and malformed entries. A path-case difference remains an extra plus missing tuple and fails closed. The residual probes confirmed that default ports, percent-encoding, IDN/punycode, userinfo, IPv6 literals and empty-netloc forms are not normalized; they therefore cannot silently become an accepted contract entry. They may produce false failures for unusual but semantically equivalent spellings, which is an accepted follow-up rather than an allow-list bypass. Query/fragment trailing slash stripping remains existing behavior and is not broadened in this round.
+
+The `same_url()` widening for the single `logout_uri` field is accepted: it applies the same scheme/authority RFC 3986 case rule as the redirect matcher, while retaining path/query/fragment sensitivity.
+
+## Acceptance and regression assessment
+
+1. **Provider/application contract explicit and current:** MET. The runbook and validator preserve the exact three strict entries and provider/application linkage.
+2. **Issuer, redirects, scopes and secret references validated without secret exposure:** MET. The focused harness retained the prior contract checks; the secret-sentinel control and rework controls passed, and redirect diagnostics contain only non-secret URL/type/mode values.
+3. **Existing implementation reused:** MET. No new script, workflow, provider path or template was introduced.
+
+SEC-01 completeness remains intact at [`redirect_uris`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:467): duplicate, non-strict and unexpected-type detection remain separate from set subtraction, so duplicates cannot be hidden by set collapse. The round-1 P1 redaction controls remain passing; the reconciler was unchanged.
+
+## Evidence run and reused
+
+- Environment/branch gate passed: WSL, `hattila`, branch `batch/platform-ch04-6-oidc-contract-audit`, HEAD `7ce3fdd`.
+- `git diff --check` and `git diff --check ab3565d..HEAD -- <three paths>`: rc 0.
+- `bash -n platform/identity/validate/ch04-6-validate-argocd-sso.sh`: rc 0.
+- Python extraction/compile check: `PY_BLOCKS_COMPILE_OK count=1` for the current single `PYCONTRACT` block; the prior recorded three-block compile evidence was reviewed and remains applicable to unchanged blocks.
+- Current 20-control offline harness: overall PASS, rc 0; controls 1-18 and rework redaction controls passed, control 19 scheme/host case variant passed, and control 20 path-case difference failed closed as expected.
+- Anti-vacuity pre-fix harness using the validator extracted from `ab3565d`: overall FAIL, rc 1; control 19 failed with four failures, reproducing the former defect.
+- Reconciler hash verified as `270c761f77daa0b5355d587a1667f1a30143e060acab7cbccb2f0c0822fd8945`; script and runbook have no round-4 diff.
+- CH04.5 `41/0/0` and `27/0/0` evidence was reused, not rerun; path-scoped grep confirms those validators read only the unchanged reconciler and do not reference the changed validator or normalizer.
+- Live validator was not treated as passing: it still fails at `AUTHENTIK_ROLLOUT` because `kubectl` is unavailable in this WSL workspace.
+
+## Residual-risk classification
+
+- **Accepted follow-up:** no live runtime evidence; only an approved `04.6` workflow run proves the deployed provider has exactly the three strict entries.
+- **Accepted follow-up:** default-port equivalence, percent-encoding normalization, IDN/punycode normalization, userinfo canonicalization, and other unusual URL spellings remain exact outside scheme/netloc casing. No tested residual permits an extra entry to slip through.
+- **Accepted intentional behavior:** matching mode and redirect type remain case-sensitive; absent/empty `redirect_uris` fails closed.
+- **Not re-raised, security-accepted:** `kubectl -p` argv exposure, key-name/prose-dependent bash redaction, legacy `oidc.authentik.clientSecret` warning-vs-removal, and [`platform/identity/README.md`](../../platform/identity/README.md:78) drift.
+- **Evidence exception:** [`docs/reviews/**`](P-CH04.6-T01.md:1) and [`docs/security-reviews/**`](../security-reviews/P-CH04.6-T01.md:1) remain mandated paths outside controller `allowedFiles`.
+
+## Round-4 controller transition
+
+The required next command is observed from the delivery context and will be run exactly once:
+
+```bash
+python3 tools/task_controller/taskctl.py review P-CH04.6-T01 --actor platforminit-openai-reviewer --verdict approve --report docs/reviews/P-CH04.6-T01.md
+```

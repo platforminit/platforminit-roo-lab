@@ -48,3 +48,45 @@ The required transition is:
 ```bash
 python3 tools/task_controller/taskctl.py security P-CH04.6-T01 --actor platforminit-owasp-reviewer --verdict review_required --report docs/security-reviews/P-CH04.6-T01.md
 ```
+
+## Round-2 security review (2026-09-21)
+
+- **Reviewer:** `platforminit-owasp-reviewer`
+- **Verdict:** CLEAR
+- **Review basis:** Fresh security-review child; controller status was `needs_security_review`. Reviewed only the three bounded product paths and directly required trust boundaries. No source files, infrastructure, Authentik, Kubernetes, DNS, Cloudflare, GitHub secret/environment, or workflow mutation was performed.
+
+### Findings and closure
+
+1. **SEC-01 — CLOSED on the security axis.** The validator now builds canonical `(url, redirect_uri_type, matching_mode)` tuples and compares the complete live collection against exactly the three expected strict tuples at [`expected_redirect_tuples`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:499). Extra entries, missing entries, non-`strict` modes, unexpected types, malformed entries, and duplicates fail closed. Duplicate detection is separate from set subtraction at [`duplicate_redirects`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:524), so duplicate expected tuples cannot be hidden by set comparison.
+2. **Canonicalization does not open a bypass.** [`canonical_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:316) lowercases only scheme and netloc, removes trailing slashes, and preserves path/query/fragment bytes. [`same_url()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:343), [`redirect_tuple()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:478), completeness comparison, and [`strict_entry_registered()`](../../platform/identity/validate/ch04-6-validate-argocd-sso.sh:505) use the same helper. Thus scheme/host case variants are equivalent URL spellings, while path-case differences remain distinct; `matching_mode` and `redirect_uri_type` remain exact, case-sensitive tuple fields. The 20-control offline harness passed, including extra regex, duplicate, non-strict, unexpected type, scheme/host case, trailing slash, and path-case controls.
+3. **Secret exposure — no new exposure.** The canonicalization change handles URL strings only. The reconciler’s key-name and held-value redaction remains intact in [`redact_secret_fields()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:64), [`known_secret_values()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:315), and [`safe_response_body()`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:349). Validator output renders only non-secret identifiers and key presence. No new stdout/stderr, evidence-file, or failure-detail path prints a client secret, token, or secret reference value.
+4. **Redirect boundary — PASS.** The exact three-entry strict allow-list is fail-closed, including absent, empty, malformed, or unserialized `redirect_uris`; no wildcard/prefix/regex entry can pass. The writer also emits only strict authorization/authorization/logout entries at [`redirect_uris`](../../platform/identity/scripts/ch04-6-enable-argocd-sso.sh:635).
+5. **Least privilege and ownership — PASS.** The reviewed contract retains one Dex client-secret reference (`dex.authentik.clientSecret`), retires the legacy direct-OIDC key in the writer, uses exact-name group lookup with superuser/parent rejection and fail-closed absence handling, and requires the four bounded scopes (`openid`, `profile`, `email`, `groups`) with provider mappings. The reconciler is byte-identical to `ab3565d` (`270c761f...8945`), as claimed.
+
+### Accepted residual risks; no blockers
+
+- **Accepted documented follow-up:** no live runtime evidence; the focused validator reports `FAIL | AUTHENTIK_ROLLOUT` because `kubectl` is unavailable in this WSL workspace. Only an approved `04.6 - Enable Argo CD SSO` run can prove the deployed provider’s exact three entries.
+- **Accepted documented follow-up:** unusual URL spellings (default ports, percent-encoding, IDN/punycode, userinfo, IPv6, empty-netloc forms) remain exact beyond the deliberately limited scheme/netloc case normalization. No tested or identified path bypasses the completeness check.
+- **Accepted documented follow-up:** `same_url()` tolerates scheme/host case variants for `logout_uri`, while path/query/fragment remain byte-exact.
+- **Reconfirmed accepted follow-ups:** `kubectl -p` argv exposure, key-name/prose-dependent Bash redaction, legacy-key warn-vs-remove validation behavior, and [`platform/identity/README.md`](../../platform/identity/README.md:78) documentation drift. These were unchanged, previously accepted, and not re-raised without new evidence.
+- **No blocker:** no new secret value was committed, no infrastructure or environment mutation occurred, and no out-of-scope product path changed. The task-base diff is limited to the three requested product files plus pre-existing controller/evidence state.
+
+### Evidence and commands
+
+- MCP `health`: passed.
+- MCP `get_delivery_context` for `P-CH04.6-T01`: passed; status `needs_security_review`; bounded scope count 3.
+- `sha256sum platform/identity/scripts/ch04-6-enable-argocd-sso.sh` and `git show ab3565d:platform/identity/scripts/ch04-6-enable-argocd-sso.sh | sha256sum`: identical `270c761f77daa0b5355d587a1667f1a30143e060acab7cbccb2f0c0822fd8945`.
+- `git diff --name-only 8371154..HEAD` limited to the requested scope: exactly the three product files; `git diff --check 8371154..HEAD`: passed.
+- `bash -n` on both shell files: passed; embedded Python compilation check: passed.
+- Offline `/tmp/platforminit-evidence/P-CH04.6-T01-contract-harness.py`: 20 controls, overall PASS, rc 0.
+- Live validator was not run because `kubectl` is unavailable; no infrastructure command was run.
+
+### Round-2 controller transition
+
+Recorded exactly once:
+
+```bash
+python3 tools/task_controller/taskctl.py security P-CH04.6-T01 --actor platforminit-owasp-reviewer --verdict clear --report docs/security-reviews/P-CH04.6-T01.md
+```
+
+The report and controller state are intentionally left uncommitted for the release manager. No product source was modified.

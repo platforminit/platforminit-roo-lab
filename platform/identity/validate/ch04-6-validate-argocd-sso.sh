@@ -24,6 +24,13 @@ set -euo pipefail
 #      that proves no parallel OIDC path exists
 #   E. the ambiguous secret-reference checks: the dex client secret key and the
 #      stable session key are present, and the legacy direct-OIDC key is absent
+#   F. CH04.5 ownership preservation and the deterministic, non-broadening Argo CD
+#      group-to-role mapping: the consumed group carries the CH04.5 managed
+#      ownership stamps (managed_by, contract_version, owner_chapter, scope,
+#      consumer_chapter) with an allowed consumer chapter, and argocd-rbac-cm
+#      carries exactly one group binding, the expected admin mapping, the
+#      read-only default policy and a groups scope. Missing stamps, a foreign
+#      owner and any extra/widened admin binding fail closed
 #
 # Secret handling: this validator asserts secret *key presence* and non-secret
 # identifiers only. It never prints, hashes or logs a secret value, and the
@@ -34,16 +41,381 @@ set -euo pipefail
 #
 # Invocation contract (stable; used by workflow "04.6 - Enable Argo CD SSO"):
 #   bash platform/identity/validate/ch04-6-validate-argocd-sso.sh
+#   bash platform/identity/validate/ch04-6-validate-argocd-sso.sh --static
 # Environment: BASE_DOMAIN, ARGOCD_NAMESPACE, IDENTITY_NAMESPACE,
 #   ARGOCD_OIDC_PROVIDER_SLUG, ARGOCD_ADMIN_GROUP,
 #   AUTHENTIK_ARGOCD_ADMIN_USERNAME, AUTHENTIK_BASE_URL and optionally
 #   AUTHENTIK_BOOTSTRAP_TOKEN (read from the identity namespace when unset).
 # Exit status: 0 when every check is PASS or WARN, 1 on the first FAIL.
+#
+# Modes:
+#   (default / --live) live read-only contract validation: kubectl get and
+#     Authentik GET requests only.
+#   --static repository-only, non-mutating, no kubectl, no network. It proves
+#     the ownership-preservation, mapping-determinism and
+#     repeat-reconciliation invariants offline: the reconciler writes no group
+#     object, asserts and re-verifies the CH04.5 ownership stamps, renders the
+#     argocd-rbac-cm mapping deterministically, and the extracted admin-group
+#     binding gate accepts/rejects the same inputs identically on a repeat run.
+#     It exists because the live path can only be observed on a healthy host.
 #############################################################################
 
 pass() { echo "PASS | $1 | $2"; }
 fail() { echo "FAIL | $1 | $2"; exit 1; }
 warn() { echo "WARN | $1 | $2"; }
+
+# ---------------------------------------------------------------------------
+# Invocation modes
+# ---------------------------------------------------------------------------
+STATIC_MODE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --static) STATIC_MODE=1 ;;
+    --live) STATIC_MODE=0 ;;
+    *) echo "FAIL | ARGS | unsupported argument: $1 (supported: --static, --live)" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# ---------------------------------------------------------------------------
+# --static mode (defined before the live checks so it can exit before the first
+# kubectl call): repository-only, non-mutating, no cluster and no network.
+# ---------------------------------------------------------------------------
+STATIC_FAILURES=0
+STATIC_CONTROLS=0
+STATIC_TMP_DIR=""
+STATIC_GATE_BEGIN="# >>> CH04.6 admin-group binding gate >>>"
+STATIC_GATE_END="# <<< CH04.6 admin-group binding gate <<<"
+STATIC_EXPECTED_MANAGED_BY="ch04-5-bootstrap-identity-model"
+STATIC_EXPECTED_OWNER_CHAPTER="CH04.5"
+STATIC_ALLOWED_CONSUMER_CHAPTERS="platform CH04.6"
+STATIC_DEFAULT_GROUP="PlatformInit Admins"
+
+static_pass() { echo "PASS | $1 | $2"; STATIC_CONTROLS=$((STATIC_CONTROLS + 1)); }
+static_warn() { echo "WARN | $1 | $2"; STATIC_CONTROLS=$((STATIC_CONTROLS + 1)); }
+static_fail() {
+  echo "FAIL | $1 | $2"
+  STATIC_CONTROLS=$((STATIC_CONTROLS + 1))
+  STATIC_FAILURES=$((STATIC_FAILURES + 1))
+}
+
+static_self_path() { printf '%s\n' "${BASH_SOURCE[0]}"; }
+static_identity_dir() { cd -- "$(dirname -- "$(static_self_path)")/.." && pwd; }
+static_code_only() { grep -vE '^[[:space:]]*#' "$1" || true; }
+
+static_cleanup() {
+  if [[ -n "${STATIC_TMP_DIR}" && -d "${STATIC_TMP_DIR}" ]]; then
+    rm -rf "${STATIC_TMP_DIR}"
+  fi
+}
+
+run_static_validation() {
+  trap static_cleanup EXIT
+
+  local identity_dir reconciler rbac_template taxonomy gate_py
+  local code="" missing="" problems="" token="" group_writes=""
+  identity_dir="$(static_identity_dir)"
+  reconciler="${identity_dir}/scripts/ch04-6-enable-argocd-sso.sh"
+  rbac_template="${identity_dir}/integrations/argocd/argocd-authentik-rbac-cm.yaml.tpl"
+  taxonomy="${identity_dir}/groups/platforminit-groups.yaml"
+  STATIC_TMP_DIR="$(mktemp -d)"
+  gate_py="${STATIC_TMP_DIR}/admin-group-binding-gate.py"
+
+  echo "static mode: repository-only CH04.6 ownership-preservation and mapping-determinism validation"
+
+  # --- S1. repository inputs ------------------------------------------------
+  for path in "${reconciler}" "${rbac_template}" "${taxonomy}"; do
+    [[ -f "${path}" ]] || missing="${missing} ${path}"
+  done
+  if [[ -z "${missing}" ]]; then
+    static_pass "STATIC_INPUTS" "the reconciler, the argocd-rbac-cm template and the CH04.5 taxonomy are present"
+  else
+    static_fail "STATIC_INPUTS" "missing repository input(s):${missing}"
+    return 1
+  fi
+
+  # --- S2. syntax ----------------------------------------------------------
+  if bash -n "${reconciler}" 2>/dev/null; then
+    static_pass "STATIC_RECONCILER_SYNTAX" "bash -n passes on the reconciler"
+  else
+    static_fail "STATIC_RECONCILER_SYNTAX" "bash -n fails on the reconciler"
+  fi
+  if bash -n "$(static_self_path)" 2>/dev/null; then
+    static_pass "STATIC_VALIDATOR_SYNTAX" "bash -n passes on this validator"
+  else
+    static_fail "STATIC_VALIDATOR_SYNTAX" "bash -n fails on this validator"
+  fi
+
+  code="$(static_code_only "${reconciler}")"
+
+  # --- S3. the reconciler writes no group object ---------------------------
+  group_writes="$(printf '%s\n' "${code}" | grep -nE 'request\("(POST|PATCH|PUT|DELETE)"[^)]*core/groups' || true)"
+  if [[ -z "${group_writes}" ]]; then
+    static_pass "STATIC_NO_GROUP_WRITE" "the reconciler issues no group create/update/delete call, so CH04.5 ownership attributes cannot be written by CH04.6"
+  else
+    static_fail "STATIC_NO_GROUP_WRITE" "mutating group call(s) found in the reconciler: ${group_writes}"
+  fi
+
+  if printf '%s\n' "${code}" | grep -qF 'first_by_field("/api/v3/core/groups/", "name", name)'; then
+    static_pass "STATIC_GROUP_LOOKUP_EXACT_NAME" "the consumed group is resolved by exact-name lookup only"
+  else
+    static_fail "STATIC_GROUP_LOOKUP_EXACT_NAME" "the reconciler no longer resolves the admin group by exact-name lookup"
+  fi
+
+  # --- S4. ownership stamp assertion --------------------------------------
+  for token in 'REQUIRED_OWNERSHIP_STAMPS' 'platforminit_managed_by' 'platforminit_contract_version' \
+      'platforminit_owner_chapter' 'platforminit_scope' 'platforminit_consumer_chapter' \
+      'ch04-5-bootstrap-identity-model'; do
+    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+  done
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_OWNERSHIP_STAMP_ASSERTION" "the reconciler asserts the CH04.5 managed ownership stamps and the CH04.5 reconciler name before binding the group"
+  else
+    static_fail "STATIC_OWNERSHIP_STAMP_ASSERTION" "missing ownership assertion token(s):${problems}"
+    problems=""
+  fi
+
+  # --- S5. ownership preservation proof -----------------------------------
+  for token in 'def group_attributes(group_pk)' 'def assert_group_ownership_preserved(' \
+      'argocd_admin_group_ownership' 'ownership attributes preserved on group'; do
+    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+  done
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_OWNERSHIP_PRESERVATION_PROOF" "the reconciler snapshots the CH04.5 attribute bag and re-verifies it after the membership convergence"
+  else
+    static_fail "STATIC_OWNERSHIP_PRESERVATION_PROOF" "missing preservation-proof token(s):${problems}"
+    problems=""
+  fi
+
+  # --- S6. RBAC mapping read-back verification ----------------------------
+  for token in 'verify_argocd_rbac_mapping()' 'ARGOCD_RBAC_DEFAULT_POLICY' 'ARGOCD_RBAC_ADMIN_ROLE'; do
+    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+  done
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_RBAC_MAPPING_VERIFICATION" "the reconciler reads back the applied argocd-rbac-cm mapping, default policy and groups scope"
+  else
+    static_fail "STATIC_RBAC_MAPPING_VERIFICATION" "missing RBAC verification token(s):${problems}"
+    problems=""
+  fi
+
+  # --- S7. repeat-reconciliation convergence ------------------------------
+  for token in 'is already a member of' 'ARGOCD_CONFIG_CHANGED=0' \
+      'config unchanged; skipping unnecessary rollout restart' 'assert_group_ownership_preserved('; do
+    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+  done
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_REPEAT_RECONCILIATION_CONVERGENCE" "a repeat run short-circuits the membership, the unchanged config and the group state instead of rewriting them"
+  else
+    static_fail "STATIC_REPEAT_RECONCILIATION_CONVERGENCE" "missing convergence token(s):${problems}"
+    problems=""
+  fi
+
+  # --- S8. the binding gate is extractable --------------------------------
+  local begin_count end_count declared_default
+  begin_count="$(grep -cF "${STATIC_GATE_BEGIN}" "${reconciler}" || true)"
+  end_count="$(grep -cF "${STATIC_GATE_END}" "${reconciler}" || true)"
+  if [[ "${begin_count}" == "1" && "${end_count}" == "1" ]]; then
+    static_pass "STATIC_BINDING_GATE_MARKERS" "the admin-group binding gate body is marker-delimited exactly once, so it can be driven offline with fixtures"
+  else
+    static_fail "STATIC_BINDING_GATE_MARKERS" "expected exactly one gate marker pair (found begin=${begin_count}, end=${end_count})"
+  fi
+
+  # --- S9. the contract constants agree with the reconciler default --------
+  declared_default="$(sed -nE 's/^ARGOCD_ADMIN_GROUP="\$\{ARGOCD_ADMIN_GROUP:-([^}]*)\}"$/\1/p' "${reconciler}" | head -1)"
+  if [[ "${declared_default}" == "${STATIC_DEFAULT_GROUP}" ]]; then
+    static_pass "STATIC_DEFAULT_GROUP_AGREES" "the offline fixtures use the reconciler's declared default admin group (${STATIC_DEFAULT_GROUP})"
+  else
+    static_fail "STATIC_DEFAULT_GROUP_AGREES" "the reconciler default admin group is '${declared_default:-<none>}' but the offline fixtures assert '${STATIC_DEFAULT_GROUP}'"
+  fi
+
+  # --- S10. the CH04.5 taxonomy agrees with the binding contract -----------
+  if STATIC_TAXONOMY="${taxonomy}" STATIC_MANAGED_BY="${STATIC_EXPECTED_MANAGED_BY}" \
+      STATIC_OWNER_CHAPTER="${STATIC_EXPECTED_OWNER_CHAPTER}" \
+      STATIC_DEFAULT_GROUP="${STATIC_DEFAULT_GROUP}" \
+      STATIC_ALLOWED_CONSUMERS="${STATIC_ALLOWED_CONSUMER_CHAPTERS}" \
+      python3 - <<'PYTAXONOMY'
+import json
+import os
+import sys
+
+model = json.load(open(os.environ["STATIC_TAXONOMY"], encoding="utf-8"))
+problems = []
+management = model.get("management") or {}
+if management.get("managed_by") != os.environ["STATIC_MANAGED_BY"]:
+    problems.append(f"management.managed_by is {management.get('managed_by')!r}")
+matches = [group for group in (model.get("groups") or [])
+           if group.get("name") == os.environ["STATIC_DEFAULT_GROUP"]]
+if len(matches) != 1:
+    problems.append(f"default group {os.environ['STATIC_DEFAULT_GROUP']!r} matches {len(matches)} entries")
+else:
+    group = matches[0]
+    if group.get("owner_chapter") != os.environ["STATIC_OWNER_CHAPTER"]:
+        problems.append(f"default group owner_chapter is {group.get('owner_chapter')!r}")
+    if group.get("is_superuser") is not False:
+        problems.append("default group is declared as an Authentik superuser group")
+    if str(group.get("consumer_chapter")) not in os.environ["STATIC_ALLOWED_CONSUMERS"].split():
+        problems.append(f"default group consumer_chapter is {group.get('consumer_chapter')!r}")
+if problems:
+    print("; ".join(problems), file=sys.stderr)
+    sys.exit(1)
+print("taxonomy constants agree")
+PYTAXONOMY
+  then
+    static_pass "STATIC_TAXONOMY_CONSTANTS_AGREE" "the CH04.5 taxonomy agrees with the binding contract (managed_by, non-superuser default group, allowed consumer chapter)"
+  else
+    static_fail "STATIC_TAXONOMY_CONSTANTS_AGREE" "the CH04.5 taxonomy disagrees with the binding contract constants"
+  fi
+
+  # --- S11. extract the binding gate and drive it with fixtures ------------
+  awk -v begin="${STATIC_GATE_BEGIN}" -v end="${STATIC_GATE_END}" '
+    index($0, begin) { capturing = 1; next }
+    index($0, end)   { capturing = 0 }
+    capturing        { print }
+  ' "${reconciler}" > "${gate_py}"
+  if [[ -s "${gate_py}" ]]; then
+    static_pass "STATIC_BINDING_GATE_EXTRACTION" "the admin-group binding gate body was extracted from the reconciler ($(wc -l < "${gate_py}") lines)"
+  else
+    static_fail "STATIC_BINDING_GATE_EXTRACTION" "no gate body could be extracted between the gate markers"
+    return 1
+  fi
+
+  # Mutated copies of the real taxonomy: each negative control must differ from
+  # the unmutated file and must flip the verdict of the accepted fixture.
+  local mut_managed_by="${STATIC_TMP_DIR}/taxonomy-managed-by.json"
+  local mut_superuser="${STATIC_TMP_DIR}/taxonomy-superuser.json"
+  local mut_consumer="${STATIC_TMP_DIR}/taxonomy-consumer.json"
+  STATIC_TAXONOMY_SRC="${taxonomy}" STATIC_FIXTURE_DIR="${STATIC_TMP_DIR}" python3 - <<'PYMUT'
+import json
+import os
+
+src = os.environ["STATIC_TAXONOMY_SRC"]
+dst = os.environ["STATIC_FIXTURE_DIR"]
+base = json.load(open(src, encoding="utf-8"))
+
+
+def set_entry(model, key, value):
+    entry = next(group for group in model["groups"] if group.get("name") == "ArgoCD Admins")
+    entry[key] = value
+
+
+def dump(name, mutate):
+    model = json.loads(json.dumps(base))
+    mutate(model)
+    with open(os.path.join(dst, name), "w", encoding="utf-8") as handle:
+        json.dump(model, handle)
+
+
+dump("taxonomy-managed-by.json", lambda m: m["management"].__setitem__("managed_by", "some-other-reconciler"))
+dump("taxonomy-superuser.json", lambda m: set_entry(m, "is_superuser", True))
+dump("taxonomy-consumer.json", lambda m: set_entry(m, "consumer_chapter", "CH05"))
+PYMUT
+
+  local fixture_problems=""
+  grep -q 'some-other-reconciler' "${mut_managed_by}" 2>/dev/null || fixture_problems="${fixture_problems} managed-by"
+  grep -q '"is_superuser": true' "${mut_superuser}" 2>/dev/null || fixture_problems="${fixture_problems} superuser"
+  grep -q 'CH05' "${mut_consumer}" 2>/dev/null || fixture_problems="${fixture_problems} consumer"
+  if [[ -z "${fixture_problems}" ]]; then
+    static_pass "STATIC_BINDING_GATE_FIXTURES_EFFECTIVE" "every mutated taxonomy fixture differs from the real taxonomy, and the paired accept/reject cases prove the mutation changes the verdict"
+  else
+    static_fail "STATIC_BINDING_GATE_FIXTURES_EFFECTIVE" "ineffective mutated fixture(s):${fixture_problems}"
+  fi
+
+  # Run each fixture twice: the two runs must return the same exit status and the
+  # same output, so a repeat reconciliation reaches the same group-to-role decision.
+  gate_case() {
+    local case_name="$1" group_name="$2" tax_file="$3" expected_rc="$4" expect_output="$5"
+    local rc_1 rc_2 out_1 out_2 err_1 err_2
+    set +e
+    ARGOCD_ADMIN_GROUP="${group_name}" ARGOCD_TAXONOMY_FILE="${tax_file}" \
+      ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED="${STATIC_EXPECTED_MANAGED_BY}" \
+      ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS="${STATIC_ALLOWED_CONSUMER_CHAPTERS}" \
+      ARGOCD_RBAC_ADMIN_ROLE="role:admin" \
+      python3 "${gate_py}" > "${STATIC_TMP_DIR}/${case_name}.1.out" 2> "${STATIC_TMP_DIR}/${case_name}.1.err"
+    rc_1=$?
+    ARGOCD_ADMIN_GROUP="${group_name}" ARGOCD_TAXONOMY_FILE="${tax_file}" \
+      ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED="${STATIC_EXPECTED_MANAGED_BY}" \
+      ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS="${STATIC_ALLOWED_CONSUMER_CHAPTERS}" \
+      ARGOCD_RBAC_ADMIN_ROLE="role:admin" \
+      python3 "${gate_py}" > "${STATIC_TMP_DIR}/${case_name}.2.out" 2> "${STATIC_TMP_DIR}/${case_name}.2.err"
+    rc_2=$?
+    set -e
+    out_1="$(cat "${STATIC_TMP_DIR}/${case_name}.1.out")"
+    out_2="$(cat "${STATIC_TMP_DIR}/${case_name}.2.out")"
+    err_1="$(cat "${STATIC_TMP_DIR}/${case_name}.1.err")"
+    err_2="$(cat "${STATIC_TMP_DIR}/${case_name}.2.err")"
+
+    if [[ "${rc_1}" != "${expected_rc}" ]]; then
+      static_fail "STATIC_GATE_${case_name}" "expected rc=${expected_rc} but the gate returned rc=${rc_1}: ${err_1:-<no stderr>}"
+      return 0
+    fi
+    if [[ "${rc_1}" != "${rc_2}" || "${out_1}" != "${out_2}" || "${err_1}" != "${err_2}" ]]; then
+      static_fail "STATIC_GATE_${case_name}" "the repeat run reached a different decision (rc ${rc_1} vs ${rc_2}), so the mapping is not deterministic"
+      return 0
+    fi
+    if [[ -n "${expect_output}" && "${out_1}" != *"${expect_output}"* ]]; then
+      static_fail "STATIC_GATE_${case_name}" "the accepted run did not emit the expected mapping: ${expect_output}"
+      return 0
+    fi
+    static_pass "STATIC_GATE_${case_name}" "identical on both runs (rc=${rc_1})${expect_output:+; mapping emitted: ${expect_output}}"
+  }
+
+  gate_case "ACCEPT_DEFAULT_PLATFORM_GROUP" "PlatformInit Admins" "${taxonomy}" 0 "g, ${STATIC_DEFAULT_GROUP}, role:admin"
+  gate_case "ACCEPT_ARGO_CD_ADMINS_GROUP" "ArgoCD Admins" "${taxonomy}" 0 "g, ArgoCD Admins, role:admin"
+  gate_case "REJECT_SUPERUSER_GROUP" "Authentik Admins" "${taxonomy}" 1 ""
+  gate_case "REJECT_FOREIGN_CONSUMER_GROUP" "PlatformInit Operations" "${taxonomy}" 1 ""
+  gate_case "REJECT_UNDECLARED_GROUP" "PlatformInit Admins Extra" "${taxonomy}" 1 ""
+  gate_case "REJECT_EMPTY_GROUP_NAME" "" "${taxonomy}" 1 ""
+  gate_case "REJECT_TRAILING_WHITESPACE" "PlatformInit Admins " "${taxonomy}" 1 ""
+  gate_case "REJECT_RBAC_INJECTION_COMMA" "PlatformInit Admins, role:admin" "${taxonomy}" 1 ""
+  gate_case "REJECT_RBAC_INJECTION_NEWLINE" "$(printf 'PlatformInit Admins\nrole:admin')" "${taxonomy}" 1 ""
+  gate_case "REJECT_MISSING_TAXONOMY_FILE" "PlatformInit Admins" "${STATIC_TMP_DIR}/absent-taxonomy.json" 1 ""
+  gate_case "REJECT_UNAUTHORIZED_TAXONOMY_OWNER" "ArgoCD Admins" "${mut_managed_by}" 1 ""
+  gate_case "REJECT_MUTATED_SUPERUSER_ENTRY" "ArgoCD Admins" "${mut_superuser}" 1 ""
+  gate_case "REJECT_MUTATED_CONSUMER_ENTRY" "ArgoCD Admins" "${mut_consumer}" 1 ""
+
+  # --- S12. deterministic RBAC render -------------------------------------
+  static_render_rbac() { sed -e "s|__ARGOCD_ADMIN_GROUP__|$1|g" "${rbac_template}"; }
+  static_render_rbac "${STATIC_DEFAULT_GROUP}" > "${STATIC_TMP_DIR}/rbac-1.yaml"
+  static_render_rbac "${STATIC_DEFAULT_GROUP}" > "${STATIC_TMP_DIR}/rbac-2.yaml"
+  if cmp -s "${STATIC_TMP_DIR}/rbac-1.yaml" "${STATIC_TMP_DIR}/rbac-2.yaml"; then
+    static_pass "STATIC_RBAC_RENDER_DETERMINISTIC" "two renders of argocd-authentik-rbac-cm.yaml.tpl are byte-identical, so a repeat reconciliation renders the same mapping"
+  else
+    static_fail "STATIC_RBAC_RENDER_DETERMINISTIC" "two renders of argocd-authentik-rbac-cm.yaml.tpl differ"
+  fi
+
+  local mapping_count="" rendered_mapping="" placeholder_count=""
+  mapping_count="$(grep -cE '^[[:space:]]*g,' "${STATIC_TMP_DIR}/rbac-1.yaml" || true)"
+  rendered_mapping="$(grep -E '^[[:space:]]*g,' "${STATIC_TMP_DIR}/rbac-1.yaml" | sed -E 's/^[[:space:]]+//' | head -1 || true)"
+  if [[ "${mapping_count}" == "1" && "${rendered_mapping}" == "g, ${STATIC_DEFAULT_GROUP}, role:admin" ]]; then
+    static_pass "STATIC_RBAC_SINGLE_ADMIN_MAPPING" "the rendered RBAC object carries exactly one group binding and it is 'g, ${STATIC_DEFAULT_GROUP}, role:admin'"
+  else
+    static_fail "STATIC_RBAC_SINGLE_ADMIN_MAPPING" "expected exactly one binding 'g, ${STATIC_DEFAULT_GROUP}, role:admin' (found count=${mapping_count}, first='${rendered_mapping}')"
+  fi
+
+  placeholder_count="$(grep -cE '__[A-Z_]+__' "${STATIC_TMP_DIR}/rbac-1.yaml" || true)"
+  if grep -q 'policy.default: role:readonly' "${STATIC_TMP_DIR}/rbac-1.yaml" && [[ "${placeholder_count}" == "0" ]]; then
+    static_pass "STATIC_RBAC_TEMPLATE_CONTRACT" "the rendered RBAC template keeps policy.default: role:readonly and leaves no unsubstituted placeholder"
+  else
+    static_fail "STATIC_RBAC_TEMPLATE_CONTRACT" "the rendered RBAC template lost the read-only default policy or kept an unsubstituted placeholder (found ${placeholder_count})"
+  fi
+
+  # --- S13. prove --static performs no live access -------------------------
+  local dispatch_line="" first_kubectl_line=""
+  dispatch_line="$(grep -nF 'if [[ "${STATIC_MODE}" == "1" ]]; then' "$(static_self_path)" | head -1 | cut -d: -f1 || true)"
+  first_kubectl_line="$(grep -nE '^[[:space:]]*kubectl ' "$(static_self_path)" | head -1 | cut -d: -f1 || true)"
+  if [[ -n "${dispatch_line}" && -n "${first_kubectl_line}" && "${dispatch_line}" -lt "${first_kubectl_line}" ]]; then
+    static_pass "STATIC_NO_LIVE_ACCESS" "the --static dispatch precedes the first kubectl call (line ${dispatch_line} < ${first_kubectl_line}), so --static performs no cluster or network access"
+  else
+    static_fail "STATIC_NO_LIVE_ACCESS" "could not prove that --static exits before the first kubectl call (dispatch=${dispatch_line:-unset}, first kubectl=${first_kubectl_line:-unset})"
+  fi
+
+  if [[ "${STATIC_FAILURES}" -eq 0 ]]; then
+    echo "static validation: PASS (${STATIC_CONTROLS} controls, 0 failures)"
+    return 0
+  fi
+  echo "static validation: FAIL (${STATIC_CONTROLS} controls, ${STATIC_FAILURES} failures)" >&2
+  return 1
+}
 
 BASE_DOMAIN="${BASE_DOMAIN:-sysadminhomelab.hu}"
 ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
@@ -64,6 +436,24 @@ EXPECTED_REDIRECT_URI="${EXPECTED_ARGOCD_URL}/api/dex/callback"
 EXPECTED_CLI_CALLBACK_URI="https://localhost:8085/auth/callback"
 EXPECTED_LOGOUT_URI="${EXPECTED_ARGOCD_URL}/logout"
 EXPECTED_SCOPES="${ARGOCD_OIDC_SCOPES:-openid profile email groups}"
+
+# --- CH04.5 ownership and group-to-role mapping contract constants ----------
+# Mirrors the reconciler's binding contract. The --static mode cross-checks these
+# constants against the CH04.5 taxonomy, so they cannot drift from the CH04.5
+# model without failing this validator.
+EXPECTED_MANAGED_BY="ch04-5-bootstrap-identity-model"
+EXPECTED_OWNER_CHAPTER="CH04.5"
+EXPECTED_CONSUMER_CHAPTERS="platform CH04.6"
+EXPECTED_RBAC_ADMIN_ROLE="role:admin"
+EXPECTED_RBAC_DEFAULT_POLICY="role:readonly"
+
+if [[ "${STATIC_MODE}" == "1" ]]; then
+  set +e
+  run_static_validation
+  static_status=$?
+  set -e
+  exit "${static_status}"
+fi
 
 kubectl -n "${IDENTITY_NAMESPACE}" rollout status deploy/authentik-server --timeout=10s >/dev/null 2>&1 && \
   pass "AUTHENTIK_ROLLOUT" "authentik-server rollout is healthy" || fail "AUTHENTIK_ROLLOUT" "authentik-server rollout is not healthy"
@@ -136,8 +526,27 @@ for scope in ${EXPECTED_SCOPES}; do
   fi
 done
 
-echo "${rbac_text}" | grep -q "g, ${EXPECTED_ADMIN_GROUP}, role:admin" && \
-  pass "ARGOCD_RBAC_ADMIN_GROUP" "admin group maps to role:admin" || warn "ARGOCD_RBAC_ADMIN_GROUP" "admin group mapping not found"
+# The group-to-role mapping must stay deterministic and must not broaden Argo CD
+# privilege: exactly one `g,` binding in argocd-rbac-cm, and it must be the single
+# admin binding for the validated group. An extra admin binding for any other
+# group is a FAIL, because it would grant platform administration the CH04.6
+# contract does not map. Only non-secret group names and roles are printed.
+rbac_group_lines="$(printf '%s\n' "${rbac_text}" | sed -E 's/[[:space:]]+$//' | grep -E '^g,' || true)"
+rbac_admin_lines="$(printf '%s\n' "${rbac_group_lines}" | grep -E ",${EXPECTED_RBAC_ADMIN_ROLE}\$" || true)"
+rbac_mapping_count="$(printf '%s\n' "${rbac_group_lines}" | grep -cE '^g,' || true)"
+
+if [[ "${rbac_mapping_count}" == "1" && "${rbac_admin_lines}" == "g, ${EXPECTED_ADMIN_GROUP}, ${EXPECTED_RBAC_ADMIN_ROLE}" ]]; then
+  pass "ARGOCD_RBAC_ADMIN_GROUP" "argocd-rbac-cm carries exactly one group binding and it is the expected admin mapping for the validated group"
+else
+  fail "ARGOCD_RBAC_ADMIN_GROUP" "argocd-rbac-cm must carry exactly one binding 'g, ${EXPECTED_ADMIN_GROUP}, ${EXPECTED_RBAC_ADMIN_ROLE}'; found ${rbac_mapping_count} group binding(s): ${rbac_group_lines:-<none>}"
+fi
+
+rbac_default_text="$(kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-rbac-cm -o jsonpath='{.data.policy\.default}' 2>/dev/null || true)"
+if [[ -z "${rbac_default_text}" || "${rbac_default_text}" == "${EXPECTED_RBAC_DEFAULT_POLICY}" ]]; then
+  pass "ARGOCD_RBAC_DEFAULT_POLICY" "argocd-rbac-cm policy.default is ${EXPECTED_RBAC_DEFAULT_POLICY} (an unset key also means Argo CD's read-only default)"
+else
+  fail "ARGOCD_RBAC_DEFAULT_POLICY" "argocd-rbac-cm policy.default is '${rbac_default_text}', which is broader than '${EXPECTED_RBAC_DEFAULT_POLICY}'"
+fi
 
 echo "${scopes_text}" | grep -q 'groups' && \
   pass "ARGOCD_RBAC_SCOPES" "RBAC scopes include groups" || warn "ARGOCD_RBAC_SCOPES" "RBAC scopes do not include groups"
@@ -225,6 +634,9 @@ if [[ -n "${AUTHENTIK_BOOTSTRAP_TOKEN}" ]] && command -v python3 >/dev/null 2>&1
       EXPECTED_CLI_CALLBACK_URI="${EXPECTED_CLI_CALLBACK_URI}" \
       EXPECTED_LOGOUT_URI="${EXPECTED_LOGOUT_URI}" \
       EXPECTED_SCOPES="${EXPECTED_SCOPES}" \
+      EXPECTED_MANAGED_BY="${EXPECTED_MANAGED_BY}" \
+      EXPECTED_OWNER_CHAPTER="${EXPECTED_OWNER_CHAPTER}" \
+      EXPECTED_CONSUMER_CHAPTERS="${EXPECTED_CONSUMER_CHAPTERS}" \
       python3 - <<'PYCONTRACT'
 import json
 import os
@@ -243,6 +655,13 @@ expected_redirect = os.environ.get("EXPECTED_REDIRECT_URI", "")
 expected_cli_callback = os.environ.get("EXPECTED_CLI_CALLBACK_URI", "")
 expected_logout = os.environ.get("EXPECTED_LOGOUT_URI", "")
 expected_scopes = [scope for scope in os.environ.get("EXPECTED_SCOPES", "").split() if scope]
+expected_managed_by = os.environ.get("EXPECTED_MANAGED_BY", "")
+expected_owner_chapter = os.environ.get("EXPECTED_OWNER_CHAPTER", "")
+expected_consumer_chapters = [
+    chapter
+    for chapter in os.environ.get("EXPECTED_CONSUMER_CHAPTERS", "").split()
+    if chapter
+]
 headers = {
     "Authorization": f"Bearer {token}",
     "Accept": "application/json",
@@ -359,16 +778,54 @@ if group:
            f"CH04.5 group {group_name!r} does not inherit from a parent group",
            f"CH04.5 group {group_name!r} inherits from parent group {group.get('parent')!r}")
 
-    attributes = group.get("attributes") or {}
-    stamps = [key for key in ("platforminit_managed_by", "platforminit_contract_version")
-              if key in attributes]
-    if len(stamps) == 2:
-        emit("PASS", "AUTHENTIK_ADMIN_GROUP_OWNERSHIP",
-             "CH04.5 managed ownership stamps are present on the group")
-    else:
-        emit("WARN", "AUTHENTIK_ADMIN_GROUP_OWNERSHIP",
-             "CH04.5 managed ownership stamps are absent; re-run the CH04.5 identity model bootstrap. "
-             "The CH04.6 payload no longer writes group attributes")
+    # CH04.5 managed ownership stamps. These are exactly the attributes the CH04.6
+    # reconciliation must never clear or overwrite, so a missing or foreign-owned
+    # stamp is blocking instead of a warning: binding an unstamped or foreign-owned
+    # group to Argo CD role:admin would grant unreviewed platform administration.
+    attributes = group.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = {}
+    if not attributes:
+        group_detail = request(f"/api/v3/core/groups/{group['pk']}/")
+        detail_attributes = group_detail.get("attributes")
+        if isinstance(detail_attributes, dict):
+            attributes = detail_attributes
+
+    expected_stamps = {
+        "platforminit_managed_by": expected_managed_by,
+        "platforminit_owner_chapter": expected_owner_chapter,
+    }
+    present_stamps = (
+        "platforminit_contract_version",
+        "platforminit_scope",
+        "platforminit_consumer_chapter",
+    )
+    missing_stamps = sorted(
+        key for key in list(expected_stamps) + list(present_stamps)
+        if not str(attributes.get(key, "")).strip()
+    )
+    expect(not missing_stamps, "AUTHENTIK_ADMIN_GROUP_OWNERSHIP",
+           "CH04.5 managed ownership stamps are present on the group",
+           f"CH04.5 managed ownership stamps are missing from the group "
+           f"({', '.join(missing_stamps)}); the CH04.6 reconciliation must never clear them, so re-run "
+           "'04.5 - Deploy Identity Foundation' (scripts/ch04-5-bootstrap-identity-model.sh) to re-stamp "
+           "the group")
+
+    if not missing_stamps:
+        mismatched_stamps = sorted(
+            key for key, value in expected_stamps.items() if str(attributes.get(key)) != value
+        )
+        expect(not mismatched_stamps, "AUTHENTIK_ADMIN_GROUP_OWNERSHIP_VALUES",
+               "the CH04.5 managed ownership stamps name the CH04.5 reconciler and the CH04.5 owner chapter",
+               f"CH04.5 managed ownership stamp value mismatch ({', '.join(mismatched_stamps)}); the group is "
+               "not the CH04.5-managed object this mapping is contracted to consume")
+
+        stamped_consumer = str(attributes.get("platforminit_consumer_chapter"))
+        expect(stamped_consumer in expected_consumer_chapters, "AUTHENTIK_ADMIN_GROUP_CONSUMER_SCOPE",
+               f"the group is stamped for an allowed consumer chapter ({stamped_consumer!r})",
+               f"the group is stamped with consumer chapter {stamped_consumer!r}, which is not one of "
+               f"{expected_consumer_chapters}; mapping it to Argo CD role:admin would widen another "
+               "consumer's group into platform administration")
 
 # --- B. Argo CD admin membership -------------------------------------------
 user = exact("/api/v3/core/users/", "username", username)

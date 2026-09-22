@@ -27,6 +27,20 @@ set -euo pipefail
 #      $ARGOCD_ADMIN_GROUP by exact-name lookup only: it never creates, renames,
 #      patches or deletes a CH04.5 group and never writes group attributes, so
 #      CH04.5 ownership stamps cannot be cleared by CH04.6.
+#   1a. The binding is validated before any write: the group name must be a
+#      CH04.5-taxonomy-declared, non-superuser group whose consumer chapter is
+#      `platform` or `CH04.6`, and its shape must be RBAC-injection safe, so the
+#      group-to-role mapping stays deterministic and cannot be widened
+#      (validate_argocd_admin_group_binding, extractable gate body).
+#   1b. Ownership preservation is verified, not assumed: the consumed group must
+#      carry the CH04.5 managed ownership stamps, and the complete attribute bag
+#      is re-read after the membership convergence and compared with the pre-run
+#      snapshot. Any difference is a hard stop
+#      (require_authentik_admin_group + assert_group_ownership_preserved).
+#   1c. The rendered argocd-rbac-cm mapping is read back after apply and must be
+#      exactly one `g, <group>, role:admin` line with the template's
+#      `policy.default: role:readonly` and a `groups` scope, so a repeat run
+#      cannot have broadened Argo CD privilege (verify_argocd_rbac_mapping).
 #   2. The direct Argo CD oidc.config path is removed: CH04.6 uses the Dex-backed
 #      broker path only, so exactly one client secret key (dex.authentik.
 #      clientSecret) is owned and maintained in argocd-secret.
@@ -105,6 +119,24 @@ export ARGOCD_PUBLIC_URL ARGOCD_OIDC_PROVIDER_NAME ARGOCD_OIDC_REDIRECT_PATH \
   ARGOCD_OIDC_CLI_CALLBACK_URI ARGOCD_OIDC_LOGOUT_PATH ARGOCD_OIDC_SCOPES \
   ARGOCD_OIDC_GROUPS_SCOPE_NAME ARGOCD_OIDC_GROUPS_MAPPING_NAME \
   AUTHENTIK_OIDC_EXPECTED_ISSUER
+
+# --- CH04.6 admin-group binding contract constants --------------------------
+# CH04.5 owns the taxonomy file; CH04.6 only reads it. The path is resolved from
+# this script exactly like the RBAC/OIDC templates, so the artifact layout that
+# already ships platform/identity satisfies it.
+ARGOCD_TAXONOMY_FILE="${ARGOCD_TAXONOMY_FILE:-${REPO_ROOT}/groups/platforminit-groups.yaml}"
+# The taxonomy management block must name the CH04.5 identity-model reconciler as
+# the owner of these objects; any other value means this is not the CH04.5
+# taxonomy and the binding is refused.
+ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED="${ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED:-ch04-5-bootstrap-identity-model}"
+# Only a platform-scoped or CH04.6-owned group may be bound to Argo CD
+# role:admin. Any other consumer chapter would widen another consumer's group
+# into platform administration.
+ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS="${ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS:-platform CH04.6}"
+ARGOCD_RBAC_ADMIN_ROLE="${ARGOCD_RBAC_ADMIN_ROLE:-role:admin}"
+ARGOCD_RBAC_DEFAULT_POLICY="${ARGOCD_RBAC_DEFAULT_POLICY:-role:readonly}"
+export ARGOCD_TAXONOMY_FILE ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED \
+  ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS ARGOCD_RBAC_ADMIN_ROLE ARGOCD_RBAC_DEFAULT_POLICY
 
 ARGOCD_CONFIG_CHANGED=0
 ARGOCD_PREVIOUS_CM_FILE=""
@@ -236,9 +268,116 @@ resolve_authentik_api_token() {
   export AUTHENTIK_BOOTSTRAP_TOKEN
 }
 
+validate_argocd_admin_group_binding() {
+  # Deterministic, fail-closed gate between the operator input
+  # (argocd_admin_group) and the Argo CD RBAC mapping. It is repository-only: it
+  # reads the CH04.5 taxonomy file and never calls Authentik or Kubernetes, so it
+  # can run before any write and can also be driven offline by the focused
+  # validator's --static mode (marker-delimited body below).
+  log "Validating the Argo CD admin-group binding before any write (deterministic, fail closed)"
+  ARGOCD_ADMIN_GROUP="${ARGOCD_ADMIN_GROUP}" \
+  ARGOCD_TAXONOMY_FILE="${ARGOCD_TAXONOMY_FILE}" \
+  ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED="${ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED}" \
+  ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS="${ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS}" \
+  ARGOCD_RBAC_ADMIN_ROLE="${ARGOCD_RBAC_ADMIN_ROLE}" \
+  python3 - <<'PY'
+# >>> CH04.6 admin-group binding gate >>>
+import json
+import os
+import re
+import sys
+
+# The name is rendered into argocd-rbac-cm policy.csv through one substitution,
+# so it must not be able to carry a second RBAC statement: a comma, colon,
+# newline, quote, hash or leading/trailing space would let the input widen the
+# group-to-role mapping. The accepted shape is therefore a strict allow-list.
+NAME_SHAPE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,127}$")
+
+name = os.environ.get("ARGOCD_ADMIN_GROUP", "")
+taxonomy_file = os.environ.get("ARGOCD_TAXONOMY_FILE", "")
+expected_managed_by = os.environ.get("ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED", "")
+admin_role = os.environ.get("ARGOCD_RBAC_ADMIN_ROLE", "role:admin")
+allowed_consumers = [
+    chapter
+    for chapter in os.environ.get("ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS", "").split()
+    if chapter
+]
+remedy = (
+    "run '04.5 - Deploy Identity Foundation' (scripts/ch04-5-bootstrap-identity-model.sh) to "
+    "create or repair the group, then re-run CH04.6"
+)
+
+
+def refuse(message):
+    print(f"FATAL: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+if name != name.strip() or not NAME_SHAPE.match(name):
+    refuse(
+        f"argocd_admin_group {name!r} is not a valid Argo CD RBAC group name; it must match "
+        f"{NAME_SHAPE.pattern} with no surrounding whitespace, so the name cannot inject an extra "
+        "policy.csv statement or widen the group-to-role mapping"
+    )
+
+if not taxonomy_file or not os.path.isfile(taxonomy_file):
+    refuse(
+        f"the CH04.5 identity group taxonomy was not found at {taxonomy_file!r}. CH04.6 reads it to "
+        "prove the admin group is CH04.5-owned and non-superuser; deploy the identity artifact or set "
+        f"ARGOCD_TAXONOMY_FILE; {remedy}"
+    )
+
+try:
+    with open(taxonomy_file, encoding="utf-8") as handle:
+        model = json.load(handle)
+except (OSError, ValueError) as exc:
+    refuse(f"the CH04.5 identity group taxonomy {taxonomy_file!r} could not be read as JSON: {exc}")
+
+management = model.get("management") or {}
+if management.get("managed_by") != expected_managed_by:
+    refuse(
+        f"the taxonomy at {taxonomy_file!r} is not owned by the CH04.5 identity-model reconciler "
+        f"(management.managed_by={management.get('managed_by')!r}, expected {expected_managed_by!r}); "
+        "refusing to bind a group from an unowned taxonomy"
+    )
+
+declared = [group for group in (model.get("groups") or []) if group.get("name") == name]
+if len(declared) != 1:
+    refuse(
+        f"argocd_admin_group {name!r} is not exactly one group in the CH04.5 taxonomy "
+        f"(matches={len(declared)}). CH04.6 maps only a CH04.5-declared group, so an undeclared group "
+        f"cannot be granted Argo CD {admin_role}; {remedy}"
+    )
+
+group = declared[0]
+if group.get("is_superuser") is not False:
+    refuse(
+        f"argocd_admin_group {name!r} is declared as an Authentik superuser group in the CH04.5 "
+        "taxonomy; the Argo CD admin mapping must use a non-superuser application group"
+    )
+
+consumer_chapter = str(group.get("consumer_chapter", ""))
+if consumer_chapter not in allowed_consumers:
+    refuse(
+        f"argocd_admin_group {name!r} is consumed by {consumer_chapter!r}, which is not one of "
+        f"{allowed_consumers}; binding it to Argo CD {admin_role} would widen another consumer's "
+        "group into platform administration"
+    )
+
+print(
+    f"Binding gate: group={name!r} scope={group.get('scope')!r} "
+    f"owner_chapter={group.get('owner_chapter')!r} consumer_chapter={consumer_chapter!r} "
+    "is_superuser=False"
+)
+print(f"Deterministic Argo CD mapping: g, {name}, {admin_role}")
+# <<< CH04.6 admin-group binding gate <<<
+PY
+}
+
 configure_authentik_argocd_provider() {
   log "Reconciling Authentik Argo CD provider/application via Authentik API"
   export BASE_DOMAIN AUTHENTIK_BASE_URL ARGOCD_OIDC_PROVIDER_SLUG ARGOCD_OIDC_CLIENT_ID ARGOCD_OIDC_CLIENT_SECRET ARGOCD_ADMIN_GROUP AUTHENTIK_ARGOCD_ADMIN_USERNAME AUTHENTIK_ARGOCD_SIGNING_KEY_NAME
+  export ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS
   export ARGOCD_PUBLIC_URL ARGOCD_OIDC_PROVIDER_NAME ARGOCD_OIDC_REDIRECT_PATH ARGOCD_OIDC_CLI_CALLBACK_URI ARGOCD_OIDC_LOGOUT_PATH ARGOCD_OIDC_SCOPES ARGOCD_OIDC_GROUPS_SCOPE_NAME ARGOCD_OIDC_GROUPS_MAPPING_NAME
 
   python3 - <<'PY'
@@ -461,26 +600,62 @@ return {
     print(f"Created Authentik scope mapping {mapping_name} pk={created['pk']}")
     return created["pk"]
 
+# CH04.5 stamps its managed ownership attributes from the taxonomy management
+# block with the `platforminit` attribute prefix
+# (platform/identity/scripts/ch04-5-bootstrap-identity-model.sh, managed_attributes()).
+# CH04.6 requires the ownership-bearing stamps to be present and consistent
+# before it binds a group to Argo CD admin RBAC: a group without them is not a
+# CH04.5-managed object, so binding it would grant unreviewed platform
+# administration. The focused validator asserts the same stamp names, so a stamp
+# rename is caught repository-side as a CH04.5 contract change.
+REQUIRED_OWNERSHIP_STAMPS = (
+    "platforminit_managed_by",
+    "platforminit_contract_version",
+    "platforminit_owner_chapter",
+    "platforminit_scope",
+    "platforminit_consumer_chapter",
+)
+OWNERSHIP_REMEDY = (
+    "CH04.5 owns groups, memberships and the managed ownership attributes; run "
+    "'04.5 - Deploy Identity Foundation' (scripts/ch04-5-bootstrap-identity-model.sh) to "
+    "re-stamp the group, then re-run CH04.6. CH04.6 never writes group attributes."
+)
+
+
+def group_attributes(group_pk):
+    """Read the live attribute bag of a group (read-only GET, no write)."""
+    detail = request("GET", f"/api/v3/core/groups/{group_pk}/")
+    attributes = detail.get("attributes")
+    return dict(attributes) if isinstance(attributes, dict) else {}
+
+
 def require_authentik_admin_group(name):
-    """Resolve the CH04.5-managed Argo CD admin group by exact name (read-only).
+    """Resolve and verify the CH04.5-managed Argo CD admin group (read-only).
 
     CH04.5 owns the identity group taxonomy
     (platform/identity/groups/platforminit-groups.yaml) and its reconciler is the
     only writer of groups, memberships and managed ownership attributes
     (platform/identity/docs/ch04-5-identity-model-contract.md, section 6).
 
-    CH04.6 therefore consumes the group by lookup only. It never creates,
-    renames, patches or deletes a CH04.5 group and never writes group
-    attributes, so a CH04.6 run cannot clear CH04.5 ownership stamps. A missing
-    or contract-violating group is a hard stop with the owning chapter's remedy.
+    CH04.6 consumes the group by lookup only: it never creates, renames, patches
+    or deletes a CH04.5 group and never writes group attributes. Before the group
+    may be bound to Argo CD admin RBAC its managed ownership stamps must be
+    present, must name the CH04.5 reconciler and must carry an allowed consumer
+    chapter, so an unstamped or foreign-owned group cannot be widened into
+    platform administration. The returned attribute snapshot is the pre-run
+    ownership state that assert_group_ownership_preserved() re-checks after the
+    run.
+
+    A missing group, a contract-violating group or a group whose ownership state
+    cannot be proven is a hard stop with the owning chapter's remedy.
     """
     group = first_by_field("/api/v3/core/groups/", "name", name)
     if not group:
         raise RuntimeError(
             f"CH04.5-managed group not found: {name!r}. CH04.5 owns the identity group "
             "taxonomy and CH04.6 consumes it; run '04.5 - Deploy Identity Foundation' "
-            "(scripts/ch04-5-bootstrap-identity-model.sh) or point argocd_admin_group at an "
-            "existing CH04.5 group name, then re-run CH04.6."
+            "(scripts/ch04-5-bootstrap-identity-model.sh) or point argocd_admin_group at a "
+            "CH04.5-taxonomy group name, then re-run CH04.6."
         )
 
     if group.get("is_superuser"):
@@ -494,8 +669,75 @@ def require_authentik_admin_group(name):
             "admin mapping must use a non-inheriting application group"
         )
 
-    print(f"Consuming CH04.5-managed group {name!r} pk={group['pk']} read-only (no group write)")
-    return group["pk"]
+    attributes = group.get("attributes")
+    if not isinstance(attributes, dict):
+        attributes = group_attributes(group["pk"])
+
+    expected_managed_by = os.environ.get(
+        "ARGOCD_TAXONOMY_MANAGED_BY_EXPECTED", "ch04-5-bootstrap-identity-model"
+    )
+    allowed_consumers = [
+        chapter
+        for chapter in os.environ.get("ARGOCD_ADMIN_GROUP_ALLOWED_CONSUMER_CHAPTERS", "").split()
+        if chapter
+    ]
+
+    missing_stamps = [
+        key for key in REQUIRED_OWNERSHIP_STAMPS if not str(attributes.get(key, "")).strip()
+    ]
+    if missing_stamps:
+        raise RuntimeError(
+            f"CH04.5-managed group {name!r} is missing managed ownership stamp(s): "
+            f"{', '.join(missing_stamps)}. Refusing to bind an unstamped group to Argo CD admin "
+            f"RBAC. {OWNERSHIP_REMEDY}"
+        )
+    if str(attributes.get("platforminit_managed_by")) != expected_managed_by:
+        raise RuntimeError(
+            f"CH04.5-managed group {name!r} declares platforminit_managed_by="
+            f"{attributes.get('platforminit_managed_by')!r}, expected {expected_managed_by!r}. "
+            f"{OWNERSHIP_REMEDY}"
+        )
+    consumer_chapter = str(attributes.get("platforminit_consumer_chapter"))
+    if allowed_consumers and consumer_chapter not in allowed_consumers:
+        raise RuntimeError(
+            f"CH04.5-managed group {name!r} is stamped with platforminit_consumer_chapter="
+            f"{consumer_chapter!r}, which is not one of {allowed_consumers}; binding it to Argo CD "
+            "role:admin would widen another consumer's group into platform administration"
+        )
+
+    print(
+        f"Consuming CH04.5-managed group {name!r} pk={group['pk']} read-only (no group write); "
+        f"ownership stamps verified managed_by={expected_managed_by!r} "
+        f"contract_version={attributes.get('platforminit_contract_version')!r} "
+        f"consumer_chapter={consumer_chapter!r}"
+    )
+    return group["pk"], dict(attributes)
+
+
+def assert_group_ownership_preserved(group_pk, group_name, before):
+    """Prove the CH04.6 run left the CH04.5-managed ownership state untouched.
+
+    The complete attribute bag is re-read after the membership convergence and
+    compared with the pre-run snapshot. A cleared stamp, a changed value or an
+    added/removed key is a hard stop: it means CH04.6 wrote CH04.5-managed
+    ownership state, which is the regression this contract forbids. A repeat
+    reconciliation must leave exactly the same group state behind.
+    """
+    after = group_attributes(group_pk)
+    if after != before:
+        changed_keys = sorted(
+            key for key in set(before) | set(after) if before.get(key) != after.get(key)
+        )
+        raise RuntimeError(
+            f"CH04.6 reconciliation changed CH04.5-managed ownership attributes on group "
+            f"{group_name!r} (key(s): {', '.join(changed_keys) or 'unknown'}). CH04.6 must never "
+            "write group ownership state; run '04.5 - Deploy Identity Foundation' to re-stamp the "
+            "group and report this regression."
+        )
+    print(
+        f"CH04.5 ownership attributes preserved on group {group_name!r}: "
+        f"attribute bag unchanged after reconciliation ({len(after)} keys)"
+    )
 
 
 def group_pk_list(raw_groups):
@@ -617,8 +859,13 @@ argocd_groups_mapping_pk = ensure_argocd_groups_scope_mapping()
 if argocd_groups_mapping_pk not in property_mappings:
     property_mappings.append(argocd_groups_mapping_pk)
 
-argocd_admin_group_pk = require_authentik_admin_group(admin_group_name)
+argocd_admin_group_pk, argocd_admin_group_ownership = require_authentik_admin_group(admin_group_name)
 ensure_argocd_admin_membership(argocd_admin_group_pk, admin_group_name, admin_username)
+# Ownership preservation proof: re-read the CH04.5 attribute bag after the
+# membership convergence and fail closed if CH04.6 changed any of it.
+assert_group_ownership_preserved(
+    argocd_admin_group_pk, admin_group_name, argocd_admin_group_ownership
+)
 argocd_signing_key_pk = resolve_oauth_signing_key()
 
 # Provider contract. Every value below is asserted live by the focused validator.
@@ -862,6 +1109,49 @@ PYCODE
   # Keep tmp_dir until the rollout path completes so rollback can restore the previous ConfigMaps.
 }
 
+verify_argocd_rbac_mapping() {
+  # Read-back proof for the group-to-role mapping CH04.6 just applied: exactly one
+  # admin binding for the validated group, the template's read-only default policy
+  # and a groups scope. A repeat reconciliation must not have widened Argo CD
+  # privilege, so a mismatch is a hard stop instead of a silent continuation.
+  # Only non-secret group names, roles and policy keys are printed here.
+  log "Verifying the applied Argo CD RBAC group-to-role mapping (deterministic, fail closed)"
+  local expected_line="g, ${ARGOCD_ADMIN_GROUP}, ${ARGOCD_RBAC_ADMIN_ROLE}"
+  local live_policy=""
+  local live_default=""
+  local live_scopes=""
+  local group_lines=""
+  local admin_lines=""
+  local extra_group_lines=""
+
+  live_policy="$(kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-rbac-cm -o jsonpath='{.data.policy\.csv}' 2>/dev/null || true)"
+  live_default="$(kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-rbac-cm -o jsonpath='{.data.policy\.default}' 2>/dev/null || true)"
+  live_scopes="$(kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-rbac-cm -o jsonpath='{.data.scopes}' 2>/dev/null || true)"
+
+  [[ -n "${live_policy}" ]] || die "argocd-rbac-cm has no policy.csv after apply; re-run '04.6 - Enable Argo CD SSO'"
+
+  group_lines="$(printf '%s\n' "${live_policy}" | sed -E 's/[[:space:]]+$//' | grep -E '^g,' || true)"
+  admin_lines="$(printf '%s\n' "${group_lines}" | grep -E ",${ARGOCD_RBAC_ADMIN_ROLE}\$" || true)"
+
+  if [[ "${admin_lines}" != "${expected_line}" ]]; then
+    printf '%s\n' "${group_lines:-<no g, lines present>}" >&2
+    die "argocd-rbac-cm policy.csv must carry exactly one '${expected_line}' binding; a differing or additional ${ARGOCD_RBAC_ADMIN_ROLE} mapping would broaden Argo CD privilege"
+  fi
+  log "Exactly one Argo CD ${ARGOCD_RBAC_ADMIN_ROLE} binding present for the validated group"
+
+  [[ "${live_default}" == "${ARGOCD_RBAC_DEFAULT_POLICY}" ]] \
+    || die "argocd-rbac-cm policy.default is '${live_default:-<unset>}', expected '${ARGOCD_RBAC_DEFAULT_POLICY}'; refusing to continue with a broadened default Argo CD policy"
+
+  echo "${live_scopes}" | grep -q 'groups' \
+    || die "argocd-rbac-cm scopes do not include 'groups', so the Authentik groups claim cannot drive Argo CD RBAC"
+
+  extra_group_lines="$(printf '%s\n' "${group_lines}" | grep -vF "${expected_line}" || true)"
+  if [[ -n "${extra_group_lines}" ]]; then
+    log "WARN: additional non-admin RBAC group bindings are present (narrower than the admin mapping): $(printf '%s' "${extra_group_lines}" | tr '\n' ' ')"
+  fi
+  log "Argo CD RBAC mapping verified: single admin binding, read-only default policy, groups scope"
+}
+
 print_argocd_oidc_config_summary() {
   log "Current Argo CD OIDC runtime config summary"
   echo "--- argocd-cm data keys ---"
@@ -1101,10 +1391,14 @@ main() {
   ensure_argocd_server_secretkey
   resolve_or_create_argocd_oidc_secret
   resolve_authentik_api_token
+  # Fails closed before any write: the admin group must be a CH04.5-declared,
+  # non-superuser group with an allowed consumer chapter and an RBAC-safe name.
+  validate_argocd_admin_group_binding
   configure_authentik_argocd_provider
   validate_authentik_oidc_discovery
   validate_authentik_oidc_discovery_from_cluster
   render_and_apply_argocd_config
+  verify_argocd_rbac_mapping
   restart_argocd_server
   log "Argo CD Dex-backed SSO enabled via Authentik provider slug=${ARGOCD_OIDC_PROVIDER_SLUG} url=https://argocd.${BASE_DOMAIN}"
 }

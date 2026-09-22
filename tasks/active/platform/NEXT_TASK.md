@@ -2,29 +2,30 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.6-T04 — Close the CH04.6 identity integration checkpoint
+## P-CH05-T01 — Verify the current Checkmk GitOps runtime and retired-stack boundary
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-6-checkpoint` |
-| Scope | `platform-identity-sso` |
-| Dependencies | P-CH04.6-T03 |
+| Branch | `batch/platform-ch05-checkmk-reference-state` |
+| Scope | `platform-observability` |
+| Dependencies | P-CH04.6-T04 |
 | Next actor | `platforminit-orchestrator` |
 
-Produce a compact operator checkpoint for the existing Argo CD SSO integration, including ownership, known failure modes, recovery/fallback and the exact prerequisite chain for CH05.
+Treat the existing Checkmk implementation as the current operational reference, verify runtime/storage/GitOps ownership, and keep Zabbix/OpenObserve/Vector references historical or negative-guard only.
 
 ### Acceptance criteria
 
-- [ ] CH04.6 ownership and support boundaries are summarized without duplicating implementation docs
-- [ ] known failure modes and break-glass recovery are actionable
-- [ ] the CH05 prerequisite chain points to the current Checkmk operations architecture
+- [ ] active CH05 runtime and storage ownership resolve to Checkmk Community under Argo CD
+- [ ] retired Grafana/VictoriaMetrics/Loki and Zabbix/OpenObserve/Vector paths are not active deployment choices
+- [ ] current operator documentation and focused validation agree on the Checkmk reference-state
 
 ### Allowed files
 
-- `platform/identity/docs/**`
-- `docs/**`
+- `platform/observability/**`
+- `docs/ch05-*.md`
+- `README.md`
 - `tasks/**`
 
 ### Required validators
@@ -40,4 +41,4 @@ Produce a compact operator checkpoint for the existing Argo CD SSO integration, 
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.6-T04 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH05-T01 --actor platforminit-orchestrator`

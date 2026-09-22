@@ -2,30 +2,30 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.6-T02 — Preserve identity ownership during Argo CD SSO reconciliation
+## P-CH04.6-T03 — Validate Argo CD SSO login logout and fallback contract
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-6-preserve-identity-ownership` |
+| Branch | `batch/platform-ch04-6-sso-validation` |
 | Scope | `platform-identity-sso` |
-| Dependencies | P-CH04.6-T01 |
+| Dependencies | P-CH04.6-T02 |
 | Next actor | `platforminit-orchestrator` |
 
-Fix the known CH04.6 consumer behavior that can clear CH04.5-managed Authentik group attributes and keep group/RBAC reconciliation idempotent.
+Stabilize focused validation and operator documentation for OIDC login, logout/session behavior, redirect correctness and emergency local access without changing unrelated identity services.
 
 ### Acceptance criteria
 
-- [ ] CH04.6 group reconciliation preserves CH04.5 managed ownership attributes
-- [ ] Argo CD group-to-role mapping remains deterministic and does not broaden privilege
-- [ ] focused validation covers repeat reconciliation and ownership preservation
+- [ ] focused validation covers expected OIDC login, redirect and RBAC contract
+- [ ] logout/session behavior and emergency local access are explicitly documented
+- [ ] repository-only validation remains distinct from any human-approved live SSO test
 
 ### Allowed files
 
-- `platform/identity/scripts/ch04-6-enable-argocd-sso.sh`
 - `platform/identity/validate/ch04-6-validate-argocd-sso.sh`
 - `platform/identity/docs/ch04-6-argocd-sso-runbook.md`
+- `docs/**`
 - `tasks/**`
 
 ### Required validators
@@ -41,4 +41,4 @@ Fix the known CH04.6 consumer behavior that can clear CH04.5-managed Authentik g
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.6-T02 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.6-T03 --actor platforminit-orchestrator`

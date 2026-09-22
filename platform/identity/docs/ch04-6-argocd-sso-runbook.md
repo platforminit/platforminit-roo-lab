@@ -145,6 +145,11 @@ CH04.6 therefore:
   attributes, so a CH04.6 run cannot clear CH04.5 ownership stamps;
 - fails closed, naming the CH04.5 remedy, when the group is missing, is an
   Authentik superuser group or inherits from a parent group;
+- requires the group to be declared in the CH04.5 taxonomy with the managed
+  ownership stamps intact, and re-reads the attribute bag after converging the
+  membership (see the mapping contract below);
+- fails closed when the name is not a CH04.5-declared, non-superuser group with
+  an allowed consumer chapter, or when the name is not RBAC-injection safe;
 - converges only the **membership** of the Argo CD admin identity
   (`authentik_argocd_admin_username`, default `akadmin`) in that group.
 
@@ -158,6 +163,42 @@ the group definition stays with CH04.5.
 Converging the membership avoids the post-login state where Authentik SSO
 succeeds but Argo CD sync is denied because the user only receives
 `role:readonly`.
+
+### The mapping is deterministic, non-broadening and ownership-preserving
+
+P-CH04.6-T02 closed the remaining ownership gaps around this binding. Before any
+write, `04.6 - Enable Argo CD SSO` runs a repository-only binding gate
+(`validate_argocd_admin_group_binding` in
+[`ch04-6-enable-argocd-sso.sh`](../scripts/ch04-6-enable-argocd-sso.sh:1)) that
+refuses, naming the CH04.5 remedy, when:
+
+| Rule | Why |
+|---|---|
+| the name is not `^[A-Za-z0-9][A-Za-z0-9 ._-]{0,127}$`, or carries surrounding whitespace | the name is substituted into the single `policy.csv` line, so a comma, colon, newline, quote or hash could inject a second RBAC statement and widen the mapping |
+| the name is not exactly one group in [`platforminit-groups.yaml`](../groups/platforminit-groups.yaml:1) | only a CH04.5-declared group may be granted Argo CD `role:admin`; an undeclared group would be an unreviewed privilege grant |
+| the taxonomy `management.managed_by` is not the CH04.5 reconciler | a group from an unowned taxonomy is not CH04.5 state |
+| the declared group has `is_superuser: true` | application access is never expressed through Authentik superuser inheritance |
+| the declared `consumer_chapter` is not `platform` or `CH04.6` | binding another consumer's group (for example `PlatformInit Operations`, consumed by CH05) to Argo CD admin would widen that group into platform administration |
+
+Ownership preservation is verified twice on the write path:
+
+1. before binding, the consumed group must carry the CH04.5 managed ownership
+   stamps (`platforminit_managed_by`, `platforminit_contract_version`,
+   `platforminit_owner_chapter`, `platforminit_scope`,
+   `platforminit_consumer_chapter`) and `platforminit_managed_by` must name
+   `ch04-5-bootstrap-identity-model`; an unstamped or foreign-owned group is
+   refused, because binding it would grant unreviewed platform administration;
+2. after the membership convergence, the complete attribute bag is re-read and
+   compared with the pre-run snapshot. A cleared stamp, a changed value or an
+   added key is a hard stop, so a run that wrote CH04.5 ownership state fails
+   instead of continuing, and a repeat run leaves the same group state behind.
+
+After the `argocd-rbac-cm` apply, CH04.6 reads the object back and fails closed
+unless `policy.csv` carries exactly one `g, <group>, role:admin` binding, the
+`policy.default` is `role:readonly` and the `scopes` include `groups`. A repeat
+run therefore cannot have broadened Argo CD privilege, and when the mapping, the
+`dex.config`, the `data.url` and the membership are already converged the run
+performs no group write and no rollout restart.
 
 ## Workflow
 
@@ -202,6 +243,32 @@ redirect URI allow-list, the scope mappings, the provider/application link and t
 Argo CD HTTPS endpoint. It never prints a secret value. `FAIL` is blocking;
 `WARN` is informative, for example a legacy secret key that has not been retired
 yet.
+
+P-CH04.6-T02 added the ownership and mapping invariants to the live assertions:
+the CH04.5 managed ownership stamps must be present and must name the CH04.5
+reconciler and owner chapter with an allowed consumer chapter, and
+`argocd-rbac-cm` must carry exactly one group binding (the expected admin binding)
+with a `policy.default` that is not broader than `role:readonly`. A missing stamp,
+a foreign owner or an extra admin binding is a blocking `FAIL`, not a warning.
+
+Repository-only mode (no cluster, no network, non-mutating) proves the same
+contract offline and is the mode to use in a WSL workspace without `kubectl`:
+
+```bash
+bash platform/identity/validate/ch04-6-validate-argocd-sso.sh --static
+```
+
+It checks that the reconciler issues no group write, asserts and re-verifies the
+CH04.5 ownership stamps before binding, reads the applied mapping back, and
+converges on a repeat run without rewriting membership, config or group state. It
+also proves the `argocd-rbac-cm` render is byte-identical across two renders and
+carries exactly one admin binding with `policy.default: role:readonly`, that the
+CH04.5 taxonomy agrees with the binding constants, and it drives the extracted
+admin-group binding gate with 13 fixtures - the accepted default and `ArgoCD
+Admins` groups plus rejected superuser, foreign-consumer, undeclared, empty,
+whitespace-padded, RBAC-injection, missing-taxonomy and mutated-taxonomy cases -
+running every fixture twice so a repeat reconciliation must reach the same
+decision. It exits non-zero when any control fails.
 
 Repository-only companion checks for the same contract:
 
@@ -270,3 +337,24 @@ Residual notes for the next reviewer:
   scope and is a follow-up documentation fix.
 - The provider and application are reconciled with an unconditional `PATCH`
   (no `UNCHANGED` short-circuit), so a re-run is convergent but not write-free.
+
+## Contract drift reconciled by P-CH04.6-T02
+
+| Gap before the change | Reconciled state |
+|---|---|
+| The read-only group consumption was unproven: the live ownership check was a `WARN` and nothing verified that a run left the CH04.5 ownership stamps intact. | The consumed group must carry the CH04.5 managed ownership stamps, and the attribute bag is re-read and compared after the membership convergence; a difference is a hard stop. The live check is now a blocking `FAIL`, and preservation is proven by the pre-write stamp gate plus the post-run re-read. |
+| `argocd_admin_group` accepted any existing Authentik group name and the raw name was substituted into the single `policy.csv` line. | The pre-write binding gate requires a CH04.5-taxonomy-declared, non-superuser group with an allowed consumer chapter and an RBAC-injection-safe name shape. |
+| Nothing verified the applied `argocd-rbac-cm` mapping, so a repeat run could have broadened the group-to-role mapping silently. | CH04.6 reads the object back and fails closed unless exactly one `g, <group>, role:admin` binding, `policy.default: role:readonly` and a `groups` scope are present; the live validator asserts the same, and `--static` proves the render is deterministic. |
+| No focused validation covered repeat reconciliation or ownership preservation in a workspace without `kubectl`. | The validator's `--static` mode exercises 31 repository-only controls, including 13 binding-gate fixtures run twice each, plus the ownership-preservation harness documented in the task evidence. |
+
+Residual notes for the next reviewer:
+
+- The binding gate reads `${REPO_ROOT}/groups/platforminit-groups.yaml` from the
+  identity artifact, the same relative layout the RBAC/OIDC templates already use.
+  A partial artifact that omits `groups/` fails closed with the
+  `ARGOCD_TAXONOMY_FILE` remedy instead of binding an unverified group.
+- The ownership stamp names are CH04.5's `attribute_prefix`-derived keys. A stamp
+  rename is a CH04.5 contract change: the reconciler and the live validator both
+  fail closed until they are updated together.
+- The live `kubectl`-based checks still cannot be observed without `kubectl`; only
+  an approved `04.6 - Enable Argo CD SSO` run proves the deployed objects.

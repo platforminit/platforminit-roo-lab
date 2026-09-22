@@ -4,9 +4,12 @@ set -euo pipefail
 #############################################################################
 # CH04.6 - Argo CD SSO contract validator (single focused validator)
 #
-# Task: P-CH04.6-T01 (Authentik OIDC provider/application contract audit).
+# Tasks: P-CH04.6-T01 (Authentik OIDC provider/application contract audit),
+# extended by P-CH04.6-T02 (ownership preservation and mapping determinism) and
+# P-CH04.6-T03 (login/logout/session contract and the repository-only versus
+# human-approved live-test boundary).
 #
-# It asserts the CH04.6 Argo CD SSO contract in five groups:
+# It asserts the CH04.6 Argo CD SSO contract in eight groups:
 #   A. cluster SSO material: rollouts, argocd-secret keys, argocd-cm url
 #   B. the Dex-backed connector contract in argocd-cm (issuer, clientID,
 #      secret *reference*, groups claim, scopes) and the absence of the direct
@@ -31,6 +34,17 @@ set -euo pipefail
 #      carries exactly one group binding, the expected admin mapping, the
 #      read-only default policy and a groups scope. Missing stamps, a foreign
 #      owner and any extra/widened admin binding fail closed
+#   G. the repository-only login, redirect and session wiring: the reconciler's
+#      declared login/redirect/logout contract literals, its three strict
+#      redirect entries plus the frontchannel logout, the Dex connector body the
+#      Argo CD login page consumes, the stable session signing key, and the
+#      rendered argocd-cm template - so the login path is asserted offline where
+#      no cluster is reachable
+#   H. the documentation guard plus the validation boundary: the CH04.6 runbook
+#      must document the expected login, the logout/session behavior and the
+#      break-glass local access path, and both the runbook and this validator
+#      must keep repository-only validation distinct from the human-approved
+#      live SSO login/logout test
 #
 # Secret handling: this validator asserts secret *key presence* and non-secret
 # identifiers only. It never prints, hashes or logs a secret value, and the
@@ -47,6 +61,12 @@ set -euo pipefail
 #   AUTHENTIK_ARGOCD_ADMIN_USERNAME, AUTHENTIK_BASE_URL and optionally
 #   AUTHENTIK_BOOTSTRAP_TOKEN (read from the identity namespace when unset).
 # Exit status: 0 when every check is PASS or WARN, 1 on the first FAIL.
+#
+# Live SSO login/logout: this validator never performs a browser login or a
+# logout. The live end-to-end SSO test is a separate step that requires explicit
+# human approval (see the "Repository-only validation versus the human-approved
+# live SSO test" section of the CH04.6 SSO runbook); --static proves the
+# repository contract only and must never be presented as live SSO evidence.
 #
 # Modes:
 #   (default / --live) live read-only contract validation: kubectl get and
@@ -91,6 +111,27 @@ STATIC_EXPECTED_OWNER_CHAPTER="CH04.5"
 STATIC_ALLOWED_CONSUMER_CHAPTERS="platform CH04.6"
 STATIC_DEFAULT_GROUP="PlatformInit Admins"
 
+# Repository-only mode never performs an OIDC login or logout. The boundary note
+# is printed by every --static run and is asserted together with the runbook
+# anchors below, so the repository-only result cannot silently be presented as
+# live SSO evidence.
+STATIC_LIVE_TEST_SEPARATION_NOTE="note: repository-only validation; no OIDC login/logout was performed and this run does not replace the human-approved live SSO test (see the CH04.6 SSO runbook section 'Repository-only validation versus the human-approved live SSO test')"
+# Documentation anchors: the CH04.6 runbook must keep documenting the expected
+# login, the logout/session behavior, the break-glass local access path and the
+# human-approved live-test boundary.
+declare -a STATIC_REQUIRED_RUNBOOK_TOKENS=(
+  '## Login and logout session contract'
+  '## Break-glass and emergency local access'
+  '## Repository-only validation versus the human-approved live SSO test'
+  'explicit human approval'
+  'does not prove'
+  'connector_id=authentik'
+  'Log in via Authentik'
+  'frontchannel'
+  'server.secretkey'
+  '<PLATFORM_BASE_DOMAIN>/logout'
+)
+
 static_pass() { echo "PASS | $1 | $2"; STATIC_CONTROLS=$((STATIC_CONTROLS + 1)); }
 static_warn() { echo "WARN | $1 | $2"; STATIC_CONTROLS=$((STATIC_CONTROLS + 1)); }
 static_fail() {
@@ -112,23 +153,28 @@ static_cleanup() {
 run_static_validation() {
   trap static_cleanup EXIT
 
-  local identity_dir reconciler rbac_template taxonomy gate_py
+  local identity_dir reconciler rbac_template oidc_template taxonomy gate_py runbook
   local code="" missing="" problems="" token="" group_writes=""
+  local self_path="" static_code_file="" strict_count="" authorization_count="" logout_type_count=""
+  local note_echo_count=""
+  local -a expected_scope_list=()
   identity_dir="$(static_identity_dir)"
   reconciler="${identity_dir}/scripts/ch04-6-enable-argocd-sso.sh"
   rbac_template="${identity_dir}/integrations/argocd/argocd-authentik-rbac-cm.yaml.tpl"
+  oidc_template="${identity_dir}/integrations/argocd/argocd-authentik-oidc-cm.yaml.tpl"
   taxonomy="${identity_dir}/groups/platforminit-groups.yaml"
+  runbook="${identity_dir}/docs/ch04-6-argocd-sso-runbook.md"
   STATIC_TMP_DIR="$(mktemp -d)"
   gate_py="${STATIC_TMP_DIR}/admin-group-binding-gate.py"
 
-  echo "static mode: repository-only CH04.6 ownership-preservation and mapping-determinism validation"
+  echo "static mode: repository-only CH04.6 ownership-preservation, mapping-determinism, login/redirect/session and documentation-boundary validation"
 
   # --- S1. repository inputs ------------------------------------------------
-  for path in "${reconciler}" "${rbac_template}" "${taxonomy}"; do
+  for path in "${reconciler}" "${rbac_template}" "${oidc_template}" "${taxonomy}" "${runbook}"; do
     [[ -f "${path}" ]] || missing="${missing} ${path}"
   done
   if [[ -z "${missing}" ]]; then
-    static_pass "STATIC_INPUTS" "the reconciler, the argocd-rbac-cm template and the CH04.5 taxonomy are present"
+    static_pass "STATIC_INPUTS" "the reconciler, the argocd-rbac-cm and argocd-cm templates, the CH04.5 taxonomy and the CH04.6 runbook are present"
   else
     static_fail "STATIC_INPUTS" "missing repository input(s):${missing}"
     return 1
@@ -147,16 +193,22 @@ run_static_validation() {
   fi
 
   code="$(static_code_only "${reconciler}")"
+  # The reconciler token checks below read this file instead of piping `printf`
+  # into `grep -q`. With `set -o pipefail`, an early-exiting `grep -q` can send
+  # SIGPIPE to `printf` and turn a successful match into a false failure, which
+  # would make this validator non-deterministic across repeated runs.
+  static_code_file="${STATIC_TMP_DIR}/reconciler-code-only.sh"
+  printf '%s\n' "${code}" > "${static_code_file}"
 
   # --- S3. the reconciler writes no group object ---------------------------
-  group_writes="$(printf '%s\n' "${code}" | grep -nE 'request\("(POST|PATCH|PUT|DELETE)"[^)]*core/groups' || true)"
+  group_writes="$(grep -nE 'request\("(POST|PATCH|PUT|DELETE)"[^)]*core/groups' "${static_code_file}" || true)"
   if [[ -z "${group_writes}" ]]; then
     static_pass "STATIC_NO_GROUP_WRITE" "the reconciler issues no group create/update/delete call, so CH04.5 ownership attributes cannot be written by CH04.6"
   else
     static_fail "STATIC_NO_GROUP_WRITE" "mutating group call(s) found in the reconciler: ${group_writes}"
   fi
 
-  if printf '%s\n' "${code}" | grep -qF 'first_by_field("/api/v3/core/groups/", "name", name)'; then
+  if grep -qF 'first_by_field("/api/v3/core/groups/", "name", name)' "${static_code_file}"; then
     static_pass "STATIC_GROUP_LOOKUP_EXACT_NAME" "the consumed group is resolved by exact-name lookup only"
   else
     static_fail "STATIC_GROUP_LOOKUP_EXACT_NAME" "the reconciler no longer resolves the admin group by exact-name lookup"
@@ -166,7 +218,7 @@ run_static_validation() {
   for token in 'REQUIRED_OWNERSHIP_STAMPS' 'platforminit_managed_by' 'platforminit_contract_version' \
       'platforminit_owner_chapter' 'platforminit_scope' 'platforminit_consumer_chapter' \
       'ch04-5-bootstrap-identity-model'; do
-    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+    grep -qF "${token}" "${static_code_file}" || problems="${problems} ${token}"
   done
   if [[ -z "${problems}" ]]; then
     static_pass "STATIC_OWNERSHIP_STAMP_ASSERTION" "the reconciler asserts the CH04.5 managed ownership stamps and the CH04.5 reconciler name before binding the group"
@@ -178,7 +230,7 @@ run_static_validation() {
   # --- S5. ownership preservation proof -----------------------------------
   for token in 'def group_attributes(group_pk)' 'def assert_group_ownership_preserved(' \
       'argocd_admin_group_ownership' 'ownership attributes preserved on group'; do
-    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+    grep -qF "${token}" "${static_code_file}" || problems="${problems} ${token}"
   done
   if [[ -z "${problems}" ]]; then
     static_pass "STATIC_OWNERSHIP_PRESERVATION_PROOF" "the reconciler snapshots the CH04.5 attribute bag and re-verifies it after the membership convergence"
@@ -189,7 +241,7 @@ run_static_validation() {
 
   # --- S6. RBAC mapping read-back verification ----------------------------
   for token in 'verify_argocd_rbac_mapping()' 'ARGOCD_RBAC_DEFAULT_POLICY' 'ARGOCD_RBAC_ADMIN_ROLE'; do
-    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+    grep -qF "${token}" "${static_code_file}" || problems="${problems} ${token}"
   done
   if [[ -z "${problems}" ]]; then
     static_pass "STATIC_RBAC_MAPPING_VERIFICATION" "the reconciler reads back the applied argocd-rbac-cm mapping, default policy and groups scope"
@@ -201,7 +253,7 @@ run_static_validation() {
   # --- S7. repeat-reconciliation convergence ------------------------------
   for token in 'is already a member of' 'ARGOCD_CONFIG_CHANGED=0' \
       'config unchanged; skipping unnecessary rollout restart' 'assert_group_ownership_preserved('; do
-    printf '%s\n' "${code}" | grep -qF "${token}" || problems="${problems} ${token}"
+    grep -qF "${token}" "${static_code_file}" || problems="${problems} ${token}"
   done
   if [[ -z "${problems}" ]]; then
     static_pass "STATIC_REPEAT_RECONCILIATION_CONVERGENCE" "a repeat run short-circuits the membership, the unchanged config and the group state instead of rewriting them"
@@ -409,11 +461,191 @@ PYMUT
     static_fail "STATIC_NO_LIVE_ACCESS" "could not prove that --static exits before the first kubectl call (dispatch=${dispatch_line:-unset}, first kubectl=${first_kubectl_line:-unset})"
   fi
 
+  # --- S14. the login/redirect/logout contract defaults --------------------
+  # The reconciler declares the login-facing contract once. These literals are
+  # its only source of truth, so they are asserted where they are declared.
+  problems=""
+  for token in \
+      'ARGOCD_PUBLIC_URL="${ARGOCD_PUBLIC_URL:-https://argocd.${BASE_DOMAIN}}"' \
+      'ARGOCD_OIDC_PROVIDER_NAME="${ARGOCD_OIDC_PROVIDER_NAME:-Argo CD}"' \
+      'ARGOCD_OIDC_REDIRECT_PATH="${ARGOCD_OIDC_REDIRECT_PATH:-/api/dex/callback}"' \
+      'ARGOCD_OIDC_CLI_CALLBACK_URI="${ARGOCD_OIDC_CLI_CALLBACK_URI:-https://localhost:8085/auth/callback}"' \
+      'ARGOCD_OIDC_LOGOUT_PATH="${ARGOCD_OIDC_LOGOUT_PATH:-/logout}"' \
+      'ARGOCD_OIDC_SCOPES="${ARGOCD_OIDC_SCOPES:-openid profile email groups}"'; do
+    grep -qF "${token}" "${static_code_file}" || problems="${problems} ${token%%=*}"
+  done
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_OIDC_CONTRACT_DEFAULTS" "the reconciler declares the Argo CD public URL, the provider name, the browser and CLI login redirect paths, the logout path and the four scopes once"
+  else
+    static_fail "STATIC_OIDC_CONTRACT_DEFAULTS" "missing login/redirect contract default(s):${problems}"
+    problems=""
+  fi
+
+  # --- S15. the validator and the reconciler agree on the login contract ---
+  # Compared as literals so a BASE_DOMAIN or scope override cannot create a
+  # false failure, while a one-sided edit of the login, redirect or logout
+  # contract fails closed. The derived runtime URLs must additionally stay on
+  # the Argo CD public origin, so a login can never be redirected elsewhere.
+  problems=""
+  self_path="$(static_self_path)"
+  grep -qF 'EXPECTED_ARGOCD_URL="https://argocd.${BASE_DOMAIN}"' "${self_path}" \
+    || problems="${problems} validator-argocd-url"
+  grep -qF 'EXPECTED_REDIRECT_URI="${EXPECTED_ARGOCD_URL}/api/dex/callback"' "${self_path}" \
+    || problems="${problems} validator-redirect-uri"
+  grep -qF 'EXPECTED_LOGOUT_URI="${EXPECTED_ARGOCD_URL}/logout"' "${self_path}" \
+    || problems="${problems} validator-logout-uri"
+  grep -qF 'EXPECTED_CLI_CALLBACK_URI="https://localhost:8085/auth/callback"' "${self_path}" \
+    || problems="${problems} validator-cli-callback"
+  grep -qF ':-https://argocd.${BASE_DOMAIN}}' "${static_code_file}" \
+    || problems="${problems} reconciler-argocd-url"
+  grep -qF ':-/api/dex/callback}' "${static_code_file}" \
+    || problems="${problems} reconciler-redirect-path"
+  grep -qF ':-/logout}' "${static_code_file}" \
+    || problems="${problems} reconciler-logout-path"
+  grep -qF ':-https://localhost:8085/auth/callback}' "${static_code_file}" \
+    || problems="${problems} reconciler-cli-callback"
+  grep -qF ':-openid profile email groups}' "${static_code_file}" \
+    || problems="${problems} reconciler-scopes"
+  [[ "${EXPECTED_ARGOCD_URL}" == "https://argocd."* ]] || problems="${problems} argocd-url-origin"
+  [[ "${EXPECTED_REDIRECT_URI}" == "${EXPECTED_ARGOCD_URL}/"* ]] || problems="${problems} redirect-uri-origin"
+  [[ "${EXPECTED_LOGOUT_URI}" == "${EXPECTED_ARGOCD_URL}/"* ]] || problems="${problems} logout-uri-origin"
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_LOGIN_REDIRECT_RBAC_PARITY" "the validator derives the same Argo CD origin, login redirect path, CLI login callback, logout path and scope list the reconciler declares, and both redirect URLs stay on the Argo CD public origin"
+  else
+    static_fail "STATIC_LOGIN_REDIRECT_RBAC_PARITY" "the validator and the reconciler disagree on the login/redirect contract:${problems}"
+    problems=""
+  fi
+
+  # --- S16. the strict redirect allow-list the reconciler submits ----------
+  strict_count="$(grep -cF '"matching_mode": "strict"' "${static_code_file}" || true)"
+  authorization_count="$(grep -cF '"redirect_uri_type": "authorization"' "${static_code_file}" || true)"
+  logout_type_count="$(grep -cF '"redirect_uri_type": "logout"' "${static_code_file}" || true)"
+  problems=""
+  [[ "${strict_count}" == "3" ]] || problems="${problems} strict=${strict_count}"
+  [[ "${authorization_count}" == "2" ]] || problems="${problems} authorization=${authorization_count}"
+  [[ "${logout_type_count}" == "1" ]] || problems="${problems} logout=${logout_type_count}"
+  grep -qF '"url": redirect_uri' "${static_code_file}" || problems="${problems} browser-redirect-uri"
+  grep -qF '"url": cli_callback_uri' "${static_code_file}" || problems="${problems} cli-callback-uri"
+  grep -qF '"url": logout_uri' "${static_code_file}" || problems="${problems} logout-redirect-uri"
+  grep -qF '"logout_uri": logout_uri' "${static_code_file}" || problems="${problems} logout-uri-field"
+  grep -qF '"logout_method": "frontchannel"' "${static_code_file}" || problems="${problems} logout-method"
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_STRICT_REDIRECT_ALLOWLIST_PAYLOAD" "the reconciler submits exactly three strict redirect entries (browser login callback, CLI login callback, logout) and a frontchannel logout_uri, so no wildcard, prefix or regex redirect can be written"
+  else
+    static_fail "STATIC_STRICT_REDIRECT_ALLOWLIST_PAYLOAD" "the provider redirect allow-list payload changed:${problems}"
+    problems=""
+  fi
+
+  # --- S17. the Dex connector and session wiring behind the Argo CD login ---
+  # The login page renders its "Log in via Authentik" item from this connector
+  # body, and the Argo CD session cookie is signed with the stable
+  # server.secretkey, so both are asserted on the write path.
+  problems=""
+  for token in 'id: authentik' 'name: Authentik' 'clientSecret: $dex.authentik.clientSecret' \
+      'insecureEnableGroups: true' 'getUserInfo: true' \
+      '"dex.config": os.environ["OIDC_CONFIG"]' \
+      '{"op":"remove","path":"/data/oidc.config"}' \
+      'ensure_argocd_server_secretkey' \
+      'OIDC state/session token verification'; do
+    grep -qF "${token}" "${static_code_file}" || problems="${problems} '${token}'"
+  done
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_DEX_LOGIN_SESSION_WIRING" "the reconciler renders the Dex connector the login page consumes (connector id/name authentik, client secret kept as a secret reference), removes any competing direct oidc.config and ensures the stable server.secretkey that signs the Argo CD session before SSO login is enabled"
+  else
+    static_fail "STATIC_DEX_LOGIN_SESSION_WIRING" "the login/session wiring changed:${problems}"
+    problems=""
+  fi
+
+  # --- S18. the argocd-cm login template renders the same contract ---------
+  static_render_oidc_cm() {
+    sed -e "s|__BASE_DOMAIN__|${BASE_DOMAIN}|g" \
+        -e "s|__AUTHENTIK_OIDC_ISSUER__|${EXPECTED_ISSUER}|g" \
+        -e "s|__ARGOCD_OIDC_CLIENT_ID__|platforminit-argocd|g" "${oidc_template}"
+  }
+  static_render_oidc_cm > "${STATIC_TMP_DIR}/argocd-cm-1.yaml"
+  static_render_oidc_cm > "${STATIC_TMP_DIR}/argocd-cm-2.yaml"
+
+  problems=""
+  grep -qF "url: ${EXPECTED_ARGOCD_URL}" "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || problems="${problems} data.url"
+  grep -qF "issuer: ${EXPECTED_ISSUER}" "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || problems="${problems} issuer"
+  grep -qF 'id: authentik' "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || problems="${problems} connector-id"
+  grep -qF 'name: Authentik' "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || problems="${problems} connector-name"
+  grep -qF 'clientSecret: $dex.authentik.clientSecret' "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || problems="${problems} client-secret-reference"
+  grep -qF 'insecureEnableGroups: true' "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || problems="${problems} groups-claim"
+  if grep -qE '^[[:space:]]*oidc\.config:' "${STATIC_TMP_DIR}/argocd-cm-1.yaml"; then
+    problems="${problems} direct-oidc-key"
+  fi
+  read -r -a expected_scope_list <<< "${EXPECTED_SCOPES}"
+  for scope in "${expected_scope_list[@]}"; do
+    grep -qE "^[[:space:]]+- ${scope}\$" "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || problems="${problems} scope-${scope}"
+  done
+  rendered_scope_count="$(grep -cE '^[[:space:]]+- [A-Za-z]+$' "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || true)"
+  expected_scope_count="${#expected_scope_list[@]}"
+  [[ "${rendered_scope_count}" == "${expected_scope_count}" ]] || problems="${problems} scope-count=${rendered_scope_count}"
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_ARGOCD_CM_LOGIN_TEMPLATE" "the rendered argocd-cm template carries the Argo CD URL, the derived Authentik issuer, the Authentik connector, the secret reference and exactly the ${expected_scope_count} contract scopes, with no direct oidc.config key"
+  else
+    static_fail "STATIC_ARGOCD_CM_LOGIN_TEMPLATE" "the rendered argocd-cm login template lost part of the contract:${problems}"
+    problems=""
+  fi
+
+  placeholder_count="$(grep -cE '__[A-Z_]+__' "${STATIC_TMP_DIR}/argocd-cm-1.yaml" || true)"
+  if cmp -s "${STATIC_TMP_DIR}/argocd-cm-1.yaml" "${STATIC_TMP_DIR}/argocd-cm-2.yaml" \
+      && [[ "${placeholder_count}" == "0" ]]; then
+    static_pass "STATIC_ARGOCD_CM_RENDER_DETERMINISTIC" "two renders of argocd-authentik-oidc-cm.yaml.tpl are byte-identical and leave no unsubstituted placeholder, so a repeat reconciliation renders the same login contract"
+  else
+    static_fail "STATIC_ARGOCD_CM_RENDER_DETERMINISTIC" "the argocd-cm template render is not deterministic or kept ${placeholder_count} unsubstituted placeholder(s)"
+  fi
+
+  # --- S19. the runbook documents the login/logout/session and break-glass
+  # contract ---------------------------------------------------------------
+  # A documentation regression must fail the validation run instead of silently
+  # removing the operator guidance for logout, sessions and emergency access.
+  problems=""
+  for token in "${STATIC_REQUIRED_RUNBOOK_TOKENS[@]}"; do
+    grep -qF "${token}" "${runbook}" || problems="${problems} '${token}'"
+  done
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_RUNBOOK_LOGIN_LOGOUT_DOC" "the CH04.6 runbook documents the expected Authentik login, the logout/session behavior, the break-glass local access path and the repository-only versus human-approved live-test boundary"
+  else
+    static_fail "STATIC_RUNBOOK_LOGIN_LOGOUT_DOC" "the CH04.6 runbook no longer documents:${problems}"
+    problems=""
+  fi
+
+  # --- S20. repository-only validation stays distinct from the live test ---
+  # --static performs no OIDC login and no logout, and the run says so
+  # explicitly, so its output cannot be mistaken for live SSO evidence.
+  problems=""
+  # The note is asserted by its meaning, not by searching the file for its own
+  # value, so rewording it into something weaker fails this control.
+  [[ "${STATIC_LIVE_TEST_SEPARATION_NOTE}" == "note: repository-only validation; no OIDC login/logout was performed"* ]] \
+    || problems="${problems} note-open"
+  [[ "${STATIC_LIVE_TEST_SEPARATION_NOTE}" == *"human-approved live SSO test"* ]] \
+    || problems="${problems} note-live-test-boundary"
+  [[ "${STATIC_LIVE_TEST_SEPARATION_NOTE}" == *"CH04.6 SSO runbook"* ]] \
+    || problems="${problems} note-runbook-reference"
+  # Both the PASS and the FAIL summary must emit the note, so a boundary that is
+  # only printed on success - or not at all - fails this control. The anchored
+  # pattern cannot match this grep command line itself.
+  note_echo_count="$(grep -cE '^[[:space:]]*echo "\$\{STATIC_LIVE_TEST_SEPARATION_NOTE\}"( >&2)?$' "${self_path}" || true)"
+  [[ "${note_echo_count}" == "2" ]] \
+    || problems="${problems} static-summary-emits-note(count=${note_echo_count})"
+  grep -qF 'explicit human approval' "${self_path}" \
+    || problems="${problems} approval-boundary"
+  if [[ -z "${problems}" ]]; then
+    static_pass "STATIC_LIVE_TEST_SEPARATION" "the validator states in its own source and in every --static summary that repository-only validation performs no OIDC login/logout and does not replace an explicitly human-approved live SSO test"
+  else
+    static_fail "STATIC_LIVE_TEST_SEPARATION" "the repository-only/live-test boundary is no longer stated:${problems}"
+    problems=""
+  fi
+
   if [[ "${STATIC_FAILURES}" -eq 0 ]]; then
     echo "static validation: PASS (${STATIC_CONTROLS} controls, 0 failures)"
+    echo "${STATIC_LIVE_TEST_SEPARATION_NOTE}"
     return 0
   fi
   echo "static validation: FAIL (${STATIC_CONTROLS} controls, ${STATIC_FAILURES} failures)" >&2
+  echo "${STATIC_LIVE_TEST_SEPARATION_NOTE}" >&2
   return 1
 }
 
@@ -487,11 +719,32 @@ scopes_text="$(kubectl -n "${ARGOCD_NAMESPACE}" get configmap argocd-rbac-cm -o 
 [[ "${argocd_public_url}" == "${EXPECTED_ARGOCD_URL}" ]] && \
   pass "ARGOCD_CM_URL" "argocd-cm data.url is ${EXPECTED_ARGOCD_URL}" || fail "ARGOCD_CM_URL" "argocd-cm data.url is not ${EXPECTED_ARGOCD_URL}"
 
+# The login redirect must stay on the Argo CD origin: the registered Dex
+# callback and the logout URI are derived from argocd-cm data.url, so the live
+# login cannot be redirected to, or logged out towards, another host.
+if [[ "${EXPECTED_REDIRECT_URI}" == "${argocd_public_url%/}/api/dex/callback" \
+      && "${EXPECTED_LOGOUT_URI}" == "${argocd_public_url%/}/logout" ]]; then
+  pass "ARGOCD_LOGIN_REDIRECT_ORIGIN" "the Dex login callback and the logout URI both keep the argocd-cm data.url origin (${argocd_public_url%/})"
+else
+  fail "ARGOCD_LOGIN_REDIRECT_ORIGIN" "the derived Dex callback (${EXPECTED_REDIRECT_URI}) or logout URI (${EXPECTED_LOGOUT_URI}) does not keep the argocd-cm data.url origin (${argocd_public_url%/})"
+fi
+
 [[ -z "${direct_oidc_text}" ]] && \
   pass "ARGOCD_DIRECT_OIDC_DISABLED" "direct oidc.config is absent because CH04.6 uses Dex-backed SSO" || fail "ARGOCD_DIRECT_OIDC_DISABLED" "direct oidc.config is still present"
 
 echo "${config_text}" | grep -q 'name: Authentik' && \
   pass "ARGOCD_DEX_CONNECTOR_NAME" "Argo CD Dex connector is named Authentik" || fail "ARGOCD_DEX_CONNECTOR_NAME" "Dex connector missing Authentik name"
+
+# The connector id is the login entry point: Argo CD derives the
+# "Log in via Authentik" link as /api/dex/auth?connector_id=authentik, so the id
+# must be the contract value the provider redirect allow-list was written for.
+echo "${config_text}" | grep -q 'id: authentik' && \
+  pass "ARGOCD_DEX_CONNECTOR_ID" "Argo CD Dex connector id is 'authentik', the id the expected Authentik login link is derived from" || fail "ARGOCD_DEX_CONNECTOR_ID" "Dex connector id is not 'authentik', so the expected Authentik login link cannot be derived"
+
+# Login/logout is a browser flow: this validator cannot log in or log out. The
+# live SSO login/logout test needs explicit human approval and is documented in
+# the CH04.6 SSO runbook; a passing run here is not that evidence.
+pass "ARGOCD_LIVE_SSO_TEST_BOUNDARY" "this run asserted the SSO objects read-only and performed no OIDC login/logout; the live SSO login/logout test remains an explicitly human-approved manual step"
 
 echo "${config_text}" | grep -q 'type: oidc' && \
   pass "ARGOCD_DEX_CONNECTOR_TYPE" "Argo CD Dex connector type is oidc" || fail "ARGOCD_DEX_CONNECTOR_TYPE" "Dex connector type is not oidc"

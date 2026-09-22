@@ -240,7 +240,10 @@ the RBAC admin mapping and scopes, the discovery issuer and signing-algorithm
 posture, the absence of the legacy direct-OIDC secret key, the CH04.5 admin group
 consumption and admin membership, the single provider/application, the strict
 redirect URI allow-list, the scope mappings, the provider/application link and the
-Argo CD HTTPS endpoint. It never prints a secret value. `FAIL` is blocking;
+Argo CD HTTPS endpoint. P-CH04.6-T03 also pins the login entry point: the Dex
+connector id `authentik`, the login callback and logout URI on the `argocd-cm`
+`data.url` origin, and an explicit boundary record that the run performed no OIDC
+login and no logout. It never prints a secret value. `FAIL` is blocking;
 `WARN` is informative, for example a legacy secret key that has not been retired
 yet.
 
@@ -250,6 +253,12 @@ reconciler and owner chapter with an allowed consumer chapter, and
 `argocd-rbac-cm` must carry exactly one group binding (the expected admin binding)
 with a `policy.default` that is not broader than `role:readonly`. A missing stamp,
 a foreign owner or an extra admin binding is a blocking `FAIL`, not a warning.
+
+P-CH04.6-T03 adds the login/logout boundary to the same run: the validator still
+never performs an OIDC login or a logout, and it emits
+`ARGOCD_LIVE_SSO_TEST_BOUNDARY` to record that the live SSO login/logout test is a
+separate, explicitly human-approved manual step (see "Repository-only validation
+versus the human-approved live SSO test" below).
 
 Repository-only mode (no cluster, no network, non-mutating) proves the same
 contract offline and is the mode to use in a WSL workspace without `kubectl`:
@@ -269,6 +278,21 @@ Admins` groups plus rejected superuser, foreign-consumer, undeclared, empty,
 whitespace-padded, RBAC-injection, missing-taxonomy and mutated-taxonomy cases -
 running every fixture twice so a repeat reconciliation must reach the same
 decision. It exits non-zero when any control fails.
+
+P-CH04.6-T03 added the repository-only login, redirect, session and
+documentation controls to the same mode: it asserts the declared
+login/redirect/logout contract literals and that this validator derives the same
+Argo CD origin, login redirect path, logout path, CLI callback and scope list;
+that the reconciler submits exactly three `matching_mode: strict` redirect
+entries (browser login callback, CLI login callback, logout) together with a
+`frontchannel` logout; that the reconciler renders the Dex connector the Argo CD
+login page consumes, removes any competing direct `oidc.config` and creates the
+stable `server.secretkey` that signs the Argo CD session; that the rendered
+`argocd-cm` template carries the same connector, secret reference and exactly the
+four contract scopes and renders byte-identically twice; and that this runbook
+still documents the login, the logout/session behavior and the break-glass local
+access path. Every `--static` run also prints the repository-only/live-test
+boundary note, so a `--static` PASS is never presented as live SSO evidence.
 
 Repository-only companion checks for the same contract:
 
@@ -302,6 +326,67 @@ https://argocd.<PLATFORM_BASE_DOMAIN>/login
 ```
 
 Expected result: the login page shows an Authentik login option, while the local Argo CD admin account remains available for break-glass access.
+
+## Login and logout session contract
+
+The repository-only controls assert this contract offline; the live validator
+asserts the same values against the deployed objects.
+
+| Step | Contract |
+|---|---|
+| Login entry point | `https://argocd.<PLATFORM_BASE_DOMAIN>/login` renders the Dex connector `id: authentik` / `name: Authentik`, so the page offers "Log in via Authentik" while the local Argo CD admin login stays available |
+| Authentik login link | Argo CD derives `https://argocd.<PLATFORM_BASE_DOMAIN>/api/dex/auth?connector_id=authentik`; the browser then leaves the Argo CD origin towards the derived Authentik issuer `https://auth.<PLATFORM_BASE_DOMAIN>/application/o/argocd/` |
+| Redirect back | `https://argocd.<PLATFORM_BASE_DOMAIN>/api/dex/callback`, `matching_mode: strict`, type `authorization` |
+| CLI login | `https://localhost:8085/auth/callback`, `matching_mode: strict`, type `authorization` |
+| Groups claim | `include_claims_in_id_token: true` plus the `groups` scope mapping, so `argocd-rbac-cm` maps the ID token groups claim to `g, <group>, role:admin` |
+| Logout | `https://argocd.<PLATFORM_BASE_DOMAIN>/logout`, `matching_mode: strict`, type `logout`, and the provider `logout_uri` equals it with `logout_method: frontchannel` |
+| Session | `argocd-secret` key `server.secretkey` signs the Argo CD session cookie and the OIDC state, is created before SSO login is enabled, and is asserted for key presence only |
+
+Both the login callback and the logout URI keep the `argocd-cm` `data.url`
+origin, and the validator asserts that origin link, so a login cannot be
+redirected to another host.
+
+What a logout does and does not do:
+
+- Argo CD logout clears the local Argo CD session cookie and, because the
+  provider uses `frontchannel` logout, the browser also ends the Authentik
+  session, so the next Argo CD visit requires a fresh Authentik login.
+- A logout does not change authorization: the Authentik group membership and the
+  `argocd-rbac-cm` mapping stay as they are, so a user who logs in again receives
+  the same group-derived role until the CH04.5 taxonomy or `argocd_admin_group`
+  changes.
+- Rotating `argocd-secret` `server.secretkey` invalidates every live session at
+  once (all users must log in again), so it is a deliberate operation and not
+  part of a routine re-run.
+
+## Break-glass and emergency local access
+
+- The local Argo CD `admin` account remains enabled and is the break-glass path.
+  It does not depend on Authentik, on the OIDC provider or on `auth.<domain>` DNS.
+- Keep the `admin` password in the operator password store, never in this
+  repository or in a workflow log. The validator asserts secret key presence and
+  never reads a secret value, so break-glass material stays out of its scope.
+- If SSO misconfiguration makes `argocd-server` crash-loop, the CH04.6 recovery
+  path drops `dex.config` and `oidc.config` (see "Emergency recovery note"), and
+  the local `admin` login remains the way back into Argo CD.
+- Break-glass is recovery, not a steady state: after using it, reconcile
+  `04.6 - Enable Argo CD SSO` again and re-run the focused validator instead of
+  editing live objects by hand.
+
+## Repository-only validation versus the human-approved live SSO test
+
+| Aspect | Repository-only validation | Live SSO test |
+|---|---|---|
+| Command | `bash platform/identity/validate/ch04-6-validate-argocd-sso.sh --static` plus `git diff --check` | `04.6 - Enable Argo CD SSO` or the same validator without `--static`, then a browser login and logout |
+| Proves | the reconciler, the rendered `argocd-cm`/`argocd-rbac-cm` templates, the CH04.5 taxonomy and this runbook carry the login, redirect, logout, session and RBAC contract, including the ownership-preservation and mapping-determinism invariants | the deployed provider, application and `argocd-cm`/`argocd-secret`/`argocd-rbac-cm` objects match that contract, and the browser login and logout really work |
+| Does not prove | it does not prove live SSO login or logout: repository-only validation performs no OIDC login, no logout, no cluster and no network access | it does not prove the repository invariants: the live run cannot show that the reconciler preserves CH04.5 ownership or that a repeat run is convergent |
+| Access | no cluster, no network, non-mutating | requires explicit human approval, because it drives a real Authentik login and inspects live objects |
+| Evidence | the `--static` output and `git diff --check` | the `ch04-6-argocd-sso-validate-<SHORT_SHA>.log` artifact plus the operator's browser observation |
+
+Repository-only validation does not prove live SSO login or logout. Running the
+live SSO test requires explicit human approval and is recorded as its own manual
+step; a `--static` PASS must never be filed as live SSO evidence, and the
+validator prints that boundary note on every run.
 
 ## Emergency recovery note
 
@@ -345,7 +430,7 @@ Residual notes for the next reviewer:
 | The read-only group consumption was unproven: the live ownership check was a `WARN` and nothing verified that a run left the CH04.5 ownership stamps intact. | The consumed group must carry the CH04.5 managed ownership stamps, and the attribute bag is re-read and compared after the membership convergence; a difference is a hard stop. The live check is now a blocking `FAIL`, and preservation is proven by the pre-write stamp gate plus the post-run re-read. |
 | `argocd_admin_group` accepted any existing Authentik group name and the raw name was substituted into the single `policy.csv` line. | The pre-write binding gate requires a CH04.5-taxonomy-declared, non-superuser group with an allowed consumer chapter and an RBAC-injection-safe name shape. |
 | Nothing verified the applied `argocd-rbac-cm` mapping, so a repeat run could have broadened the group-to-role mapping silently. | CH04.6 reads the object back and fails closed unless exactly one `g, <group>, role:admin` binding, `policy.default: role:readonly` and a `groups` scope are present; the live validator asserts the same, and `--static` proves the render is deterministic. |
-| No focused validation covered repeat reconciliation or ownership preservation in a workspace without `kubectl`. | The validator's `--static` mode exercises 31 repository-only controls, including 13 binding-gate fixtures run twice each, plus the ownership-preservation harness documented in the task evidence. |
+| No focused validation covered repeat reconciliation or ownership preservation in a workspace without `kubectl`. | The validator's `--static` mode exercises the repository-only controls (ownership preservation, mapping determinism, login/redirect/session contract and documentation boundary), including 13 binding-gate fixtures run twice each, plus the ownership-preservation harness documented in the task evidence. |
 
 Residual notes for the next reviewer:
 
@@ -358,3 +443,21 @@ Residual notes for the next reviewer:
   fail closed until they are updated together.
 - The live `kubectl`-based checks still cannot be observed without `kubectl`; only
   an approved `04.6 - Enable Argo CD SSO` run proves the deployed objects.
+
+## Contract drift reconciled by P-CH04.6-T03
+
+| Gap before the change | Reconciled state |
+|---|---|
+| The expected login path was only implied by the live provider checks: nothing in the repository tied the Argo CD login entry point to a connector id, and the callback/logout origin link was unasserted. | The validator asserts the Dex connector id `authentik`, keeps the login callback and the logout URI on the `argocd-cm` `data.url` origin, and the repository-only mode asserts the declared redirect/logout contract literals and the strict redirect allow-list payload. |
+| Logout and session behavior and emergency local access were only implied by the recovery notes. | The runbook documents the login/logout session contract, what a logout does and does not do (session and Authentik session end, authorization unchanged, `server.secretkey` rotation consequences) and the break-glass local access path as a contract section. |
+| Repository-only validation and the live SSO test were not explicitly separated, so a `--static` PASS could be read as live SSO evidence. | `--static` never performs an OIDC login or logout, prints a boundary note on every run, asserts the runbook keeps documenting that boundary, and the live mode records `ARGOCD_LIVE_SSO_TEST_BOUNDARY`; the runbook states that the live SSO test requires explicit human approval. |
+
+Residual notes for the next reviewer:
+
+- No automated check can observe a browser login or logout. The live SSO
+  login/logout test stays a human-approved manual step with its own evidence; the
+  validator only proves the contract around it.
+- The login/logout redirect origin link is derived from `argocd-cm` `data.url`, so
+  a `BASE_DOMAIN` change must be applied to `argocd-cm`, the Authentik provider
+  redirect list and the deployment inputs together; the validator fails closed on
+  a one-sided change.

@@ -2,29 +2,28 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH04.6-T03 — Validate Argo CD SSO login logout and fallback contract
+## P-CH04.6-T04 — Close the CH04.6 identity integration checkpoint
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch04-6-sso-validation` |
+| Branch | `batch/platform-ch04-6-checkpoint` |
 | Scope | `platform-identity-sso` |
-| Dependencies | P-CH04.6-T02 |
+| Dependencies | P-CH04.6-T03 |
 | Next actor | `platforminit-orchestrator` |
 
-Stabilize focused validation and operator documentation for OIDC login, logout/session behavior, redirect correctness and emergency local access without changing unrelated identity services.
+Produce a compact operator checkpoint for the existing Argo CD SSO integration, including ownership, known failure modes, recovery/fallback and the exact prerequisite chain for CH05.
 
 ### Acceptance criteria
 
-- [ ] focused validation covers expected OIDC login, redirect and RBAC contract
-- [ ] logout/session behavior and emergency local access are explicitly documented
-- [ ] repository-only validation remains distinct from any human-approved live SSO test
+- [ ] CH04.6 ownership and support boundaries are summarized without duplicating implementation docs
+- [ ] known failure modes and break-glass recovery are actionable
+- [ ] the CH05 prerequisite chain points to the current Checkmk operations architecture
 
 ### Allowed files
 
-- `platform/identity/validate/ch04-6-validate-argocd-sso.sh`
-- `platform/identity/docs/ch04-6-argocd-sso-runbook.md`
+- `platform/identity/docs/**`
 - `docs/**`
 - `tasks/**`
 
@@ -41,4 +40,4 @@ Stabilize focused validation and operator documentation for OIDC login, logout/s
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH04.6-T03 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH04.6-T04 --actor platforminit-orchestrator`

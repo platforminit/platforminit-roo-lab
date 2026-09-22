@@ -2228,7 +2228,7 @@
       "id": "P-CH04.6-T04",
       "track": "platform",
       "order": 240,
-      "status": "pending",
+      "status": "done",
       "title": "Close the CH04.6 identity integration checkpoint",
       "description": "Produce a compact operator checkpoint for the existing Argo CD SSO integration, including ownership, known failure modes, recovery/fallback and the exact prerequisite chain for CH05.",
       "scope": "platform-identity-sso",
@@ -2262,7 +2262,69 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-22T20:29:03.943944+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-22T20:30:46.506337+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "25fe7a66f6cddebb307bae35daeef929d58b821f8122dd72fce9643ad5aa2e8c",
+          "changedFiles": [
+            "platform/identity/docs/ch04-6-identity-integration-checkpoint.md"
+          ]
+        },
+        "review": {
+          "at": "2026-09-22T20:34:25.798172+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH04.6-T04.md"
+        },
+        "security": {
+          "at": "2026-09-22T20:36:37.331084+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH04.6-T04.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-22T20:41:57.922364+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "25fe7a66f6cddebb307bae35daeef929d58b821f8122dd72fce9643ad5aa2e8c",
+          "changedFiles": [
+            "platform/identity/docs/ch04-6-identity-integration-checkpoint.md"
+          ],
+          "confirmedFingerprint": "25fe7a66f6cddebb307bae35daeef929d58b821f8122dd72fce9643ad5aa2e8c",
+          "confirmedFiles": [
+            "platform/identity/docs/ch04-6-identity-integration-checkpoint.md"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH05-T01",
@@ -2601,5 +2663,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-22T20:17:53.488588+00:00"
+  "updatedAt": "2026-09-22T20:41:57.922413+00:00"
 }

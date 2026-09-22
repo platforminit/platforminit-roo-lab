@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-CH04.6-T04` — Close the CH04.6 identity integration checkpoint | `pending` | `batch/platform-ch04-6-checkpoint` |
+| `platform` | `P-CH05-T01` — Verify the current Checkmk GitOps runtime and retired-stack boundary | `pending` | `batch/platform-ch05-checkmk-reference-state` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-CH04.6-T03` — Validate Argo CD SSO login logout and fallback contract | `pending` | `batch/platform-ch04-6-sso-validation` |
+| `platform` | `P-CH04.6-T04` — Close the CH04.6 identity integration checkpoint | `pending` | `batch/platform-ch04-6-checkpoint` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

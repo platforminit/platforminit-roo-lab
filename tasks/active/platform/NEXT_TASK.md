@@ -2,36 +2,34 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T10 — Add memory CI and runtime smoke coverage
+## P-WF-T11 — Harden project memory relevance ranking
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `feat/p-wf-t10-memory-ci` |
+| Branch | `feat/p-wf-t11-memory-ranking` |
 | Scope | `workflow-memory` |
-| Dependencies | P-CH04.6-T04 |
+| Dependencies | P-WF-T10 |
 | Next actor | `platforminit-orchestrator` |
 
-Make the Zoo memory subsystem a first-class tested MCP contract so CI fails when memory parsing, retrieval, tool exposure, or bounded-input behavior regresses.
+Fix the v1 retrieval scoring so project scope is only a ranking preference for already relevant records and cannot qualify zero-overlap records into bounded results.
 
 ### Acceptance criteria
 
-- [ ] Task integrity CI compiles and runs focused tests for the memory subsystem
-- [ ] get_relevant_memory is required by MCP static validation and exercised by runtime smoke
-- [ ] invalid memory-tool inputs fail as controlled bounded JSON-RPC errors without host-path leakage
+- [ ] a project-scope bonus never makes a zero-overlap record eligible for a non-empty query
+- [ ] task/component exact matches and lexical overlap remain deterministic and bounded
+- [ ] focused tests cover irrelevant project records, tie-breaking, empty-query baseline, and maxItems limits
 
 ### Allowed files
 
-- `.github/workflows/task-integrity.yml`
-- `tools/platforminit_mcp/validate_mode_access.py`
+- `tools/platforminit_mcp/memory.py`
 - `tools/platforminit_mcp/test_memory.py`
 - `tasks/**`
 
 ### Required validators
 
 - `python3 -m unittest tools.platforminit_mcp.test_memory -v`
-- `python3 tools/platforminit_mcp/validate_mode_access.py --runtime`
 - `git diff --check`
 
 ### Forbidden actions
@@ -43,4 +41,4 @@ Make the Zoo memory subsystem a first-class tested MCP contract so CI fails when
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T10 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T11 --actor platforminit-orchestrator`

@@ -2330,7 +2330,7 @@
       "id": "P-WF-T10",
       "track": "platform",
       "order": 241,
-      "status": "pending",
+      "status": "done",
       "title": "Add memory CI and runtime smoke coverage",
       "description": "Make the Zoo memory subsystem a first-class tested MCP contract so CI fails when memory parsing, retrieval, tool exposure, or bounded-input behavior regresses.",
       "scope": "workflow-memory",
@@ -2377,7 +2377,19 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "reconciliation": {
+          "at": "2026-09-23T18:04:41.705169+00:00",
+          "actor": "platforminit-release-manager",
+          "kind": "merged_without_controller_lifecycle",
+          "pullRequest": 59,
+          "mergeCommit": "39ae9f1967002d7599b68529c71b76feb0c3e426",
+          "ciRun": 35863041128,
+          "reason": "P-WF-T10 was human-merged before its controller lifecycle was recorded; this reconciliation records the merged implementation without asserting missing review/security lifecycle transitions.",
+          "limitations": "Historical reconciliation only: this record does not assert that the normal implementation/review/security/release controller transitions occurred."
+        }
+      }
     },
     {
       "id": "P-WF-T11",
@@ -2904,5 +2916,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-22T20:41:57.922413+00:00"
+  "updatedAt": "2026-09-23T18:04:41.705201+00:00"
 }

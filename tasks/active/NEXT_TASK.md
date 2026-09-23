@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T10` — Add memory CI and runtime smoke coverage | `pending` | `feat/p-wf-t10-memory-ci` |
+| `platform` | `P-WF-T11` — Harden project memory relevance ranking | `pending` | `feat/p-wf-t11-memory-ranking` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

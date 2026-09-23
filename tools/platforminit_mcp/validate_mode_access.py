@@ -42,6 +42,8 @@ TRACKER = ROOT / "tasks" / "tracker.json"
 SERVER = Path(__file__).resolve().parent / "server.py"
 REQUIRED_TOOLS = {"health", "get_delivery_context", "get_active_task", "get_changed_scope", "get_relevant_memory"}
 FRESH_CHILD_MARKERS = ("child start", "fresh child")
+ORCHESTRATOR_MODE = "platforminit-orchestrator"
+ORCHESTRATOR_FRESH_CHILD_MARKERS = ("fresh Zoo new_task child", "fresh child")
 ACTIVE_STATES = {"in_progress", "needs_review", "needs_security_review", "ready_to_close"}
 RUNTIME_TIMEOUT_SECONDS = 120
 
@@ -402,7 +404,10 @@ def static_errors() -> tuple[list[str], list[dict]]:
             errors.append(f"{slug}: instructions do not load compact delivery context")
         if "health" not in instructions:
             errors.append(f"{slug}: instructions do not call MCP health")
-        if not any(marker in instructions for marker in FRESH_CHILD_MARKERS):
+        if slug == ORCHESTRATOR_MODE:
+            if not any(marker in instructions for marker in ORCHESTRATOR_FRESH_CHILD_MARKERS):
+                errors.append(f"{slug}: instructions do not require fresh specialist children")
+        elif not any(marker in instructions for marker in FRESH_CHILD_MARKERS):
             errors.append(f"{slug}: instructions do not start as a fresh child")
 
     if not SMOKE_COMMAND.is_file():

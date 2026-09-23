@@ -2327,6 +2327,247 @@
       }
     },
     {
+      "id": "P-WF-T10",
+      "track": "platform",
+      "order": 241,
+      "status": "pending",
+      "title": "Add memory CI and runtime smoke coverage",
+      "description": "Make the Zoo memory subsystem a first-class tested MCP contract so CI fails when memory parsing, retrieval, tool exposure, or bounded-input behavior regresses.",
+      "scope": "workflow-memory",
+      "branch": "feat/p-wf-t10-memory-ci",
+      "dependsOn": [
+        "P-CH04.6-T04"
+      ],
+      "acceptanceCriteria": [
+        "Task integrity CI compiles and runs focused tests for the memory subsystem",
+        "get_relevant_memory is required by MCP static validation and exercised by runtime smoke",
+        "invalid memory-tool inputs fail as controlled bounded JSON-RPC errors without host-path leakage"
+      ],
+      "allowedFiles": [
+        ".github/workflows/task-integrity.yml",
+        "tools/platforminit_mcp/validate_mode_access.py",
+        "tools/platforminit_mcp/test_memory.py",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "python3",
+          "-m",
+          "unittest",
+          "tools.platforminit_mcp.test_memory",
+          "-v"
+        ],
+        [
+          "python3",
+          "tools/platforminit_mcp/validate_mode_access.py",
+          "--runtime"
+        ],
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not expose secret values",
+        "do not run full-repository validation unless explicitly required"
+      ],
+      "implementationMode": "platforminit-deepseek-coder",
+      "reviewMode": "platforminit-openai-reviewer",
+      "securityMode": "platforminit-owasp-reviewer",
+      "releaseMode": "platforminit-release-manager"
+    },
+    {
+      "id": "P-WF-T11",
+      "track": "platform",
+      "order": 242,
+      "status": "pending",
+      "title": "Harden project memory relevance ranking",
+      "description": "Fix the v1 retrieval scoring so project scope is only a ranking preference for already relevant records and cannot qualify zero-overlap records into bounded results.",
+      "scope": "workflow-memory",
+      "branch": "feat/p-wf-t11-memory-ranking",
+      "dependsOn": [
+        "P-WF-T10"
+      ],
+      "acceptanceCriteria": [
+        "a project-scope bonus never makes a zero-overlap record eligible for a non-empty query",
+        "task/component exact matches and lexical overlap remain deterministic and bounded",
+        "focused tests cover irrelevant project records, tie-breaking, empty-query baseline, and maxItems limits"
+      ],
+      "allowedFiles": [
+        "tools/platforminit_mcp/memory.py",
+        "tools/platforminit_mcp/test_memory.py",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "python3",
+          "-m",
+          "unittest",
+          "tools.platforminit_mcp.test_memory",
+          "-v"
+        ],
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not expose secret values",
+        "do not run full-repository validation unless explicitly required"
+      ],
+      "implementationMode": "platforminit-deepseek-coder",
+      "reviewMode": "platforminit-openai-reviewer",
+      "securityMode": "platforminit-owasp-reviewer",
+      "releaseMode": "platforminit-release-manager"
+    },
+    {
+      "id": "P-WF-T12",
+      "track": "platform",
+      "order": 243,
+      "status": "pending",
+      "title": "Implement deterministic memory supersession",
+      "description": "Make supersedes operational so active replacement records suppress obsolete active records deterministically instead of relying on manual status edits.",
+      "scope": "workflow-memory",
+      "branch": "feat/p-wf-t12-memory-supersession",
+      "dependsOn": [
+        "P-WF-T11"
+      ],
+      "acceptanceCriteria": [
+        "active records suppress every record ID they explicitly supersede before ranking",
+        "supersession chains are deterministic and cycles or malformed self-supersession fail closed",
+        "focused tests prove superseded facts cannot reappear in bounded retrieval while historical/deprecated records remain non-active context"
+      ],
+      "allowedFiles": [
+        "tools/platforminit_mcp/memory.py",
+        "tools/platforminit_mcp/test_memory.py",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "python3",
+          "-m",
+          "unittest",
+          "tools.platforminit_mcp.test_memory",
+          "-v"
+        ],
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not expose secret values",
+        "do not run full-repository validation unless explicitly required"
+      ],
+      "implementationMode": "platforminit-deepseek-coder",
+      "reviewMode": "platforminit-openai-reviewer",
+      "securityMode": "platforminit-owasp-reviewer",
+      "releaseMode": "platforminit-release-manager"
+    },
+    {
+      "id": "P-WF-T13",
+      "track": "platform",
+      "order": 244,
+      "status": "pending",
+      "title": "Integrate bounded memory retrieval into Zoo child startup",
+      "description": "Make relevant framework/project memory part of the normal small-context Zoo workflow after authoritative delivery context and before broad source/history reads.",
+      "scope": "workflow-memory",
+      "branch": "feat/p-wf-t13-zoo-memory-usage",
+      "dependsOn": [
+        "P-WF-T12"
+      ],
+      "acceptanceCriteria": [
+        "every PlatformInit Zoo specialist starts from health and get_delivery_context, then requests bounded get_relevant_memory before broad historical reads",
+        "mode/rule text keeps memory explicitly advisory and lower priority than current source and taskctl state",
+        "static mode validation fails when a PlatformInit mode loses the bounded memory bootstrap contract"
+      ],
+      "allowedFiles": [
+        ".roomodes",
+        ".roo/rules.md",
+        "tools/platforminit_mcp/validate_mode_access.py",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "python3",
+          "tools/platforminit_mcp/validate_mode_access.py",
+          "--runtime"
+        ],
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not expose secret values",
+        "do not run full-repository validation unless explicitly required"
+      ],
+      "implementationMode": "platforminit-deepseek-coder",
+      "reviewMode": "platforminit-openai-reviewer",
+      "securityMode": "platforminit-owasp-reviewer",
+      "releaseMode": "platforminit-release-manager"
+    },
+    {
+      "id": "P-WF-T14",
+      "track": "platform",
+      "order": 245,
+      "status": "pending",
+      "title": "Define the continuous project memory lifecycle",
+      "description": "Establish a safe reviewed lifecycle for converting accepted task/review/security outcomes into bounded project-memory candidates and promoting them without turning memory into task state or hidden agent state.",
+      "scope": "workflow-memory",
+      "branch": "feat/p-wf-t14-project-memory-lifecycle",
+      "dependsOn": [
+        "P-WF-T13"
+      ],
+      "acceptanceCriteria": [
+        "release flow defines when a completed task may emit bounded project-memory candidates from approved evidence",
+        "candidate and promotion rules require source provenance, schema validation, deduplication, and explicit advisory-only semantics",
+        "raw transient logs and secrets are never copied into project memory and retrieval ignores unpromoted candidates",
+        "the lifecycle remains compatible with a later evidence-distillation feature without broadening current task state authority"
+      ],
+      "allowedFiles": [
+        "tools/platforminit_mcp/memory.py",
+        ".roo/rules-platforminit-release-manager/rules.md",
+        "docs/roo-lab/RAG_FUTURE.md",
+        "tasks/**"
+      ],
+      "requiredValidators": [
+        [
+          "python3",
+          "-m",
+          "py_compile",
+          "tools/platforminit_mcp/memory.py"
+        ],
+        [
+          "git",
+          "diff",
+          "--check"
+        ]
+      ],
+      "forbiddenActions": [
+        "do not run infrastructure workflows",
+        "do not mutate runtime infrastructure, secrets, or GitHub environments",
+        "do not expose secret values",
+        "do not run full-repository validation unless explicitly required"
+      ],
+      "implementationMode": "platforminit-deepseek-coder",
+      "reviewMode": "platforminit-openai-reviewer",
+      "securityMode": "platforminit-owasp-reviewer",
+      "releaseMode": "platforminit-release-manager"
+    },
+    {
       "id": "P-CH05-T01",
       "track": "platform",
       "order": 250,
@@ -2336,7 +2577,7 @@
       "scope": "platform-observability",
       "branch": "batch/platform-ch05-checkmk-reference-state",
       "dependsOn": [
-        "P-CH04.6-T04"
+        "P-WF-T14"
       ],
       "acceptanceCriteria": [
         "active CH05 runtime and storage ownership resolve to Checkmk Community under Argo CD",

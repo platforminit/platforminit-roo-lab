@@ -2,30 +2,33 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH05-T01 — Verify the current Checkmk GitOps runtime and retired-stack boundary
+## P-CH05-T02 — Define the CH05 stable and rehearsal GitOps source contract
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch05-checkmk-reference-state` |
-| Scope | `platform-observability` |
-| Dependencies | P-WF-T14 |
+| Branch | `batch/platform-ch05-gitops-source-contract` |
+| Scope | `platform-observability-gitops` |
+| Dependencies | P-CH05-T01 |
 | Next actor | `platforminit-orchestrator` |
 
-Treat the existing Checkmk implementation as the current operational reference, verify runtime/storage/GitOps ownership, and keep Zabbix/OpenObserve/Vector references historical or negative-guard only.
+Make the GitOps source boundary explicit so stable deployments may use platforminit-platform while roo-lab rehearsal can prove the tested repository and revision instead of silently reconciling another source.
 
 ### Acceptance criteria
 
-- [ ] active CH05 runtime and storage ownership resolve to Checkmk Community under Argo CD
-- [ ] retired Grafana/VictoriaMetrics/Loki and Zabbix/OpenObserve/Vector paths are not active deployment choices
-- [ ] current operator documentation and focused validation agree on the Checkmk reference-state
+- [ ] stable and rehearsal repository/revision choices are explicit and deterministic
+- [ ] roo-lab rehearsal validation fails if Argo CD is actually syncing an unintended stable source
+- [ ] AppProject source allowlisting is bounded to the intended PlatformInit repositories without implicit source switching
 
 ### Allowed files
 
-- `platform/observability/**`
-- `docs/ch05-*.md`
-- `README.md`
+- `platform/observability/argocd/**`
+- `platform/observability/scripts/ch05-register-operations-stack.sh`
+- `platform/observability/validate/**`
+- `.github/workflows/deploy-05-operations-monitoring.yml`
+- `.github/workflows/deploy-05-operations-diagnostics.yml`
+- `docs/**`
 - `tasks/**`
 
 ### Required validators
@@ -41,4 +44,4 @@ Treat the existing Checkmk implementation as the current operational reference, 
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH05-T01 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH05-T02 --actor platforminit-orchestrator`

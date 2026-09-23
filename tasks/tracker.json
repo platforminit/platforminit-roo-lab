@@ -2923,7 +2923,7 @@
       "id": "P-CH05-T01",
       "track": "platform",
       "order": 250,
-      "status": "pending",
+      "status": "done",
       "title": "Verify the current Checkmk GitOps runtime and retired-stack boundary",
       "description": "Treat the existing Checkmk implementation as the current operational reference, verify runtime/storage/GitOps ownership, and keep Zabbix/OpenObserve/Vector references historical or negative-guard only.",
       "scope": "platform-observability",
@@ -2958,7 +2958,72 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-23T20:19:46.902802+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T20:23:26.767719+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "b52ebabb6a723f327d73ebc6fe90f2dadaebc98577d1f3ae7c4bf2ce82cb77b0",
+          "changedFiles": [
+            "platform/observability/README.md",
+            "platform/observability/validate/ch05-validate-operations-stack.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-23T20:26:18.709844+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH05-T01.md"
+        },
+        "security": {
+          "at": "2026-09-23T20:47:45.498626+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH05-T01.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T20:51:39.451898+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "b52ebabb6a723f327d73ebc6fe90f2dadaebc98577d1f3ae7c4bf2ce82cb77b0",
+          "changedFiles": [
+            "platform/observability/README.md",
+            "platform/observability/validate/ch05-validate-operations-stack.sh"
+          ],
+          "confirmedFingerprint": "b52ebabb6a723f327d73ebc6fe90f2dadaebc98577d1f3ae7c4bf2ce82cb77b0",
+          "confirmedFiles": [
+            "platform/observability/README.md",
+            "platform/observability/validate/ch05-validate-operations-stack.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH05-T02",
@@ -3256,5 +3321,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-23T20:07:58.627088+00:00"
+  "updatedAt": "2026-09-23T20:51:39.451933+00:00"
 }

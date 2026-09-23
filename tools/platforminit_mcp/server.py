@@ -19,6 +19,7 @@ from context import (
     changed_scope,
     delivery_context,
 )
+from memory import DEFAULT_MAX_ITEMS, HARD_MAX_ITEMS, MAX_QUERY_LENGTH, MemoryError, get_relevant_memory
 
 TOOLS = [
     {
@@ -75,6 +76,25 @@ TOOLS = [
                     "minimum": 1,
                     "maximum": SCOPE_HARD_CAP_FILES,
                     "default": SCOPE_DEFAULT_FILES,
+                }
+            },
+            "additionalProperties": False
+        }
+    },
+    {
+        "name": "get_relevant_memory",
+        "description": "Return bounded advisory framework/project memory relevant to the current task or query. Memory never overrides taskctl state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "maxLength": MAX_QUERY_LENGTH, "default": ""},
+                "taskId": {"type": "string", "maxLength": TASK_ID_MAX_LENGTH, "default": ""},
+                "component": {"type": "string", "maxLength": 128, "default": ""},
+                "maxItems": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": HARD_MAX_ITEMS,
+                    "default": DEFAULT_MAX_ITEMS,
                 }
             },
             "additionalProperties": False
@@ -150,14 +170,21 @@ def handle(message: dict) -> dict | None:
                 )
             elif name == "get_active_task":
                 value = active_task_summary(task_id=arguments.get("taskId"))
-            else:
+            elif name == "get_changed_scope":
                 value = changed_scope(
                     base=arguments.get("base", BASE_DEFAULT),
                     max_files=arguments.get("maxFiles", SCOPE_DEFAULT_FILES),
                 )
+            else:
+                value = get_relevant_memory(
+                    query=arguments.get("query", ""),
+                    task_id=arguments.get("taskId", ""),
+                    component=arguments.get("component", ""),
+                    max_items=arguments.get("maxItems", DEFAULT_MAX_ITEMS),
+                )
             return rpc_result(message_id, result_text(value))
-        except InvalidToolInput as exc:
-            # Controlled rejection: the message is constant text and carries no host path.
+        except (InvalidToolInput, MemoryError) as exc:
+            # Controlled rejection: bounded validation messages carry no host path.
             return rpc_error(message_id, -32602, f"invalid params: {exc}")
         except Exception:
             # Never echo exception text: it can carry host paths or Git output.

@@ -2659,7 +2659,7 @@
       "id": "P-WF-T13",
       "track": "platform",
       "order": 244,
-      "status": "pending",
+      "status": "done",
       "title": "Integrate bounded memory retrieval into Zoo child startup",
       "description": "Make relevant framework/project memory part of the normal small-context Zoo workflow after authoritative delivery context and before broad source/history reads.",
       "scope": "workflow-memory",
@@ -2699,7 +2699,91 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-23T18:49:03.744843+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T19:07:19.063741+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "tools/platforminit_mcp/validate_mode_access.py",
+                "--runtime"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "1a0b9a081aeea6ea0a8435fa2d47d51ac0dac345ebcf7136e64f556595a33cc7",
+          "changedFiles": [
+            ".roo/rules.md",
+            ".roomodes",
+            "tools/platforminit_mcp/validate_mode_access.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-23T19:09:54.309739+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T13.md"
+        },
+        "security": {
+          "at": "2026-09-23T19:12:50.614132+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T13.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T19:14:08.881609+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "tools/platforminit_mcp/validate_mode_access.py",
+                "--runtime"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "1a0b9a081aeea6ea0a8435fa2d47d51ac0dac345ebcf7136e64f556595a33cc7",
+          "changedFiles": [
+            ".roo/rules.md",
+            ".roomodes",
+            "tools/platforminit_mcp/validate_mode_access.py"
+          ],
+          "confirmedFingerprint": "1a0b9a081aeea6ea0a8435fa2d47d51ac0dac345ebcf7136e64f556595a33cc7",
+          "confirmedFiles": [
+            ".roo/rules.md",
+            ".roomodes",
+            "tools/platforminit_mcp/validate_mode_access.py"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-WF-T14",
@@ -3086,5 +3170,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-23T18:46:18.052486+00:00"
+  "updatedAt": "2026-09-23T19:14:08.881638+00:00"
 }

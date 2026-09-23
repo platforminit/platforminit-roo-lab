@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T13` — Integrate bounded memory retrieval into Zoo child startup | `pending` | `feat/p-wf-t13-zoo-memory-usage` |
+| `platform` | `P-WF-T14` — Define the continuous project memory lifecycle | `pending` | `feat/p-wf-t14-project-memory-lifecycle` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

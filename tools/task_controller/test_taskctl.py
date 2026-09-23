@@ -678,5 +678,60 @@ class TaskctlTests(unittest.TestCase):
         self.assertEqual(self.state_task()["status"], "done")
 
 
+    def test_reconcile_merged_requires_release_actor_and_records_limitation(self):
+        task = self.task("P-TEST-T01")
+        task["status"] = "pending"
+        self.write_tracker([task])
+        self.git("add", ".")
+        self.git("commit", "-m", "baseline")
+        merge_commit = self.git("rev-parse", "HEAD").stdout.strip()
+        self.git("branch", "-M", "dev")
+
+        failed = self.run_taskctl(
+            "reconcile-merged", "P-TEST-T01",
+            "--actor", "platforminit-orchestrator",
+            "--pr", "59",
+            "--merge-commit", merge_commit,
+            "--ci-run", "35863041128",
+            "--reason", "controller lifecycle was omitted before merge",
+        )
+        self.assertNotEqual(failed.returncode, 0)
+
+        result = self.run_taskctl(
+            "reconcile-merged", "P-TEST-T01",
+            "--actor", "platforminit-release-manager",
+            "--pr", "59",
+            "--merge-commit", merge_commit,
+            "--ci-run", "35863041128",
+            "--reason", "controller lifecycle was omitted before merge",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        saved = json.loads((self.root / "tasks/tracker.json").read_text())
+        reconciled = saved["tasks"][0]
+        self.assertEqual(reconciled["status"], "done")
+        evidence = reconciled["workflow"]["reconciliation"]
+        self.assertEqual(evidence["pullRequest"], 59)
+        self.assertEqual(evidence["mergeCommit"], merge_commit)
+        self.assertIn("does not assert", evidence["limitations"])
+
+    def test_reconcile_merged_rejects_non_ancestor_commit(self):
+        task = self.task("P-TEST-T01")
+        task["status"] = "pending"
+        self.write_tracker([task])
+        self.git("add", ".")
+        self.git("commit", "-m", "baseline")
+        self.git("branch", "-M", "dev")
+        result = self.run_taskctl(
+            "reconcile-merged", "P-TEST-T01",
+            "--actor", "platforminit-release-manager",
+            "--pr", "59",
+            "--merge-commit", "0" * 40,
+            "--ci-run", "35863041128",
+            "--reason", "controller lifecycle was omitted before merge",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        saved = json.loads((self.root / "tasks/tracker.json").read_text())
+        self.assertEqual(saved["tasks"][0]["status"], "pending")
+
 if __name__ == "__main__":
     unittest.main()

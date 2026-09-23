@@ -1,6 +1,6 @@
 # PlatformInit Platform Roadmap — Small-Context Task Plan
 
-**Status:** active platform backlog after P-CH04.5-T04
+**Status:** active backlog after merged Zoo memory core; memory hardening is the immediate workflow checkpoint before CH05
 **n8n:** PARKED until an explicit human resume decision
 **Canonical runtime task state:** `tasks/tracker.json`
 
@@ -92,6 +92,26 @@ The implementation already exists. These tasks audit, harden and validate the cu
 
 Each task closes independently through implementation → focused review → OWASP/security gate → Release Manager. Do not combine adjacent rows into a single implementation task just because they belong to the same chapter.
 
+## Zoo framework memory checkpoint
+
+The merged memory core is intentionally stabilized before CH05 resumes so later Zoo tasks can consume
+project/framework memory without silently increasing context noise or trusting stale facts.
+
+| Task | Title | Bounded deliverable | Depends on |
+|---|---|---|---|
+| `P-WF-T10` | Add memory CI and runtime smoke coverage | Make memory parsing/retrieval/tool exposure a first-class CI contract, including runtime MCP exercise and bounded-input failures. | `P-CH04.6-T04` |
+| `P-WF-T11` | Harden project memory relevance ranking | Prevent project-scope bonus from qualifying irrelevant records; keep deterministic bounded ranking and test the empty-query baseline. | `P-WF-T10` |
+| `P-WF-T12` | Implement deterministic memory supersession | Make `supersedes` operational with deterministic suppression and fail-closed cycle/self-supersession handling. | `P-WF-T11` |
+| `P-WF-T13` | Integrate bounded memory retrieval into Zoo child startup | Require fresh Zoo specialists to retrieve a small relevant memory set after authoritative delivery context and before broad historical reads. | `P-WF-T12` |
+| `P-WF-T14` | Define the continuous project memory lifecycle | Define reviewed candidate/promotion rules from accepted task evidence, with provenance, dedupe, secret exclusion, and advisory-only semantics. | `P-WF-T13` |
+
+### Completion rule
+
+These are framework features, so every new task branch uses the forward-only `feat/<task-id>-<short-slug>`
+convention. Each task still closes independently through implementation → focused correctness review →
+OWASP/security review → Release Manager → human merge. The memory subsystem never becomes authoritative
+task state.
+
 ## CH05
 
 The Checkmk implementation in roo-lab already matches the stable `platforminit-platform` CH05 runtime tree.
@@ -99,7 +119,7 @@ Tasks therefore verify and harden the existing reference-state instead of manufa
 
 | Task | Title | Bounded deliverable | Depends on |
 |---|---|---|---|
-| `P-CH05-T01` | Verify the current Checkmk GitOps runtime and retired-stack boundary | Prove current Checkmk runtime/storage/GitOps ownership and keep Grafana/VictoriaMetrics/Loki/Alloy and Zabbix/OpenObserve/Vector references historical or negative-guard only. | `P-CH04.6-T04` |
+| `P-CH05-T01` | Verify the current Checkmk GitOps runtime and retired-stack boundary | Prove current Checkmk runtime/storage/GitOps ownership and keep Grafana/VictoriaMetrics/Loki/Alloy and Zabbix/OpenObserve/Vector references historical or negative-guard only. | `P-WF-T14` |
 | `P-CH05-T02` | Define the CH05 stable and rehearsal GitOps source contract | Make stable `platforminit-platform` and roo-lab rehearsal repository/revision selection explicit so Argo CD cannot silently reconcile a different source than the code under test. | `P-CH05-T01` |
 | `P-CH05-T03` | Harden the Checkmk trusted-header trust boundary | Keep Authentik forwardAuth + nginx auth-shim, remove backend bypass paths, constrain ingress to the intended Traefik path, and minimize forwarded identity metadata. | `P-CH05-T02` |
 | `P-CH05-T04` | Define deterministic per-user Checkmk identity and RBAC | Replace shared normal-path `cmkadmin` mapping with deterministic individual identity/role handling while retaining `cmkadmin` only as break-glass. | `P-CH05-T03` |
@@ -271,10 +291,10 @@ maintenance. Parking is not deletion and is not completion.
 
 ## Immediate next task
 
-After the merged P-CH04.5-T04 identity-model contract, the canonical next task is:
+The canonical next task is now:
 
-`P-CH04.5-T04A — Align identity taxonomy with current Checkmk operations contract`
+`P-WF-T10 — Add memory CI and runtime smoke coverage`
 
-This intentionally fixes semantic drift before the CH04.5 validation checkpoint: retired Zabbix/OpenObserve
-desired-state identities must not be formalized by later validation, and the current CH05 Checkmk consumer
-must use one canonical operations identity boundary.
+The memory core is already merged. CI/runtime coverage is deliberately first so ranking, supersession,
+automatic Zoo retrieval, and continuous project-memory evolution are built on a regression-detectable
+contract before CH05 resumes.

@@ -46,4 +46,31 @@ The canonical release sequence is therefore:
 
 `approved source commit -> taskctl complete -> closure/evidence commit -> push -> PR -> human merge`
 
+## Project-memory candidates (advisory only)
+
+Project memory is advisory retrieval context. `tasks/tracker.json` plus `taskctl` remain the only
+authoritative delivery state, and this optional step grants no authority over branch, allowed files,
+validators, verdicts, or lifecycle transitions. Memory emission never blocks closure.
+
+- **Emission window.** A completed task may only emit project-memory candidates after it reached
+  `ready_to_close` with an OpenAI `approve` verdict and an OWASP `clear` verdict, and only from
+  already committed approved evidence (`docs/reviews/<TASK-ID>.md`,
+  `docs/security-reviews/<TASK-ID>.md`, controller-recorded task evidence).
+- **Bounded and evidence-derived.** A candidate is a short reusable lesson with provenance, not a
+  transcript. Emission is bounded per task, and raw transient logs, terminal output, `/tmp/**`
+  payloads, key material, and secret values must never be copied into memory. The memory validator
+  rejects absolute or traversing paths, secret-looking paths or values, and unapproved evidence paths.
+- **Staging then explicit promotion.** Stage with
+  `python3 tools/platforminit_mcp/memory.py add-candidate <json>`; promote with
+  `python3 tools/platforminit_mcp/memory.py promote <MEMORY-ID>`. Both write repository-visible JSONL
+  under `memory/project/`, so they are reviewed source changes and never a runtime side effect.
+- **Never inside the closure commit.** Memory writes must not be mixed into the controller-owned
+  closure/evidence commit, and must not be appended to the reviewed diff after review. Emit them as a
+  separate, explicitly reviewed follow-up change on the task branch, or defer them to a dedicated
+  memory task.
+- **Deduplication and idempotence.** A duplicate candidate id, duplicate promoted content, or a
+  second promotion of the same id is refused, so one fact is never emitted twice.
+- **Retrieval boundary.** Unpromoted candidates are invisible to `get_relevant_memory`; only promoted
+  records are retrieval context. Memory must never overwrite or substitute for controller state.
+
 After release work, call `attempt_completion` with task ID, PR, source commit, closure commit, reused/rerun evidence, resulting status, recovery notes, and next pending PlatformInit task. Do not start that next task before the PR is merged to `dev`.

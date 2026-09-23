@@ -9,6 +9,10 @@ Two layers are supported:
 
 The MCP-facing retrieval path is read-only. Project-memory writes are available only through the
 repository-local CLI and are intended to happen in reviewed source changes, never as hidden runtime state.
+
+Ranking invariant: a record is eligible for a non-empty query only when it has lexical overlap or an
+exact task/component match. The project-scope bonus is a bounded tie-break, so an unrelated project
+record can never be returned for a query it does not actually match.
 """
 from __future__ import annotations
 
@@ -28,6 +32,13 @@ DEFAULT_MAX_ITEMS = 6
 HARD_MAX_ITEMS = 12
 MAX_QUERY_LENGTH = 512
 MAX_SUMMARY_LENGTH = 1200
+
+# Ranking weights. Lexical overlap and exact task/component matches define relevance; the
+# project-scope bonus is a bounded tie-break signal only and never an eligibility signal.
+LEXICAL_OVERLAP_WEIGHT = 3
+TASK_EXACT_BONUS = 12
+COMPONENT_EXACT_BONUS = 8
+PROJECT_SCOPE_BONUS = 1
 
 ALLOWED_SCOPES = {"framework", "project"}
 ALLOWED_STATUS = {"active", "deprecated", "historical"}
@@ -158,25 +169,35 @@ def _tokens(text: str) -> set[str]:
     return {token.lower() for token in TOKEN_RE.findall(text)}
 
 
-def _score(record: dict[str, Any], query_tokens: set[str], task_id: str, component: str) -> int:
-    if record["status"] != "active":
-        return -1000
-    score = 0
-    record_tokens = _tokens(" ".join([
+def _record_tokens(record: dict[str, Any]) -> set[str]:
+    return _tokens(" ".join([
         record["summary"],
         record["type"],
         record["component"],
         record["task"],
         " ".join(record["tags"]),
     ]))
-    score += len(query_tokens & record_tokens) * 3
+
+
+def _relevance_and_scope_bonus(
+    record: dict[str, Any],
+    query_tokens: set[str],
+    task_id: str,
+    component: str,
+) -> tuple[int, int]:
+    """Return ``(relevance, scope_bonus)`` for one record.
+
+    Relevance counts lexical overlap and exact task/component matches only, so it is the sole
+    eligibility signal for a non-empty query. The project-scope bonus is deliberately reported
+    separately and applies only as a bounded tie-break among equally relevant records.
+    """
+    relevance = len(query_tokens & _record_tokens(record)) * LEXICAL_OVERLAP_WEIGHT
     if task_id and record["task"] == task_id:
-        score += 12
+        relevance += TASK_EXACT_BONUS
     if component and record["component"].lower() == component.lower():
-        score += 8
-    if record["scope"] == "project":
-        score += 1
-    return score
+        relevance += COMPONENT_EXACT_BONUS
+    scope_bonus = PROJECT_SCOPE_BONUS if record["scope"] == "project" else 0
+    return relevance, scope_bonus
 
 
 def get_relevant_memory(
@@ -196,19 +217,23 @@ def get_relevant_memory(
     all_records = framework + project
 
     query_tokens = _tokens(" ".join([query_text, task_text, component_text]))
-    ranked = sorted(
-        (
-            (_score(record, query_tokens, task_text, component_text), record)
-            for record in all_records
-        ),
-        key=lambda item: (-item[0], item[1]["scope"], item[1]["id"]),
-    )
+    ranked: list[tuple[int, int, dict[str, Any]]] = []
+    for record in all_records:
+        if record["status"] != "active":
+            continue
+        relevance, scope_bonus = _relevance_and_scope_bonus(
+            record, query_tokens, task_text, component_text
+        )
+        ranked.append((relevance, scope_bonus, record))
+    ranked.sort(key=lambda item: (-item[0], -item[1], item[2]["scope"], item[2]["id"]))
 
-    # With no explicit query, return a small active baseline rather than the whole memory corpus.
-    selected = [
-        record for score, record in ranked
-        if score >= (0 if not query_tokens else 1)
-    ][:limit]
+    # A non-empty query requires real relevance: the project-scope tie-break bonus alone must never
+    # make a zero-overlap record eligible. With no query tokens, return a small active baseline
+    # instead of the whole memory corpus.
+    if query_tokens:
+        selected = [record for relevance, _bonus, record in ranked if relevance > 0][:limit]
+    else:
+        selected = [record for _relevance, _bonus, record in ranked][:limit]
 
     return {
         "memoryVersion": MEMORY_VERSION,

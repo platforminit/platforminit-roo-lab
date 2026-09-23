@@ -2,24 +2,24 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T11 — Harden project memory relevance ranking
+## P-WF-T12 — Implement deterministic memory supersession
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `feat/p-wf-t11-memory-ranking` |
+| Branch | `feat/p-wf-t12-memory-supersession` |
 | Scope | `workflow-memory` |
-| Dependencies | P-WF-T10 |
+| Dependencies | P-WF-T11 |
 | Next actor | `platforminit-orchestrator` |
 
-Fix the v1 retrieval scoring so project scope is only a ranking preference for already relevant records and cannot qualify zero-overlap records into bounded results.
+Make supersedes operational so active replacement records suppress obsolete active records deterministically instead of relying on manual status edits.
 
 ### Acceptance criteria
 
-- [ ] a project-scope bonus never makes a zero-overlap record eligible for a non-empty query
-- [ ] task/component exact matches and lexical overlap remain deterministic and bounded
-- [ ] focused tests cover irrelevant project records, tie-breaking, empty-query baseline, and maxItems limits
+- [ ] active records suppress every record ID they explicitly supersede before ranking
+- [ ] supersession chains are deterministic and cycles or malformed self-supersession fail closed
+- [ ] focused tests prove superseded facts cannot reappear in bounded retrieval while historical/deprecated records remain non-active context
 
 ### Allowed files
 
@@ -41,4 +41,4 @@ Fix the v1 retrieval scoring so project scope is only a ranking preference for a
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T11 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T12 --actor platforminit-orchestrator`

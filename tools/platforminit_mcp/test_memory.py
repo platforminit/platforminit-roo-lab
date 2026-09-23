@@ -83,6 +83,37 @@ class MemoryTests(unittest.TestCase):
             patcher.stop()
         self.tmp.cleanup()
 
+    def _record(
+        self,
+        record_id: str,
+        *,
+        scope: str,
+        summary: str,
+        component: str = "",
+        task: str = "",
+        tags: tuple[str, ...] = (),
+        status: str = "active",
+        record_type: str = "lesson",
+    ) -> dict:
+        return {
+            "id": record_id,
+            "scope": scope,
+            "type": record_type,
+            "component": component,
+            "task": task,
+            "summary": summary,
+            "tags": list(tags),
+            "status": status,
+            "sources": ["docs/reviews/P-WF-T11.md"],
+        }
+
+    def _write_memory(self, *, framework_records=(), project_records=()) -> None:
+        for path, records in ((self.framework, framework_records), (self.project, project_records)):
+            path.write_text(
+                "".join(json.dumps(record, separators=(",", ":")) + "\n" for record in records),
+                encoding="utf-8",
+            )
+
     def test_retrieval_is_bounded_and_advisory(self):
         result = memory.get_relevant_memory(
             query="memory taskctl",
@@ -164,6 +195,158 @@ class MemoryTests(unittest.TestCase):
         self.assertIn(record["id"], {item["id"] for item in stored})
         with self.assertRaises(memory.MemoryError):
             memory.append_project_record(record)
+
+
+    def test_irrelevant_project_record_is_not_eligible_for_non_empty_query(self):
+        self._write_memory(
+            framework_records=[
+                self._record(
+                    "framework.test.release",
+                    scope="framework",
+                    component="release",
+                    summary="Human merge remains mandatory after the release stage.",
+                    tags=("release", "human-approval"),
+                )
+            ],
+            project_records=[
+                self._record(
+                    "project.test.unrelated",
+                    scope="project",
+                    component="kitchen",
+                    summary="Banana inventory notes for the office kitchen.",
+                    tags=("banana",),
+                ),
+                self._record(
+                    "project.test.related",
+                    scope="project",
+                    component="release",
+                    summary="Release evidence stays attached to every merge request",
+                    tags=("release",),
+                ),
+            ],
+        )
+        result = memory.get_relevant_memory(query="release merge", max_items=memory.HARD_MAX_ITEMS)
+        ids = [item["id"] for item in result["items"]]
+        # The zero-overlap project record only carries the project-scope bonus, so it must stay
+        # ineligible even at the hard cap.
+        self.assertNotIn("project.test.unrelated", ids)
+        self.assertEqual(set(ids), {"framework.test.release", "project.test.related"})
+        # Equal lexical overlap: the project scope bonus now acts as the bounded tie-break.
+        self.assertEqual(ids, ["project.test.related", "framework.test.release"])
+
+    def test_equal_relevance_records_are_tie_broken_deterministically(self):
+        self._write_memory(
+            framework_records=[
+                self._record(
+                    "framework.tie.framework",
+                    scope="framework",
+                    summary="Shared tiebreak token sample.",
+                )
+            ],
+            project_records=[
+                self._record("project.tie.b", scope="project", summary="Shared tiebreak token sample."),
+                self._record("project.tie.a", scope="project", summary="Shared tiebreak token sample."),
+            ],
+        )
+        first = memory.get_relevant_memory(query="tiebreak", max_items=memory.HARD_MAX_ITEMS)
+        second = memory.get_relevant_memory(query="tiebreak", max_items=memory.HARD_MAX_ITEMS)
+        ids = [item["id"] for item in first["items"]]
+        self.assertEqual(ids, [item["id"] for item in second["items"]])
+        # Equal overlap: the project-scope bonus wins the tie-break, then record id stabilizes order.
+        self.assertEqual(ids, ["project.tie.a", "project.tie.b", "framework.tie.framework"])
+
+    def test_exact_task_and_component_matches_stay_lexical_independent(self):
+        self._write_memory(
+            framework_records=[
+                self._record("framework.test.other", scope="framework", summary="Unrelated framework note.")
+            ],
+            project_records=[
+                self._record(
+                    "project.test.tasked",
+                    scope="project",
+                    component="memory",
+                    task="P-WF-T10",
+                    summary="No shared words with the requested component here.",
+                ),
+                self._record(
+                    "project.test.unrelated",
+                    scope="project",
+                    component="kitchen",
+                    task="P-WF-T99",
+                    summary="No shared words with the requested component here.",
+                ),
+            ],
+        )
+        by_task = memory.get_relevant_memory(task_id="P-WF-T10", max_items=memory.HARD_MAX_ITEMS)
+        self.assertEqual([item["id"] for item in by_task["items"]], ["project.test.tasked"])
+
+        by_component = memory.get_relevant_memory(component="memory", max_items=memory.HARD_MAX_ITEMS)
+        self.assertEqual([item["id"] for item in by_component["items"]], ["project.test.tasked"])
+
+    def test_empty_query_baseline_is_bounded_and_active_only(self):
+        self._write_memory(
+            framework_records=[
+                self._record(
+                    f"framework.baseline.{index:02d}",
+                    scope="framework",
+                    summary=f"Baseline note {index}.",
+                )
+                for index in range(4)
+            ],
+            project_records=[
+                self._record("project.baseline.active", scope="project", summary="Active project baseline note."),
+                self._record(
+                    "project.baseline.deprecated",
+                    scope="project",
+                    summary="Deprecated project note.",
+                    status="deprecated",
+                ),
+                self._record(
+                    "project.baseline.historical",
+                    scope="project",
+                    summary="Historical project note.",
+                    status="historical",
+                ),
+            ],
+        )
+        result = memory.get_relevant_memory(max_items=3)
+        self.assertEqual(result["itemCount"], 3)
+        self.assertEqual(len(result["items"]), 3)
+        self.assertTrue(all(item["status"] == "active" for item in result["items"]))
+        self.assertFalse(
+            {"project.baseline.deprecated", "project.baseline.historical"}
+            & {item["id"] for item in result["items"]}
+        )
+        self.assertEqual(
+            [item["id"] for item in result["items"]],
+            ["project.baseline.active", "framework.baseline.00", "framework.baseline.01"],
+        )
+
+    def test_max_items_limit_and_hard_cap_are_enforced(self):
+        self._write_memory(
+            framework_records=[
+                self._record(
+                    f"framework.bulk.{index:02d}",
+                    scope="framework",
+                    summary=f"Bulk retrieval note {index}.",
+                )
+                for index in range(memory.HARD_MAX_ITEMS + 5)
+            ],
+        )
+        default_result = memory.get_relevant_memory(query="bulk")
+        self.assertEqual(default_result["itemCount"], memory.DEFAULT_MAX_ITEMS)
+        self.assertEqual(len(default_result["items"]), memory.DEFAULT_MAX_ITEMS)
+
+        capped = memory.get_relevant_memory(query="bulk", max_items=memory.HARD_MAX_ITEMS + 50)
+        self.assertEqual(capped["itemCount"], memory.HARD_MAX_ITEMS)
+        self.assertEqual(
+            [item["id"] for item in capped["items"]],
+            [f"framework.bulk.{index:02d}" for index in range(memory.HARD_MAX_ITEMS)],
+        )
+
+        single = memory.get_relevant_memory(query="bulk", max_items=1)
+        self.assertEqual(single["itemCount"], 1)
+        self.assertEqual([item["id"] for item in single["items"]], ["framework.bulk.00"])
 
 
 if __name__ == "__main__":

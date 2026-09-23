@@ -2395,7 +2395,7 @@
       "id": "P-WF-T11",
       "track": "platform",
       "order": 242,
-      "status": "pending",
+      "status": "done",
       "title": "Harden project memory relevance ranking",
       "description": "Fix the v1 retrieval scoring so project scope is only a ranking preference for already relevant records and cannot qualify zero-overlap records into bounded results.",
       "scope": "workflow-memory",
@@ -2436,7 +2436,92 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-23T18:12:21.476688+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T18:14:31.198568+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "-m",
+                "unittest",
+                "tools.platforminit_mcp.test_memory",
+                "-v"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "230d347217058c96fb6da6d7c7b93ac7aec8ca00388e6379253fc41d7f5879c5",
+          "changedFiles": [
+            "tools/platforminit_mcp/memory.py",
+            "tools/platforminit_mcp/test_memory.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-23T18:16:18.858866+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T11.md"
+        },
+        "security": {
+          "at": "2026-09-23T18:18:28.767230+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T11.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T18:19:50.886435+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "-m",
+                "unittest",
+                "tools.platforminit_mcp.test_memory",
+                "-v"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "230d347217058c96fb6da6d7c7b93ac7aec8ca00388e6379253fc41d7f5879c5",
+          "changedFiles": [
+            "tools/platforminit_mcp/memory.py",
+            "tools/platforminit_mcp/test_memory.py"
+          ],
+          "confirmedFingerprint": "230d347217058c96fb6da6d7c7b93ac7aec8ca00388e6379253fc41d7f5879c5",
+          "confirmedFiles": [
+            "tools/platforminit_mcp/memory.py",
+            "tools/platforminit_mcp/test_memory.py"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-WF-T12",
@@ -2916,5 +3001,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-23T18:04:41.705201+00:00"
+  "updatedAt": "2026-09-23T18:19:50.886465+00:00"
 }

@@ -94,6 +94,7 @@ class MemoryTests(unittest.TestCase):
         tags: tuple[str, ...] = (),
         status: str = "active",
         record_type: str = "lesson",
+        supersedes: tuple[str, ...] = (),
     ) -> dict:
         return {
             "id": record_id,
@@ -105,6 +106,7 @@ class MemoryTests(unittest.TestCase):
             "tags": list(tags),
             "status": status,
             "sources": ["docs/reviews/P-WF-T11.md"],
+            "supersedes": list(supersedes),
         }
 
     def _write_memory(self, *, framework_records=(), project_records=()) -> None:
@@ -347,6 +349,223 @@ class MemoryTests(unittest.TestCase):
         single = memory.get_relevant_memory(query="bulk", max_items=1)
         self.assertEqual(single["itemCount"], 1)
         self.assertEqual([item["id"] for item in single["items"]], ["framework.bulk.00"])
+
+
+    def test_active_replacement_suppresses_superseded_record_before_ranking(self):
+        self._write_memory(
+            project_records=[
+                self._record(
+                    "project.super.obsolete",
+                    scope="project",
+                    component="memory",
+                    summary="Release merge evidence came from the retired manual snapshot.",
+                    tags=("release", "merge"),
+                ),
+                self._record(
+                    "project.super.replacement",
+                    scope="project",
+                    component="memory",
+                    summary="Release merge evidence comes from the controller snapshot.",
+                    tags=("release", "merge"),
+                    supersedes=("project.super.obsolete",),
+                ),
+            ],
+        )
+        result = memory.get_relevant_memory(query="release merge evidence", max_items=memory.HARD_MAX_ITEMS)
+        self.assertEqual([item["id"] for item in result["items"]], ["project.super.replacement"])
+
+        # The bounded empty-query baseline must not resurface the superseded record either.
+        baseline = memory.get_relevant_memory(max_items=memory.HARD_MAX_ITEMS)
+        self.assertEqual([item["id"] for item in baseline["items"]], ["project.super.replacement"])
+
+        # Suppression, not a manual status edit, removed it: the stored record is still active data.
+        stored = {item["id"]: item for item in memory.load_jsonl(self.project, expected_scope="project")}
+        self.assertEqual(stored["project.super.obsolete"]["status"], "active")
+
+    def test_supersession_chains_are_transitive_and_deterministic(self):
+        self._write_memory(
+            project_records=[
+                self._record(
+                    "project.chain.old",
+                    scope="project",
+                    summary="Chain lesson generation one.",
+                    tags=("chain",),
+                ),
+                self._record(
+                    "project.chain.middle",
+                    scope="project",
+                    summary="Chain lesson generation two.",
+                    tags=("chain",),
+                    supersedes=("project.chain.old",),
+                ),
+                self._record(
+                    "project.chain.new",
+                    scope="project",
+                    summary="Chain lesson generation three.",
+                    tags=("chain",),
+                    supersedes=("project.chain.middle",),
+                ),
+            ],
+        )
+        stored = memory.load_jsonl(self.project, expected_scope="project")
+        expected = {"project.chain.middle", "project.chain.old"}
+        self.assertEqual(memory.superseded_record_ids(stored), expected)
+        # Deterministic: the suppression set never depends on corpus order.
+        self.assertEqual(memory.superseded_record_ids(list(reversed(stored))), expected)
+
+        first = memory.get_relevant_memory(query="chain lesson", max_items=memory.HARD_MAX_ITEMS)
+        second = memory.get_relevant_memory(query="chain lesson", max_items=memory.HARD_MAX_ITEMS)
+        self.assertEqual([item["id"] for item in first["items"]], ["project.chain.new"])
+        self.assertEqual(
+            [item["id"] for item in first["items"]],
+            [item["id"] for item in second["items"]],
+        )
+
+    def test_supersession_cycle_fails_closed(self):
+        self._write_memory(
+            project_records=[
+                self._record(
+                    "project.cycle.a",
+                    scope="project",
+                    summary="Cycle member alpha.",
+                    supersedes=("project.cycle.b",),
+                ),
+                self._record(
+                    "project.cycle.b",
+                    scope="project",
+                    summary="Cycle member beta.",
+                    supersedes=("project.cycle.a",),
+                ),
+            ],
+        )
+        stored = memory.load_jsonl(self.project, expected_scope="project")
+        with self.assertRaises(memory.MemoryError):
+            memory.superseded_record_ids(stored)
+        with self.assertRaises(memory.MemoryError):
+            memory.get_relevant_memory(query="cycle member")
+
+    def test_malformed_self_supersession_and_dangling_targets_fail_closed(self):
+        self_referencing = self._record(
+            "project.self.reference",
+            scope="project",
+            summary="A record that claims to replace itself.",
+            supersedes=("project.self.reference",),
+        )
+        with self.assertRaises(memory.MemoryError):
+            memory.validate_record(self_referencing, expected_scope="project")
+        with self.assertRaises(memory.MemoryError):
+            memory.validate_record(
+                self._record(
+                    "project.self.format",
+                    scope="project",
+                    summary="A record that names a malformed id.",
+                    supersedes=("Project.Self.Format",),
+                ),
+                expected_scope="project",
+            )
+        with self.assertRaises(memory.MemoryError):
+            memory.validate_record(
+                self._record(
+                    "project.self.blank",
+                    scope="project",
+                    summary="A record that names an empty id.",
+                    supersedes=("   ",),
+                ),
+                expected_scope="project",
+            )
+        self._write_memory(project_records=[self_referencing])
+        with self.assertRaises(memory.MemoryError):
+            memory.load_jsonl(self.project, expected_scope="project")
+        with self.assertRaises(memory.MemoryError):
+            memory.get_relevant_memory(query="replace itself")
+
+        self._write_memory(
+            project_records=[
+                self._record(
+                    "project.dangling.replacement",
+                    scope="project",
+                    summary="Replacement that names a removed record.",
+                    supersedes=("project.dangling.removed",),
+                ),
+            ],
+        )
+        with self.assertRaises(memory.MemoryError):
+            memory.get_relevant_memory(query="replacement removed")
+
+    def test_non_active_replacements_never_suppress_active_memory(self):
+        self._write_memory(
+            framework_records=[
+                self._record(
+                    "framework.context.active",
+                    scope="framework",
+                    summary="Active framework lesson about evidence reuse.",
+                    tags=("evidence", "lesson"),
+                ),
+                self._record(
+                    "framework.context.historical",
+                    scope="framework",
+                    summary="Historical framework lesson that claims to replace the active lesson.",
+                    tags=("evidence", "lesson"),
+                    status="historical",
+                    supersedes=("framework.context.active",),
+                ),
+                self._record(
+                    "framework.context.deprecated",
+                    scope="framework",
+                    summary="Deprecated framework lesson about evidence reuse.",
+                    tags=("evidence", "lesson"),
+                    status="deprecated",
+                ),
+            ],
+        )
+        result = memory.get_relevant_memory(query="framework lesson evidence", max_items=memory.HARD_MAX_ITEMS)
+        self.assertEqual([item["id"] for item in result["items"]], ["framework.context.active"])
+        self.assertTrue(all(item["status"] == "active" for item in result["items"]))
+        # Historical/deprecated records stay loadable non-active context instead of vanishing.
+        stored = {item["id"] for item in memory.load_jsonl(self.framework, expected_scope="framework")}
+        self.assertEqual(
+            stored,
+            {
+                "framework.context.active",
+                "framework.context.historical",
+                "framework.context.deprecated",
+            },
+        )
+
+    def test_duplicate_across_scope_ids_fail_closed(self):
+        self._write_memory(
+            framework_records=[
+                self._record("shared.duplicate.id", scope="framework", summary="Framework copy.")
+            ],
+            project_records=[
+                self._record("shared.duplicate.id", scope="project", summary="Project copy.")
+            ],
+        )
+        with self.assertRaises(memory.MemoryError):
+            memory.get_relevant_memory(query="copy")
+
+    def test_append_project_record_rejects_unknown_supersede_target(self):
+        unknown = self._record(
+            "project.append.unknown",
+            scope="project",
+            summary="Replacement record for an unknown target.",
+            supersedes=("project.append.missing",),
+        )
+        with self.assertRaises(memory.MemoryError):
+            memory.append_project_record(unknown)
+
+        valid = self._record(
+            "project.append.valid",
+            scope="project",
+            component="memory",
+            summary="Replacement record for an existing target.",
+            supersedes=("project.test.current",),
+        )
+        appended = memory.append_project_record(valid)
+        self.assertEqual(appended["supersedes"], ["project.test.current"])
+
+        stored = {item["id"] for item in memory.load_jsonl(self.project, expected_scope="project")}
+        self.assertNotIn("project.append.unknown", stored)
 
 
 if __name__ == "__main__":

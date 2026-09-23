@@ -13,6 +13,54 @@ Argo CD            -> owns runtime deployment
 
 The retired Zabbix / Vector / OpenObserve implementation has been purged from the active CH05 lifecycle.
 
+## Reference state ownership
+
+The active CH05 reference state is Checkmk Community, and Argo CD owns the runtime:
+
+| Item | Value |
+|---|---|
+| Argo CD Application | `operations-stack` (`argocd` namespace, `platforminit.io/gitops-mode: owner`) |
+| AppProject | `operations` |
+| Ownership of record | [`argocd/operations-stack-application.yaml.tpl`](argocd/operations-stack-application.yaml.tpl), applied by [`scripts/ch05-register-operations-stack.sh`](scripts/ch05-register-operations-stack.sh) |
+| Helm chart | [`manifests`](manifests) - `platforminit-operations-stack` (Checkmk Community) |
+| Runtime namespace | `operations` |
+| Container image | `checkmk/check-mk-community` |
+| Storage ownership | PV `platforminit-checkmk-sites` + PVC `checkmk-sites` -> `/srv/observability/data/checkmk` |
+| Trusted header | `X-Remote-User` |
+
+Repository-only proof of this reference state and of the retired-stack boundary, with no cluster access,
+no runtime mutation and no `BASE_DOMAIN` requirement:
+
+```bash
+CH05_REFERENCE_VALIDATE_MODE=static bash platform/observability/validate/ch05-validate-operations-stack.sh
+```
+
+The static proof fails when the ownership of record changes, when a retired stack returns as a chart
+value, template, script or Argo CD source, or when this document and the manifests disagree on the
+Checkmk reference state. The CH05 release workflows still call the default runtime mode of the same
+validator; the static mode is repository-only and is used for reference-state and retired-stack
+regression checks.
+
+## Retired stack boundary
+
+Two earlier CH05 generations are retired and must not return as active deployment choices:
+
+```text
+Grafana / VictoriaMetrics / Loki / Alloy  -> first CH05 proof, retired
+Zabbix / OpenObserve / Vector             -> second CH05 proof, retired
+```
+
+Retired names may remain only as historical references or as explicit negative guards, such as the
+CH05.3 `RETIRED_OPERATIONS_GROUPS` identity guard and the retired-path cleanup notes in
+[`docs/ch05-observability-storage-contract.md`](../../docs/ch05-observability-storage-contract.md).
+
+[`argocd/apps/ch05-observability.yaml`](../../argocd/apps/ch05-observability.yaml) is a stale,
+never-applied duplicate of the CH05 Application: its description still names the second retired stack,
+it points at the Helm chart directory with `directory.recurse`, and nothing under `.github/workflows/`,
+`platform/observability/scripts/` or the registration path references it. The ownership of record is
+[`argocd/operations-stack-application.yaml.tpl`](argocd/operations-stack-application.yaml.tpl); the
+static proof above asserts that the stale duplicate stays unreferenced.
+
 ## Public endpoint
 
 | URL | Purpose | Auth |

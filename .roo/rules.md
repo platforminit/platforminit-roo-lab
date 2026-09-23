@@ -35,7 +35,7 @@ python3 tools/task_controller/taskctl.py validate
 
 ## Non-negotiable execution rules
 
-1. For initial runnable-task resolution, complete the ordered fresh-`dev` startup gate in `.roo/commands/next-task.md` before calling MCP task-resolution tools. Once a task is active on its feature branch, call MCP `health` and `get_delivery_context` before broad repository context and after each specialist handoff.
+1. For initial runnable-task resolution, complete the ordered fresh-`dev` startup gate in `.roo/commands/next-task.md` before calling MCP task-resolution tools. Once a task is active on its feature branch, call MCP `health` and `get_delivery_context` before broad repository context and after each specialist handoff, then request bounded advisory memory with `get_relevant_memory` before broad historical or source reads. Memory is advisory only and never overrides current source or taskctl/controller state.
 2. Verify WSL, repository root, expected task branch, and working tree before changing files.
 3. Never use Windows CMD, PowerShell, Git Bash, MobaXterm shell, or `vscode-remote://` launchers for Zoo execution.
 4. Never push directly to `dev`.
@@ -86,11 +86,31 @@ unresolved risks. The parent reloads MCP context before routing again.
 - On API 400/context exhaustion, terminate the child and resume in a fresh child from MCP compact
   context and evidence paths. Never rebuild failed context with broad repository rereads.
 
+## Memory retrieval (advisory)
+
+Retrieval order for every `platforminit-*` specialist: MCP `health`, then `get_delivery_context`, then one
+bounded `get_relevant_memory` request before broad historical or source reads.
+
+- Memory is advisory and never overrides current source code or `taskctl`/controller state. Retrieved
+  memory must not change the active task, branch, `allowedFiles`, required validators, or any lifecycle
+  transition owned by `tasks/tracker.json`.
+- Keep retrieval bounded: one task/component-scoped query with a small `maxItems`. Never bulk-load the
+  memory corpus and never replace controller context with memory.
+- Precedence stays: human instruction, then `tasks/tracker.json` and controller state, then current
+  repository source, then project memory, then generic framework memory. Historical or deprecated memory
+  is background or negative context unless the active task asks for it.
+- Unavailable, empty, or irrelevant memory is not a blocker; the active task, controller state, and
+  current source remain authoritative.
+- `tools/platforminit_mcp/memory.py` is the only retrieval path and stays read-only; project-memory
+  writes happen only through reviewed source changes, never as hidden runtime state.
+
 ## MCP availability
 
 Every `platforminit-*` project mode must include the `mcp` group. Fresh-child mode changes must be
 verified with MCP `health` and `get_active_task`; `.roo/commands/mcp-smoke.md` is the runtime smoke
-procedure and `tools/platforminit_mcp/validate_mode_access.py` is the static check.
+procedure and `tools/platforminit_mcp/validate_mode_access.py` is the static check. That static check
+FAILS when a `platforminit-*` mode or this rule file loses the bounded advisory `get_relevant_memory`
+bootstrap contract, so memory stays advisory and lower priority than current source and controller state.
 
 ## Active architecture baseline
 

@@ -5,9 +5,14 @@ Static layer (default, cheap, no subprocess side effects):
   - every `platforminit-*` mode declares the `mcp` tool group;
   - every mode bootstraps from MCP delivery context as a fresh child, so mode changes never
     depend on conversation-carried context;
+  - every mode then requests bounded advisory memory through `get_relevant_memory` before broad
+    historical/source reads, and keeps that memory below current source and taskctl/controller state;
+  - `.roo/rules.md` states the same bounded, advisory, lower-priority memory contract for all modes;
   - `.roo/commands/mcp-smoke.md` documents exactly the modes declared in `.roomodes` (no drift);
   - the `platforminit-roo-lab` server is enabled and always-allows the required tools;
   - the shipped server actually exposes the required tools;
+  - the shipped memory retrieval stays advisory (`advisoryOnly`), bounded, and pointed at
+    tasks/tracker.json as the only authoritative task source;
   - the delivery-context contract stays platform-only, keeps the changed-scope window bounded for
     small tasks, and advertises that bound in the tool schema;
   - every caller-supplied tool argument is bounded before it can reach a Git argument vector or a
@@ -44,6 +49,24 @@ REQUIRED_TOOLS = {"health", "get_delivery_context", "get_active_task", "get_chan
 FRESH_CHILD_MARKERS = ("child start", "fresh child")
 ORCHESTRATOR_MODE = "platforminit-orchestrator"
 ORCHESTRATOR_FRESH_CHILD_MARKERS = ("fresh Zoo new_task child", "fresh child")
+# Bounded memory bootstrap contract (P-WF-T13). Memory is advisory retrieval context: every
+# PlatformInit specialist must request it after the MCP delivery-context bootstrap and before broad
+# historical or source reads, and it must never outrank current source code or taskctl/controller
+# state. Losing any marker below means a mode lost the contract, so validation fails.
+MEMORY_TOOL = "get_relevant_memory"
+RULES = ROOT / ".roo" / "rules.md"
+MEMORY_ADVISORY_MARKERS = ("advisory",)
+MEMORY_ORDER_MARKERS = ("before broad",)
+MEMORY_BOUND_MARKERS = ("bounded", "maxitems")
+MEMORY_PRECEDENCE_MARKERS = (
+    "never overrides",
+    "never override",
+    "does not override",
+    "cannot override",
+    "never outrank",
+    "lower priority than",
+)
+MEMORY_AUTHORITY_MARKERS = ("taskctl",)
 ACTIVE_STATES = {"in_progress", "needs_review", "needs_security_review", "ready_to_close"}
 RUNTIME_TIMEOUT_SECONDS = 120
 
@@ -181,6 +204,30 @@ def _served_tools() -> set[str]:
         sys.path.pop(0)
 
 
+def memory_bootstrap_errors(label: str, text: str) -> list[str]:
+    """Static checks of the bounded advisory memory bootstrap contract (P-WF-T13).
+
+    The mode instruction text and the global rule text must both keep memory retrieval in the
+    fresh-child bootstrap order, bounded, and explicitly advisory: lower priority than current source
+    and taskctl/controller state. Dropping any marker means the contract was lost, not reworded.
+    """
+    errors: list[str] = []
+    lowered = text.lower()
+    if MEMORY_TOOL not in lowered:
+        errors.append(f"{label}: does not request bounded memory via {MEMORY_TOOL}")
+    if not any(marker in lowered for marker in MEMORY_ADVISORY_MARKERS):
+        errors.append(f"{label}: does not keep memory explicitly advisory")
+    if not any(marker in lowered for marker in MEMORY_ORDER_MARKERS):
+        errors.append(f"{label}: does not request memory before broad historical/source reads")
+    if not any(marker in lowered for marker in MEMORY_BOUND_MARKERS):
+        errors.append(f"{label}: does not keep memory retrieval bounded")
+    if not any(marker in lowered for marker in MEMORY_PRECEDENCE_MARKERS):
+        errors.append(f"{label}: does not keep memory below current source/controller state")
+    if not any(marker in lowered for marker in MEMORY_AUTHORITY_MARKERS):
+        errors.append(f"{label}: does not name taskctl/controller state as authoritative")
+    return errors
+
+
 def delivery_contract_errors() -> list[str]:
     """Static, subprocess-free checks of the compact delivery-context contract."""
     sys.path.insert(0, str(SERVER.parent))
@@ -236,6 +283,24 @@ def delivery_contract_errors() -> list[str]:
             errors.append("get_relevant_memory: maxItems schema does not advertise the hard cap")
         if item_schema.get("default") != mcp_memory.DEFAULT_MAX_ITEMS:
             errors.append("get_relevant_memory: maxItems schema does not advertise the bounded default")
+
+    # The shipped retrieval path itself must stay bounded and advisory: a result that can claim task
+    # authority, or that ignores the requested bound, would silently make memory outrank controller
+    # state no matter what the mode text says.
+    if not hasattr(mcp_memory, "get_relevant_memory"):
+        errors.append("get_relevant_memory: bounded advisory retrieval entry point missing")
+    else:
+        try:
+            probe = mcp_memory.get_relevant_memory(query="memory advisory authority", max_items=1)
+        except Exception:
+            errors.append("get_relevant_memory: cannot produce a bounded advisory result")
+        else:
+            if probe.get("advisoryOnly") is not True:
+                errors.append("get_relevant_memory: result is not marked advisory-only")
+            if probe.get("authoritativeTaskSource") != "tasks/tracker.json":
+                errors.append("get_relevant_memory: result does not keep tasks/tracker.json authoritative")
+            if len(probe.get("items", [])) > 1:
+                errors.append("get_relevant_memory: result ignores the requested item bound")
 
     errors.extend(bounded_input_errors(mcp_context, mcp_server))
     return errors
@@ -409,6 +474,12 @@ def static_errors() -> tuple[list[str], list[dict]]:
                 errors.append(f"{slug}: instructions do not require fresh specialist children")
         elif not any(marker in instructions for marker in FRESH_CHILD_MARKERS):
             errors.append(f"{slug}: instructions do not start as a fresh child")
+        errors.extend(memory_bootstrap_errors(f"{slug} instructions", instructions))
+
+    if not RULES.is_file():
+        errors.append(".roo/rules.md missing")
+    else:
+        errors.extend(memory_bootstrap_errors(".roo/rules.md", RULES.read_text(encoding="utf-8")))
 
     if not SMOKE_COMMAND.is_file():
         errors.append(".roo/commands/mcp-smoke.md missing")

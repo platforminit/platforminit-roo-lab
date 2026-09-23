@@ -1,6 +1,6 @@
 # Git Safety Rules
 
-Roo must always check:
+Zoo Code must always check:
 
 ```bash
 git status --short
@@ -10,21 +10,21 @@ git remote -v
 
 Allowed:
 
-- create feature/batch branches
-- commit to the current batch branch
-- push the current batch branch
-- open PRs
+- create the task's feature/batch branch;
+- commit to the current task branch;
+- push the current task branch;
+- open or update a feature-to-`dev` PR.
 
 Forbidden unless explicitly approved:
 
-- git push --force
-- git push --force-with-lease
-- git reset --hard
-- git clean -fdx
-- pushing directly to dev/main
+- `git push --force`
+- `git push --force-with-lease`
+- `git reset --hard`
+- `git clean -fdx`
+- pushing directly to `dev` or `main`
 - dumping secrets into files, logs, commits, or artifacts
 
-Before push, Roo must check remote state:
+Before push, Zoo Code must check remote state:
 
 ```bash
 git fetch origin

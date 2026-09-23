@@ -1,6 +1,6 @@
-# Environment Rules
+# Zoo Code Environment Rules
 
-Roo must run from VS Code Remote WSL.
+Zoo Code must run from VS Code Remote WSL for this repository.
 
 Required environment:
 
@@ -8,7 +8,7 @@ Required environment:
 - Workspace: /mnt/d/SYSADMIN/platforminit-roo-lab
 - User: hattila
 
-Before modifying files, Roo must verify:
+Before modifying files, Zoo Code must verify:
 
 ```bash
 pwd
@@ -18,7 +18,7 @@ git branch --show-current
 git status --short
 ```
 
-Forbidden environments:
+Forbidden execution environments:
 
 - Windows CMD
 - PowerShell
@@ -26,4 +26,4 @@ Forbidden environments:
 - MobaXterm shell
 - local Windows VS Code extension host
 
-If the environment check fails, Roo must stop.
+If the environment check fails, Zoo Code must stop.

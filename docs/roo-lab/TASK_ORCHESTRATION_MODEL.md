@@ -1,6 +1,6 @@
 # Multi-Track Task Orchestration Model
 
-PlatformInit Roo Lab keeps `platform` and `n8n` as separate delivery areas, but PlatformInit task state and the PlatformInit next-task flow are PlatformInit-only.
+PlatformInit Zoo Code lab keeps `platform` and `n8n` as separate delivery areas, but PlatformInit task state and the PlatformInit next-task flow are PlatformInit-only.
 
 ## Authoritative state
 
@@ -44,11 +44,15 @@ Direct completion from any state other than `ready_to_close` is illegal.
 
 ## Roles
 
-- Orchestrator selects and starts exactly one runnable PlatformInit task.
+- Orchestrator selects and starts exactly one runnable PlatformInit task and is the only next-stage routing owner.
 - DeepSeek Coder implements only the task's `allowedFiles` scope and submits through the controller.
 - OpenAI Reviewer records a report and verdict through `taskctl review`.
 - OWASP Reviewer records a report and verdict through `taskctl security`.
-- Release Manager closes only after both independent gates pass.
+- Release Manager closes only after both independent gates pass, prepares the PR, and never merges it.
+
+Every lifecycle specialist runs as a fresh Zoo `new_task` child, records only its own controller transition,
+returns through `attempt_completion`, and terminates. The Orchestrator reloads MCP context before routing
+the next stage.
 
 Generated files must never be hand-edited to change state.
 
@@ -80,9 +84,14 @@ The CI workflow `.github/workflows/task-integrity.yml` runs lifecycle tests, tra
 
 ## Context minimization, MCP, and indexing
 
-`tools/platforminit_mcp/` exposes compact task and changed-scope context. Roo roles should prefer `get_delivery_context` or the equivalent repository-local helper before opening broad files, then use path-scoped `codebase_search` / codebase indexing for discovery.
+`tools/platforminit_mcp/` exposes compact task and changed-scope context. Zoo Code roles should prefer
+`get_delivery_context` before opening broad files, then use path-scoped repository/codebase search for
+missing impact context.
 
-The MCP layer is a context boundary, not another task database. It reads `tasks/tracker.json` and the current Git diff and returns only task-relevant metadata, changed files, focused-test hints, and suggested indexed-search paths.
+The MCP layer is a context boundary, not another task database. It reads `tasks/tracker.json` and the
+current Git diff and returns only bounded stage-critical metadata: task state, changed scope, focused-test
+hints, the compact handoff payload, and the next controller transition. It does not own task state and it
+must not reintroduce removed broad/suggested-path payloads.
 
 ## Future RAG
 

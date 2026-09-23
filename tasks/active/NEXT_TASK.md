@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-CH05-T01` — Verify the current Checkmk GitOps runtime and retired-stack boundary | `pending` | `batch/platform-ch05-checkmk-reference-state` |
+| `platform` | `P-WF-T10` — Add memory CI and runtime smoke coverage | `pending` | `feat/p-wf-t10-memory-ci` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

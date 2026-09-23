@@ -2,43 +2,45 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH05-T01 — Verify the current Checkmk GitOps runtime and retired-stack boundary
+## P-WF-T10 — Add memory CI and runtime smoke coverage
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch05-checkmk-reference-state` |
-| Scope | `platform-observability` |
+| Branch | `feat/p-wf-t10-memory-ci` |
+| Scope | `workflow-memory` |
 | Dependencies | P-CH04.6-T04 |
 | Next actor | `platforminit-orchestrator` |
 
-Treat the existing Checkmk implementation as the current operational reference, verify runtime/storage/GitOps ownership, and keep Zabbix/OpenObserve/Vector references historical or negative-guard only.
+Make the Zoo memory subsystem a first-class tested MCP contract so CI fails when memory parsing, retrieval, tool exposure, or bounded-input behavior regresses.
 
 ### Acceptance criteria
 
-- [ ] active CH05 runtime and storage ownership resolve to Checkmk Community under Argo CD
-- [ ] retired Grafana/VictoriaMetrics/Loki and Zabbix/OpenObserve/Vector paths are not active deployment choices
-- [ ] current operator documentation and focused validation agree on the Checkmk reference-state
+- [ ] Task integrity CI compiles and runs focused tests for the memory subsystem
+- [ ] get_relevant_memory is required by MCP static validation and exercised by runtime smoke
+- [ ] invalid memory-tool inputs fail as controlled bounded JSON-RPC errors without host-path leakage
 
 ### Allowed files
 
-- `platform/observability/**`
-- `docs/ch05-*.md`
-- `README.md`
+- `.github/workflows/task-integrity.yml`
+- `tools/platforminit_mcp/validate_mode_access.py`
+- `tools/platforminit_mcp/test_memory.py`
 - `tasks/**`
 
 ### Required validators
 
+- `python3 -m unittest tools.platforminit_mcp.test_memory -v`
+- `python3 tools/platforminit_mcp/validate_mode_access.py --runtime`
 - `git diff --check`
 
 ### Forbidden actions
 
 - do not run infrastructure workflows
-- do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval
+- do not mutate runtime infrastructure, secrets, or GitHub environments
 - do not expose secret values
 - do not run full-repository validation unless explicitly required
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH05-T01 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T10 --actor platforminit-orchestrator`

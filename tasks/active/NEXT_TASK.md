@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T11` — Harden project memory relevance ranking | `pending` | `feat/p-wf-t11-memory-ranking` |
+| `platform` | `P-WF-T12` — Implement deterministic memory supersession | `pending` | `feat/p-wf-t12-memory-supersession` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

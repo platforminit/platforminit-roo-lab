@@ -56,6 +56,10 @@ the next stage.
 
 Generated files must never be hand-edited to change state.
 
+## Branch naming
+
+New feature work uses `feat/<short-kebab-name>`. New `batch/` branches are retired. Existing tasks whose authoritative tracker entry already contains a legacy `batch/` branch may complete on that branch without renaming or rewriting history. Bug fixes and non-feature maintenance may use explicit prefixes such as `fix/`, `chore/`, `refactor/`, or `docs/`.
+
 ## Commands
 
 ```bash

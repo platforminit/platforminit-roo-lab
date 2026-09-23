@@ -10,10 +10,17 @@ git remote -v
 
 Allowed:
 
-- create the task's feature/batch branch;
+- create the task branch from fresh `dev`; new feature work MUST use the `feat/` prefix;
 - commit to the current task branch;
 - push the current task branch;
-- open or update a feature-to-`dev` PR.
+- open or update the task-to-`dev` PR.
+
+Branch naming contract for newly created work:
+
+- product/framework feature: `feat/<short-kebab-name>`;
+- bug fix: `fix/<short-kebab-name>`;
+- maintenance/refactor/docs-only work: use an explicit non-feature prefix such as `chore/`, `refactor/`, or `docs/`;
+- do not create new `batch/` branches. Existing tracker tasks that already name a legacy `batch/` branch may finish on that recorded branch; do not rename an in-flight or pre-existing task branch merely to satisfy the new convention.
 
 Forbidden unless explicitly approved:
 

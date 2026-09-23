@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-WF-T12` — Implement deterministic memory supersession | `pending` | `feat/p-wf-t12-memory-supersession` |
+| `platform` | `P-WF-T13` — Integrate bounded memory retrieval into Zoo child startup | `pending` | `feat/p-wf-t13-zoo-memory-usage` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.

@@ -2527,7 +2527,7 @@
       "id": "P-WF-T12",
       "track": "platform",
       "order": 243,
-      "status": "pending",
+      "status": "done",
       "title": "Implement deterministic memory supersession",
       "description": "Make supersedes operational so active replacement records suppress obsolete active records deterministically instead of relying on manual status edits.",
       "scope": "workflow-memory",
@@ -2568,7 +2568,92 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-23T18:37:33.093260+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T18:39:41.073241+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "-m",
+                "unittest",
+                "tools.platforminit_mcp.test_memory",
+                "-v"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "f17fa51ae1c1515b1ccebaad578e643d2d85d70a52bae0c4ad2c6da0702508c2",
+          "changedFiles": [
+            "tools/platforminit_mcp/memory.py",
+            "tools/platforminit_mcp/test_memory.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-23T18:42:23.729657+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T12.md"
+        },
+        "security": {
+          "at": "2026-09-23T18:44:55.215611+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T12.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T18:46:18.052458+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "-m",
+                "unittest",
+                "tools.platforminit_mcp.test_memory",
+                "-v"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "f17fa51ae1c1515b1ccebaad578e643d2d85d70a52bae0c4ad2c6da0702508c2",
+          "changedFiles": [
+            "tools/platforminit_mcp/memory.py",
+            "tools/platforminit_mcp/test_memory.py"
+          ],
+          "confirmedFingerprint": "f17fa51ae1c1515b1ccebaad578e643d2d85d70a52bae0c4ad2c6da0702508c2",
+          "confirmedFiles": [
+            "tools/platforminit_mcp/memory.py",
+            "tools/platforminit_mcp/test_memory.py"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-WF-T13",
@@ -3001,5 +3086,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-23T18:19:50.886465+00:00"
+  "updatedAt": "2026-09-23T18:46:18.052486+00:00"
 }

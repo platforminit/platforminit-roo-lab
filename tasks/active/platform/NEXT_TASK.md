@@ -2,34 +2,35 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T12 — Implement deterministic memory supersession
+## P-WF-T13 — Integrate bounded memory retrieval into Zoo child startup
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `feat/p-wf-t12-memory-supersession` |
+| Branch | `feat/p-wf-t13-zoo-memory-usage` |
 | Scope | `workflow-memory` |
-| Dependencies | P-WF-T11 |
+| Dependencies | P-WF-T12 |
 | Next actor | `platforminit-orchestrator` |
 
-Make supersedes operational so active replacement records suppress obsolete active records deterministically instead of relying on manual status edits.
+Make relevant framework/project memory part of the normal small-context Zoo workflow after authoritative delivery context and before broad source/history reads.
 
 ### Acceptance criteria
 
-- [ ] active records suppress every record ID they explicitly supersede before ranking
-- [ ] supersession chains are deterministic and cycles or malformed self-supersession fail closed
-- [ ] focused tests prove superseded facts cannot reappear in bounded retrieval while historical/deprecated records remain non-active context
+- [ ] every PlatformInit Zoo specialist starts from health and get_delivery_context, then requests bounded get_relevant_memory before broad historical reads
+- [ ] mode/rule text keeps memory explicitly advisory and lower priority than current source and taskctl state
+- [ ] static mode validation fails when a PlatformInit mode loses the bounded memory bootstrap contract
 
 ### Allowed files
 
-- `tools/platforminit_mcp/memory.py`
-- `tools/platforminit_mcp/test_memory.py`
+- `.roomodes`
+- `.roo/rules.md`
+- `tools/platforminit_mcp/validate_mode_access.py`
 - `tasks/**`
 
 ### Required validators
 
-- `python3 -m unittest tools.platforminit_mcp.test_memory -v`
+- `python3 tools/platforminit_mcp/validate_mode_access.py --runtime`
 - `git diff --check`
 
 ### Forbidden actions
@@ -41,4 +42,4 @@ Make supersedes operational so active replacement records suppress obsolete acti
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T12 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T13 --actor platforminit-orchestrator`

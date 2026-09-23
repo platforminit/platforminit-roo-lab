@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Modes:
+#   runtime (default) / runtime_with_sso - read-only assertions against the live CH05 operations stack.
+#   CH05_REFERENCE_VALIDATE_MODE=static   - repository-only reference-state contract with no cluster
+#       access, no runtime mutation and no BASE_DOMAIN requirement. It proves that the active CH05
+#       reference state is Checkmk Community under Argo CD ownership, that the retired
+#       Grafana/VictoriaMetrics/Loki/Alloy and Zabbix/OpenObserve/Vector generations are not active
+#       deployment choices, and that the CH05 operator documentation agrees with the manifests:
+#
+#       CH05_REFERENCE_VALIDATE_MODE=static bash platform/observability/validate/ch05-validate-operations-stack.sh
 log(){ echo "[$(basename "$0")][$(date -u +%FT%TZ)] $*"; }
 warn(){ echo "WARN: $*" >&2; }
 die(){ echo "FATAL: $*" >&2; exit 1; }
@@ -14,6 +23,192 @@ CHECKMK_SITE="${CHECKMK_SITE:-cmk}"
 PLATFORM_HOST="${PLATFORM_HOST:-platforminit-dev-01}"
 CHECKMK_LOCAL_PORT="${CHECKMK_LOCAL_PORT:-18085}"
 export KUBECONFIG
+
+# --- Static reference-state contract (repository-only: no cluster access, no runtime mutation) ---
+REFERENCE_VALIDATE_MODE="${CH05_REFERENCE_VALIDATE_MODE:-}"
+VALIDATOR_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+RETIRED_STACK_PATTERN='grafana|victoriametrics|vmagent|\bloki\b|alloy|zabbix|openobserve|vector'
+RETIRED_GUARD_ALLOWLIST='RETIRED_OPERATIONS_GROUPS|Refusing to reconcile retired'
+STALE_CH05_APP_REF='argocd/apps/'
+
+static_reference_state_validate(){
+  local repo_root="${CH05_REFERENCE_REPO_ROOT:-$(cd "$(dirname "${VALIDATOR_PATH}")/../../.." && pwd)}"
+  local matches refs dirs
+  need python3
+
+  log "Validating Checkmk reference-state ownership from repository contracts (repo=${repo_root})"
+  python3 - "$repo_root" <<'PY_REFERENCE_STATE'
+import os
+import re
+import sys
+
+repo_root = sys.argv[1]
+failures = []
+
+
+def expect(condition, message):
+    if not condition:
+        failures.append(message)
+
+
+def read_text(rel):
+    path = os.path.join(repo_root, rel)
+    if not os.path.isfile(path):
+        failures.append(f"missing repository contract file: {rel}")
+        return ""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+TPL_REL = "platform/observability/argocd/operations-stack-application.yaml.tpl"
+PROJECT_REL = "platform/observability/argocd/operations-project.yaml"
+CHART_REL = "platform/observability/manifests/Chart.yaml"
+VALUES_REL = "platform/observability/manifests/values.yaml"
+STORAGE_REL = "platform/observability/manifests/templates/01-storage/checkmk-storage.yaml"
+DEPLOYMENT_REL = "platform/observability/manifests/templates/checkmk/checkmk.yaml"
+REGISTER_REL = "platform/observability/scripts/ch05-register-operations-stack.sh"
+README_REL = "platform/observability/README.md"
+VALIDATOR_REL = "platform/observability/validate/ch05-validate-operations-stack.sh"
+
+tpl = read_text(TPL_REL)
+project = read_text(PROJECT_REL)
+chart = read_text(CHART_REL)
+values = read_text(VALUES_REL)
+storage = read_text(STORAGE_REL)
+deployment = read_text(DEPLOYMENT_REL)
+register = read_text(REGISTER_REL)
+readme = read_text(README_REL)
+
+# --- Acceptance 1: active CH05 runtime and storage ownership resolve to Checkmk under Argo CD ---
+expect(re.search(r"^kind: Application$", tpl, re.M) is not None, f"{TPL_REL} is not an Argo CD Application")
+expect(re.search(r"^  name: operations-stack$", tpl, re.M) is not None, "CH05 Application is not named operations-stack")
+expect(re.search(r"^  namespace: argocd$", tpl, re.M) is not None, "CH05 Application is not registered in the argocd namespace")
+expect("platforminit.io/chapter: ch05" in tpl, "CH05 Application is not labelled as chapter ch05")
+expect("platforminit.io/gitops-mode: owner" in tpl, "CH05 Application is not the Argo CD owner of the CH05 runtime")
+expect(re.search(r"^  project: operations$", tpl, re.M) is not None, "CH05 Application does not use the operations AppProject")
+expect("Checkmk Community" in tpl, "CH05 Application description does not name the Checkmk Community reference state")
+expect("path: platform/observability/manifests" in tpl, "CH05 Application does not point at the CH05 operations-stack chart")
+expect("releaseName: platforminit-operations" in tpl, "CH05 Application does not render the chart through helm.releaseName")
+expect(re.search(r"^directory:", tpl, re.M) is None, "CH05 Application must render the Helm chart instead of a recursive directory source")
+expect(re.search(r"^    namespace: operations$", tpl, re.M) is not None, "CH05 Application does not deploy into the operations namespace")
+
+expect(re.search(r"^kind: AppProject$", project, re.M) is not None, f"{PROJECT_REL} is not an AppProject")
+expect(re.search(r"^  name: operations$", project, re.M) is not None, "operations AppProject is not named operations")
+expect("- namespace: operations" in project, "operations AppProject does not permit the operations namespace")
+
+expect(re.search(r"^name: platforminit-operations-stack$", chart, re.M) is not None, "CH05 chart is not named platforminit-operations-stack")
+expect("Checkmk Community" in chart, "CH05 chart description does not name Checkmk Community")
+
+image_match = re.search(r"^    repository: (\S+)$", values, re.M)
+image_repository = image_match.group(1) if image_match else ""
+expect(image_repository == "checkmk/check-mk-community", f"checkmk.image.repository is {image_repository!r}, expected the Checkmk Community image")
+expect(re.search(r"^  remoteUserHeader: X-Remote-User$", values, re.M) is not None, "checkmk.remoteUserHeader is not X-Remote-User")
+storage_root_match = re.search(r"^  storageRoot: (\S+)$", values, re.M)
+storage_root = storage_root_match.group(1) if storage_root_match else ""
+expect(storage_root_match is not None, "checkmk.storageRoot is not declared in the CH05 values")
+
+expect("name: platforminit-checkmk-sites" in storage, "CH05 storage has no platforminit-checkmk-sites PersistentVolume")
+expect(re.search(r"^kind: PersistentVolumeClaim$", storage, re.M) is not None, "CH05 storage has no PersistentVolumeClaim")
+expect(re.search(r"^  name: checkmk-sites$", storage, re.M) is not None, "CH05 storage claim is not named checkmk-sites")
+expect(re.search(r"^  namespace: operations$", storage, re.M) is not None, "checkmk-sites PersistentVolumeClaim is not in the operations namespace")
+expect("volumeName: platforminit-checkmk-sites" in storage, "checkmk-sites PersistentVolumeClaim is not bound to the platforminit-checkmk-sites PersistentVolume")
+expect("path: {{ .Values.checkmk.storageRoot | quote }}" in storage, "Checkmk PersistentVolume hostPath is not driven by checkmk.storageRoot")
+expect("persistentVolumeReclaimPolicy: Retain" in storage, "Checkmk PersistentVolume does not retain Checkmk site data")
+
+expect(re.search(r"^kind: Deployment$", deployment, re.M) is not None, "CH05 chart does not deploy a Checkmk Deployment")
+expect(re.search(r"^  name: checkmk$", deployment, re.M) is not None, "CH05 Checkmk Deployment is not named checkmk")
+expect(re.search(r"^  namespace: operations$", deployment, re.M) is not None, "CH05 Checkmk Deployment is not in the operations namespace")
+expect(re.search(r"image:\s*\"\{\{ \.Values\.checkmk\.image\.repository \}\}:", deployment) is not None, "Checkmk Deployment image is not driven by checkmk.image.repository")
+expect("claimName: checkmk-sites" in deployment, "Checkmk Deployment does not mount the checkmk-sites PersistentVolumeClaim")
+
+expect("argocd/operations-stack-application.yaml.tpl" in register, "CH05 registration does not apply the operations-stack Application template of record")
+expect("argocd/apps/" not in register, "CH05 registration must not apply the stale argocd/apps duplicate")
+
+# --- Acceptance 3: operator documentation and focused validation agree on the reference state ---
+for needle in ("operations-stack", "operations", "platforminit-checkmk-sites", "checkmk-sites", "checkmk/check-mk-community", "X-Remote-User"):
+    expect(needle in readme, f"{README_REL} does not document the CH05 reference-state value {needle!r}")
+documented_data_paths = sorted(set(re.findall(r"/srv/observability/data/[A-Za-z0-9._/-]+", readme)))
+expect(
+    documented_data_paths == [storage_root],
+    f"{README_REL} documents Checkmk data paths {documented_data_paths} while {VALUES_REL} declares {storage_root!r}",
+)
+documented_command = f"CH05_REFERENCE_VALIDATE_MODE=static bash {VALIDATOR_REL}"
+expect(documented_command in readme, f"{README_REL} does not document the static reference-state proof command: {documented_command}")
+
+if failures:
+    for item in failures:
+        print(f"FATAL: CH05 reference-state static check failed: {item}", file=sys.stderr)
+    sys.exit(1)
+
+print(f"PASS: Argo CD Application operations-stack (project=operations, gitops-mode=owner) owns the CH05 runtime from {TPL_REL}")
+print(f"PASS: Helm chart platforminit-operations-stack renders {image_repository} into the operations namespace")
+print(f"PASS: storage ownership resolves to PV platforminit-checkmk-sites + PVC checkmk-sites -> {storage_root}")
+print("PASS: CH05 registration applies the Application template of record and not the stale argocd/apps duplicate")
+print(f"PASS: {README_REL} agrees with the manifests on the Checkmk reference state and documents the static proof command")
+PY_REFERENCE_STATE
+
+  log "Validating that no retired stack generation is an active CH05 deployment choice"
+  matches="$(grep -RInE "${RETIRED_STACK_PATTERN}" \
+    "${repo_root}/platform/observability/manifests" \
+    "${repo_root}/platform/observability/argocd" 2>/dev/null || true)"
+  if [[ -n "${matches}" ]]; then
+    printf '%s\n' "${matches}" >&2
+    die "retired stack reference found in the CH05 deployment surface (manifests/argocd): a retired generation must not be an active deployment choice"
+  fi
+
+  # Retired names may remain in CH05 scripts only inside the declared negative guards.
+  matches="$(grep -RInE "${RETIRED_STACK_PATTERN}" \
+    "${repo_root}/platform/observability/scripts" 2>/dev/null \
+    | grep -viE "${RETIRED_GUARD_ALLOWLIST}" || true)"
+  if [[ -n "${matches}" ]]; then
+    printf '%s\n' "${matches}" >&2
+    die "CH05 script depends on a retired stack outside the declared negative guards"
+  fi
+
+  for rel in \
+    platform/observability/sso \
+    platform/observability/zabbix \
+    platform/observability/openobserve \
+    platform/observability/vector \
+    platform/observability/manifests/sso \
+    platform/observability/manifests/zabbix \
+    platform/observability/manifests/openobserve \
+    platform/observability/manifests/vector
+  do
+    [[ ! -e "${repo_root}/${rel}" ]] || die "retired CH05 stack path reappeared as an active deployment path: ${rel}"
+  done
+
+  dirs="$(find "${repo_root}/platform/observability/manifests/templates" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null | sort | tr '\n' ' ')"
+  [[ "${dirs}" == "00-namespace 01-storage checkmk " ]] \
+    || die "unexpected Checkmk chart template directories (expected only 00-namespace, 01-storage, checkmk): ${dirs:-empty}"
+
+  refs="$(grep -RlE '^kind: Application$' "${repo_root}/platform/observability/argocd" 2>/dev/null | grep -vF 'operations-stack-application.yaml.tpl' || true)"
+  [[ -z "${refs}" ]] || die "the CH05 Argo CD ownership of record must stay the single operations-stack Application template; unexpected Application manifests: ${refs}"
+
+  refs="$(grep -RlF "${STALE_CH05_APP_REF}" \
+    "${repo_root}/.github/workflows" \
+    "${repo_root}/platform/observability/scripts" \
+    "${repo_root}/platform/observability/argocd" \
+    "${repo_root}/platform/platform-services/scripts" \
+    "${repo_root}/scripts" 2>/dev/null | grep -vF "${VALIDATOR_PATH}" || true)"
+  [[ -z "${refs}" ]] || die "a CH05 workflow or script references the stale argocd/apps duplicate: ${refs}"
+
+  printf '%s\n' "PASS: no retired CH05 stack path is an active deployment choice (manifests, argocd, scripts, template directories)"
+  printf '%s\n' "PASS: the stale argocd/apps CH05 duplicate stays unreferenced by every CH05 workflow, script and registration path"
+}
+
+case "${REFERENCE_VALIDATE_MODE}" in
+  ''|runtime) ;;
+  static)
+    static_reference_state_validate
+    log "PASS: CH05 Checkmk reference-state static validation succeeded (mode=static)"
+    exit 0
+    ;;
+  *)
+    die "Invalid CH05_REFERENCE_VALIDATE_MODE=${REFERENCE_VALIDATE_MODE}. Use static, or leave it unset for a runtime validation."
+    ;;
+esac
+
 [[ -n "${BASE_DOMAIN}" ]] || die "Missing BASE_DOMAIN. Set PLATFORM_BASE_DOMAIN; do not hardcode domains in CH05."
 case "$VALIDATION_MODE" in runtime|runtime_with_sso) ;; *) die "Invalid VALIDATION_MODE=${VALIDATION_MODE}. Use runtime or runtime_with_sso." ;; esac
 need kubectl

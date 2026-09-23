@@ -40,7 +40,7 @@ MCP = ROOT / ".roo" / "mcp.json"
 SMOKE_COMMAND = ROOT / ".roo" / "commands" / "mcp-smoke.md"
 TRACKER = ROOT / "tasks" / "tracker.json"
 SERVER = Path(__file__).resolve().parent / "server.py"
-REQUIRED_TOOLS = {"health", "get_delivery_context", "get_active_task", "get_changed_scope"}
+REQUIRED_TOOLS = {"health", "get_delivery_context", "get_active_task", "get_changed_scope", "get_relevant_memory"}
 FRESH_CHILD_MARKERS = ("child start", "fresh child")
 ACTIVE_STATES = {"in_progress", "needs_review", "needs_security_review", "ready_to_close"}
 RUNTIME_TIMEOUT_SECONDS = 120
@@ -138,6 +138,15 @@ INVALID_RUNTIME_CALLS: tuple[tuple[int, str, dict], ...] = (
     (110, "non-string taskId", {"name": "get_active_task", "arguments": {"taskId": 7}}),
     (111, "oversized taskId", {"name": "get_delivery_context", "arguments": {"taskId": "T" * 200}}),
     (112, "non-object arguments", {"name": "get_changed_scope", "arguments": ["base"]}),
+    (113, "memory non-string query", {"name": "get_relevant_memory", "arguments": {"query": 7}}),
+    (
+        114,
+        "memory oversized query",
+        {"name": "get_relevant_memory", "arguments": {"query": "x" * 600}},
+    ),
+    (115, "memory boolean maxItems", {"name": "get_relevant_memory", "arguments": {"maxItems": True}}),
+    (116, "memory non-integer maxItems", {"name": "get_relevant_memory", "arguments": {"maxItems": "6"}}),
+    (117, "memory unexpected argument", {"name": "get_relevant_memory", "arguments": {"base": VALID_BASE}}),
 )
 PARAMS_NOT_OBJECT_ID = 900
 PARSE_ERROR_ID = 901
@@ -175,6 +184,7 @@ def delivery_contract_errors() -> list[str]:
     sys.path.insert(0, str(SERVER.parent))
     try:
         import context as mcp_context  # type: ignore[import-not-found]
+        import memory as mcp_memory  # type: ignore[import-not-found]
         import server as mcp_server  # type: ignore[import-not-found]
     except Exception as exc:
         return [f"cannot import shipped MCP modules: {exc}"]
@@ -210,6 +220,20 @@ def delivery_contract_errors() -> list[str]:
             errors.append(f"{tool.get('name')}: maxFiles schema does not advertise the hard cap")
         if schema.get("default") != mcp_context.SCOPE_DEFAULT_FILES:
             errors.append(f"{tool.get('name')}: maxFiles schema does not advertise the small-task default")
+
+    memory_tool = next((tool for tool in mcp_server.TOOLS if tool.get("name") == "get_relevant_memory"), None)
+    if memory_tool is None:
+        errors.append("get_relevant_memory: tool schema missing")
+    else:
+        memory_properties = memory_tool.get("inputSchema", {}).get("properties", {})
+        query_schema = memory_properties.get("query", {})
+        item_schema = memory_properties.get("maxItems", {})
+        if query_schema.get("maxLength") != mcp_memory.MAX_QUERY_LENGTH:
+            errors.append("get_relevant_memory: query schema does not advertise the bounded maximum length")
+        if item_schema.get("maximum") != mcp_memory.HARD_MAX_ITEMS:
+            errors.append("get_relevant_memory: maxItems schema does not advertise the hard cap")
+        if item_schema.get("default") != mcp_memory.DEFAULT_MAX_ITEMS:
+            errors.append("get_relevant_memory: maxItems schema does not advertise the bounded default")
 
     errors.extend(bounded_input_errors(mcp_context, mcp_server))
     return errors
@@ -462,6 +486,15 @@ def runtime_errors() -> list[str]:
             "method": "tools/call",
             "params": {"name": "get_changed_scope", "arguments": {"maxFiles": 1000000}},
         },
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {
+                "name": "get_relevant_memory",
+                "arguments": {"query": "memory authority", "maxItems": 2},
+            },
+        },
     ]
     requests += [
         {"jsonrpc": "2.0", "id": message_id, "method": "tools/call", "params": params}
@@ -517,6 +550,7 @@ def runtime_errors() -> list[str]:
         (4, "get_active_task"),
         (5, "get_delivery_context"),
         (6, "get_changed_scope"),
+        (7, "get_relevant_memory"),
         (PARAMS_NOT_OBJECT_ID, "params not an object"),
     ] + [(message_id, label) for message_id, label, _params in INVALID_RUNTIME_CALLS]
     for message_id, label in expected_responses:
@@ -613,6 +647,18 @@ def runtime_errors() -> list[str]:
             errors.append(f"runtime smoke: {label} exceeded the {SCOPE_HARD_CAP}-file changed-scope hard cap")
         if payload.get("platformOnly") is not True:
             errors.append(f"runtime smoke: {label} is not marked platform-only")
+
+    memory_payload = _tool_payload(responses[7])
+    if memory_payload.get("advisoryOnly") is not True:
+        errors.append("runtime smoke: relevant memory is not marked advisory-only")
+    if memory_payload.get("authoritativeTaskSource") != "tasks/tracker.json":
+        errors.append("runtime smoke: relevant memory changed the authoritative task source")
+    if not isinstance(memory_payload.get("items"), list):
+        errors.append("runtime smoke: relevant memory items are not a list")
+    elif len(memory_payload["items"]) > 2:
+        errors.append("runtime smoke: relevant memory exceeded requested maxItems=2")
+    if memory_payload.get("itemCount") != len(memory_payload.get("items", [])):
+        errors.append("runtime smoke: relevant memory itemCount does not match returned items")
 
     return errors
 

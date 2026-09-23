@@ -27,13 +27,22 @@ jobs:
       - name: Task tracker and generated-view integrity
         run: python3 tools/task_controller/taskctl.py validate --ignore-branch
 
+      - name: Memory subsystem unit tests
+        run: python3 -m unittest tools.platforminit_mcp.test_memory -v
+
+      - name: MCP contract and runtime smoke
+        run: python3 tools/platforminit_mcp/validate_mode_access.py --runtime
+
       - name: Python syntax
         run: |
           python3 -m py_compile \
             tools/task_controller/taskctl.py \
             tools/task_controller/test_taskctl.py \
             tools/platforminit_mcp/context.py \
-            tools/platforminit_mcp/server.py
+            tools/platforminit_mcp/memory.py \
+            tools/platforminit_mcp/server.py \
+            tools/platforminit_mcp/test_memory.py \
+            tools/platforminit_mcp/validate_mode_access.py
 
       - name: Diff whitespace check
         run: git diff --check origin/dev...HEAD

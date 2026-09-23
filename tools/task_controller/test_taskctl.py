@@ -678,5 +678,53 @@ class TaskctlTests(unittest.TestCase):
         self.assertEqual(self.state_task()["status"], "done")
 
 
+    def test_reconcile_merged_requires_release_actor_and_records_limitation(self):
+        merge_commit = subprocess.run(
+            ["git", "rev-parse", "dev"], cwd=self.root, check=True, text=True, capture_output=True
+        ).stdout.strip()
+
+        failed = self.invoke(
+            "reconcile-merged", "P-002",
+            "--actor", ORCHESTRATOR,
+            "--pr", "59",
+            "--merge-commit", merge_commit,
+            "--ci-run", "35863041128",
+            "--reason", "controller lifecycle was omitted before merge",
+            ok=False,
+        )
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(self.state_task()["status"], "pending")
+
+        result = self.invoke(
+            "reconcile-merged", "P-002",
+            "--actor", RELEASE,
+            "--pr", "59",
+            "--merge-commit", merge_commit,
+            "--ci-run", "35863041128",
+            "--reason", "controller lifecycle was omitted before merge",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        reconciled = self.state_task()
+        self.assertEqual(reconciled["status"], "done")
+        evidence = reconciled["workflow"]["reconciliation"]
+        self.assertEqual(evidence["pullRequest"], 59)
+        self.assertEqual(evidence["mergeCommit"], merge_commit)
+        self.assertEqual(evidence["ciRun"], 35863041128)
+        self.assertIn("does not assert", evidence["limitations"])
+
+    def test_reconcile_merged_rejects_non_ancestor_commit(self):
+        result = self.invoke(
+            "reconcile-merged", "P-002",
+            "--actor", RELEASE,
+            "--pr", "59",
+            "--merge-commit", "0" * 40,
+            "--ci-run", "35863041128",
+            "--reason", "controller lifecycle was omitted before merge",
+            ok=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state_task()["status"], "pending")
+
+
 if __name__ == "__main__":
     unittest.main()

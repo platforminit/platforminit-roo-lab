@@ -2,35 +2,36 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T13 — Integrate bounded memory retrieval into Zoo child startup
+## P-WF-T14 — Define the continuous project memory lifecycle
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `feat/p-wf-t13-zoo-memory-usage` |
+| Branch | `feat/p-wf-t14-project-memory-lifecycle` |
 | Scope | `workflow-memory` |
-| Dependencies | P-WF-T12 |
+| Dependencies | P-WF-T13 |
 | Next actor | `platforminit-orchestrator` |
 
-Make relevant framework/project memory part of the normal small-context Zoo workflow after authoritative delivery context and before broad source/history reads.
+Establish a safe reviewed lifecycle for converting accepted task/review/security outcomes into bounded project-memory candidates and promoting them without turning memory into task state or hidden agent state.
 
 ### Acceptance criteria
 
-- [ ] every PlatformInit Zoo specialist starts from health and get_delivery_context, then requests bounded get_relevant_memory before broad historical reads
-- [ ] mode/rule text keeps memory explicitly advisory and lower priority than current source and taskctl state
-- [ ] static mode validation fails when a PlatformInit mode loses the bounded memory bootstrap contract
+- [ ] release flow defines when a completed task may emit bounded project-memory candidates from approved evidence
+- [ ] candidate and promotion rules require source provenance, schema validation, deduplication, and explicit advisory-only semantics
+- [ ] raw transient logs and secrets are never copied into project memory and retrieval ignores unpromoted candidates
+- [ ] the lifecycle remains compatible with a later evidence-distillation feature without broadening current task state authority
 
 ### Allowed files
 
-- `.roomodes`
-- `.roo/rules.md`
-- `tools/platforminit_mcp/validate_mode_access.py`
+- `tools/platforminit_mcp/memory.py`
+- `.roo/rules-platforminit-release-manager/rules.md`
+- `docs/roo-lab/RAG_FUTURE.md`
 - `tasks/**`
 
 ### Required validators
 
-- `python3 tools/platforminit_mcp/validate_mode_access.py --runtime`
+- `python3 -m py_compile tools/platforminit_mcp/memory.py`
 - `git diff --check`
 
 ### Forbidden actions
@@ -42,4 +43,4 @@ Make relevant framework/project memory part of the normal small-context Zoo work
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T13 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-WF-T14 --actor platforminit-orchestrator`

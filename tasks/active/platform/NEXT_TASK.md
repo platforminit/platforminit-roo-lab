@@ -2,45 +2,43 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-WF-T14 — Define the continuous project memory lifecycle
+## P-CH05-T01 — Verify the current Checkmk GitOps runtime and retired-stack boundary
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `feat/p-wf-t14-project-memory-lifecycle` |
-| Scope | `workflow-memory` |
-| Dependencies | P-WF-T13 |
+| Branch | `batch/platform-ch05-checkmk-reference-state` |
+| Scope | `platform-observability` |
+| Dependencies | P-WF-T14 |
 | Next actor | `platforminit-orchestrator` |
 
-Establish a safe reviewed lifecycle for converting accepted task/review/security outcomes into bounded project-memory candidates and promoting them without turning memory into task state or hidden agent state.
+Treat the existing Checkmk implementation as the current operational reference, verify runtime/storage/GitOps ownership, and keep Zabbix/OpenObserve/Vector references historical or negative-guard only.
 
 ### Acceptance criteria
 
-- [ ] release flow defines when a completed task may emit bounded project-memory candidates from approved evidence
-- [ ] candidate and promotion rules require source provenance, schema validation, deduplication, and explicit advisory-only semantics
-- [ ] raw transient logs and secrets are never copied into project memory and retrieval ignores unpromoted candidates
-- [ ] the lifecycle remains compatible with a later evidence-distillation feature without broadening current task state authority
+- [ ] active CH05 runtime and storage ownership resolve to Checkmk Community under Argo CD
+- [ ] retired Grafana/VictoriaMetrics/Loki and Zabbix/OpenObserve/Vector paths are not active deployment choices
+- [ ] current operator documentation and focused validation agree on the Checkmk reference-state
 
 ### Allowed files
 
-- `tools/platforminit_mcp/memory.py`
-- `.roo/rules-platforminit-release-manager/rules.md`
-- `docs/roo-lab/RAG_FUTURE.md`
+- `platform/observability/**`
+- `docs/ch05-*.md`
+- `README.md`
 - `tasks/**`
 
 ### Required validators
 
-- `python3 -m py_compile tools/platforminit_mcp/memory.py`
 - `git diff --check`
 
 ### Forbidden actions
 
 - do not run infrastructure workflows
-- do not mutate runtime infrastructure, secrets, or GitHub environments
+- do not mutate Authentik, Kubernetes, DNS, Cloudflare, GitHub secrets, or GitHub environments without explicit human approval
 - do not expose secret values
 - do not run full-repository validation unless explicitly required
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-WF-T14 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH05-T01 --actor platforminit-orchestrator`

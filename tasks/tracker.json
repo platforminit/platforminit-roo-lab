@@ -2789,7 +2789,7 @@
       "id": "P-WF-T14",
       "track": "platform",
       "order": 245,
-      "status": "pending",
+      "status": "done",
       "title": "Define the continuous project memory lifecycle",
       "description": "Establish a safe reviewed lifecycle for converting accepted task/review/security outcomes into bounded project-memory candidates and promoting them without turning memory into task state or hidden agent state.",
       "scope": "workflow-memory",
@@ -2831,7 +2831,93 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-23T19:21:09.353653+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T19:42:35.090735+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "-m",
+                "py_compile",
+                "tools/platforminit_mcp/memory.py"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "9c1ca3e53a898034db5fd383d23dcd953f3f9dfd95a630485b855005d9289b2b",
+          "changedFiles": [
+            ".roo/rules-platforminit-release-manager/rules.md",
+            "docs/roo-lab/RAG_FUTURE.md",
+            "tools/platforminit_mcp/memory.py"
+          ]
+        },
+        "review": {
+          "at": "2026-09-23T20:03:49.574979+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-WF-T14.md"
+        },
+        "security": {
+          "at": "2026-09-23T20:06:12.477991+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-WF-T14.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T20:07:58.627057+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "python3",
+                "-m",
+                "py_compile",
+                "tools/platforminit_mcp/memory.py"
+              ],
+              "exitCode": 0
+            },
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "9c1ca3e53a898034db5fd383d23dcd953f3f9dfd95a630485b855005d9289b2b",
+          "changedFiles": [
+            ".roo/rules-platforminit-release-manager/rules.md",
+            "docs/roo-lab/RAG_FUTURE.md",
+            "tools/platforminit_mcp/memory.py"
+          ],
+          "confirmedFingerprint": "9c1ca3e53a898034db5fd383d23dcd953f3f9dfd95a630485b855005d9289b2b",
+          "confirmedFiles": [
+            ".roo/rules-platforminit-release-manager/rules.md",
+            "docs/roo-lab/RAG_FUTURE.md",
+            "tools/platforminit_mcp/memory.py"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH05-T01",
@@ -3170,5 +3256,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-23T19:14:08.881638+00:00"
+  "updatedAt": "2026-09-23T20:07:58.627088+00:00"
 }

@@ -56,14 +56,34 @@ validators, verdicts, or lifecycle transitions. Memory emission never blocks clo
   `ready_to_close` with an OpenAI `approve` verdict and an OWASP `clear` verdict, and only from
   already committed approved evidence (`docs/reviews/<TASK-ID>.md`,
   `docs/security-reviews/<TASK-ID>.md`, controller-recorded task evidence).
-- **Bounded and evidence-derived.** A candidate is a short reusable lesson with provenance, not a
-  transcript. Emission is bounded per task, and raw transient logs, terminal output, `/tmp/**`
-  payloads, key material, and secret values must never be copied into memory. The memory validator
-  rejects absolute or traversing paths, secret-looking paths or values, and unapproved evidence paths.
+- **Bound, not merely asserted.** Staging and promotion resolve authoritative controller state: the task
+  must exist in `tasks/tracker.json`, its recorded status must be `ready_to_close` or `done`, its
+  recorded review/security verdicts must be approving, and the controller-recorded review/security
+  report paths must be among the cited evidence. The cited `sourceCommit` must resolve in this
+  repository and every cited evidence path must exist at that commit. The writing actor must match
+  `provenance.emitter`. Memory only reads controller state; it never writes it.
+- **Distilled, never raw.** A candidate is one bounded single-line lesson with provenance, not a
+  transcript. Emission is bounded per task, and raw transient logs, terminal output, `/tmp/**` payloads,
+  key material, and secret values must never be copied into memory: multi-line payloads, control/ANSI
+  sequences, shell transcripts, log-level or timestamped log lines, tracebacks, diff excerpts,
+  `/tmp/**` references, and `*.log` references are rejected, and a provenance-carrying summary has a
+  tighter length bound than legacy history.
 - **Staging then explicit promotion.** Stage with
-  `python3 tools/platforminit_mcp/memory.py add-candidate <json>`; promote with
-  `python3 tools/platforminit_mcp/memory.py promote <MEMORY-ID>`. Both write repository-visible JSONL
-  under `memory/project/`, so they are reviewed source changes and never a runtime side effect.
+  `python3 tools/platforminit_mcp/memory.py add-candidate <json> --actor platforminit-release-manager`;
+  promote with
+  `python3 tools/platforminit_mcp/memory.py promote <MEMORY-ID> --actor platforminit-release-manager`.
+  Both write repository-visible JSONL under `memory/project/`, so they are reviewed source changes and
+  never a runtime side effect.
+- **Legacy rows are quarantined, not silently served.** A project row without provenance is retrieval
+  context only while every source it cites already lies inside the approved evidence locations. Any
+  other provenance-less row is quarantined from retrieval
+  (`quarantine-provenance-less-project-records`) until a separately reviewed migration re-emits it with
+  provenance. `python3 tools/platforminit_mcp/memory.py quarantine-report` names the excluded rows, so
+  this compatibility window stays visible instead of being claimed away.
+- **Observable contract evidence.** After touching this lifecycle, run
+  `python3 tools/platforminit_mcp/memory.py contract-check`. It replays the quarantine, binding,
+  distilled-record, and path-safety checks on throwaway fixtures and exits non-zero on any failure,
+  which is the focused regression gate for this module.
 - **Never inside the closure commit.** Memory writes must not be mixed into the controller-owned
   closure/evidence commit, and must not be appended to the reviewed diff after review. Emit them as a
   separate, explicitly reviewed follow-up change on the task branch, or defer them to a dedicated
@@ -72,5 +92,9 @@ validators, verdicts, or lifecycle transitions. Memory emission never blocks clo
   second promotion of the same id is refused, so one fact is never emitted twice.
 - **Retrieval boundary.** Unpromoted candidates are invisible to `get_relevant_memory`; only promoted
   records are retrieval context. Memory must never overwrite or substitute for controller state.
+- **Accepted residuals.** The repository-local CLI cannot authenticate a process, so the emitter gate is
+  an attributed-actor check inside a reviewed source change, and no controller field records the
+  reviewed revision, so the commit binding proves the cited evidence exists at the cited commit without
+  proving reviewer identity. State both limitations in the PR whenever memory is emitted.
 
 After release work, call `attempt_completion` with task ID, PR, source commit, closure commit, reused/rerun evidence, resulting status, recovery notes, and next pending PlatformInit task. Do not start that next task before the PR is merged to `dev`.

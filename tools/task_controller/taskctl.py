@@ -120,6 +120,15 @@ def workflow_state_errors(task):
     status = task["status"]
     workflow = task.get("workflow", {})
     errors = []
+    if status == "done" and workflow.get("reconciliation"):
+        reconciliation = workflow["reconciliation"]
+        required = ("at", "actor", "kind", "pullRequest", "mergeCommit", "ciRun", "reason", "limitations")
+        missing = [field for field in required if not reconciliation.get(field)]
+        if missing:
+            errors.append(f"{task['id']}: reconciliation missing fields: {', '.join(missing)}")
+        if reconciliation.get("kind") != "merged_without_controller_lifecycle":
+            errors.append(f"{task['id']}: unsupported reconciliation kind")
+        return errors
     if status in ACTIVE_STATES and not workflow.get("startedAt"):
         errors.append(f"{task['id']}: {status} requires workflow.startedAt")
     if status in {"needs_review", "needs_security_review", "ready_to_close"} and not workflow.get("submit"):
@@ -579,6 +588,13 @@ def make_parser():
         action = sub.add_parser(command)
         action.add_argument("task_id")
         action.add_argument("--actor", required=True)
+    reconcile = sub.add_parser("reconcile-merged")
+    reconcile.add_argument("task_id")
+    reconcile.add_argument("--actor", required=True)
+    reconcile.add_argument("--pr", required=True, type=int)
+    reconcile.add_argument("--merge-commit", required=True)
+    reconcile.add_argument("--ci-run", required=True, type=int)
+    reconcile.add_argument("--reason", required=True)
     review = sub.add_parser("review")
     review.add_argument("task_id"); review.add_argument("--actor", required=True); review.add_argument("--verdict", required=True, choices=["approve", "request_changes", "block"]); review.add_argument("--report", required=True)
     security = sub.add_parser("security")
@@ -635,7 +651,42 @@ def main():
             return 0
 
         task = get_task(data, args.task_id)
-        if args.cmd == "start":
+        if args.cmd == "reconcile-merged":
+            if task["status"] != "pending":
+                raise TaskError(f"{task['id']} is {task['status']}, not pending")
+            if args.actor != RELEASE:
+                raise TaskError(f"{task['id']} reconciliation must be recorded by {RELEASE}")
+            if not deps_done(task, data):
+                raise TaskError(f"{task['id']} has incomplete dependencies")
+            if not args.reason.strip():
+                raise TaskError("reconciliation reason must not be empty")
+            if len(args.merge_commit) != 40 or any(ch not in "0123456789abcdefABCDEF" for ch in args.merge_commit):
+                raise TaskError("merge commit must be a full 40-character hexadecimal SHA")
+            merged = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", args.merge_commit, "dev"],
+                cwd=ROOT, text=True, capture_output=True,
+            )
+            if merged.returncode != 0:
+                raise TaskError(f"{task['id']}: merge commit is not an ancestor of local dev")
+            task["status"] = "done"
+            task["workflow"] = {
+                "reconciliation": {
+                    "at": now(),
+                    "actor": args.actor,
+                    "kind": "merged_without_controller_lifecycle",
+                    "pullRequest": args.pr,
+                    "mergeCommit": args.merge_commit.lower(),
+                    "ciRun": args.ci_run,
+                    "reason": args.reason.strip(),
+                    "limitations": (
+                        "Historical reconciliation only: this record does not assert that the normal "
+                        "implementation/review/security/release controller transitions occurred."
+                    ),
+                }
+            }
+            task.pop("blocker", None)
+            save(data)
+        elif args.cmd == "start":
             if task["status"] != "pending":
                 raise TaskError(f"{task['id']} is {task['status']}, not pending")
             if active_task(data):

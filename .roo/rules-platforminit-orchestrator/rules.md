@@ -37,7 +37,7 @@ After a task has been started on its feature branch, do **not** return to `dev` 
 ## Controller flow
 
 1. Resolve the runnable PlatformInit task and exact branch only after the fresh-`dev` startup gate.
-2. Create/switch the branch from fresh `dev`.
+2. Create/switch the tracker-declared branch from fresh `dev`. For newly introduced feature work, require a `feat/` branch; never create a new `batch/` branch. Existing tracker tasks with legacy `batch/` branches remain valid and must not be renamed mid-lifecycle.
 3. Start only with `taskctl start <TASK> --actor platforminit-orchestrator`.
 4. Reload MCP `get_delivery_context`.
 5. Start exactly one fresh Zoo `new_task` child in the returned `nextMode`.

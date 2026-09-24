@@ -3029,7 +3029,7 @@
       "id": "P-CH05-T02",
       "track": "platform",
       "order": 260,
-      "status": "pending",
+      "status": "done",
       "title": "Define the CH05 stable and rehearsal GitOps source contract",
       "description": "Make the GitOps source boundary explicit so stable deployments may use platforminit-platform while roo-lab rehearsal can prove the tested repository and revision instead of silently reconciling another source.",
       "scope": "platform-observability-gitops",
@@ -3067,7 +3067,81 @@
       "implementationMode": "platforminit-deepseek-coder",
       "reviewMode": "platforminit-openai-reviewer",
       "securityMode": "platforminit-owasp-reviewer",
-      "releaseMode": "platforminit-release-manager"
+      "releaseMode": "platforminit-release-manager",
+      "workflow": {
+        "startedAt": "2026-09-23T20:55:45.093676+00:00",
+        "startedBy": "platforminit-orchestrator",
+        "implementationActor": "platforminit-deepseek-coder",
+        "submit": {
+          "evidenceVersion": 1,
+          "at": "2026-09-23T21:02:24.225420+00:00",
+          "actor": "platforminit-deepseek-coder",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "fadf40247ca4abe4242d954a9e95e41171c099983f347141218b4d2cc8196756",
+          "changedFiles": [
+            ".github/workflows/deploy-05-operations-diagnostics.yml",
+            ".github/workflows/deploy-05-operations-monitoring.yml",
+            "platform/observability/argocd/operations-project.yaml",
+            "platform/observability/scripts/ch05-register-operations-stack.sh",
+            "platform/observability/validate/ch05-validate-operations-registration.sh"
+          ]
+        },
+        "review": {
+          "at": "2026-09-24T18:56:03.552598+00:00",
+          "actor": "platforminit-openai-reviewer",
+          "verdict": "approve",
+          "report": "docs/reviews/P-CH05-T02.md"
+        },
+        "security": {
+          "at": "2026-09-24T18:58:36.730134+00:00",
+          "actor": "platforminit-owasp-reviewer",
+          "verdict": "clear",
+          "report": "docs/security-reviews/P-CH05-T02.md"
+        },
+        "complete": {
+          "evidenceVersion": 1,
+          "at": "2026-09-24T19:00:31.087231+00:00",
+          "actor": "platforminit-release-manager",
+          "validators": [
+            {
+              "command": [
+                "git",
+                "diff",
+                "--check"
+              ],
+              "exitCode": 0
+            }
+          ],
+          "sourceFingerprint": "fadf40247ca4abe4242d954a9e95e41171c099983f347141218b4d2cc8196756",
+          "changedFiles": [
+            ".github/workflows/deploy-05-operations-diagnostics.yml",
+            ".github/workflows/deploy-05-operations-monitoring.yml",
+            "platform/observability/argocd/operations-project.yaml",
+            "platform/observability/scripts/ch05-register-operations-stack.sh",
+            "platform/observability/validate/ch05-validate-operations-registration.sh"
+          ],
+          "confirmedFingerprint": "fadf40247ca4abe4242d954a9e95e41171c099983f347141218b4d2cc8196756",
+          "confirmedFiles": [
+            ".github/workflows/deploy-05-operations-diagnostics.yml",
+            ".github/workflows/deploy-05-operations-monitoring.yml",
+            "platform/observability/argocd/operations-project.yaml",
+            "platform/observability/scripts/ch05-register-operations-stack.sh",
+            "platform/observability/validate/ch05-validate-operations-registration.sh"
+          ],
+          "reusedSubmitEvidence": true,
+          "evidenceDecision": "reused submit evidence: fingerprint and validator plan unchanged",
+          "trustBoundary": "evidence authenticity depends on tasks/tracker.json being controller-owned and never hand-edited; submit evidence is unauthenticated, so an actor with unrestricted write access to controller state can forge a fully consistent record and skip validators; authenticated or append-only evidence is an explicit follow-up and is not implemented in P-WF-T04"
+        }
+      }
     },
     {
       "id": "P-CH05-T03",
@@ -3321,5 +3395,5 @@
       "releaseMode": "platforminit-release-manager"
     }
   ],
-  "updatedAt": "2026-09-23T20:51:39.451933+00:00"
+  "updatedAt": "2026-09-24T19:00:31.087268+00:00"
 }

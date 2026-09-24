@@ -2,33 +2,31 @@
 
 Generated from `tasks/tracker.json`. Do not edit manually.
 
-## P-CH05-T02 — Define the CH05 stable and rehearsal GitOps source contract
+## P-CH05-T03 — Harden the Checkmk trusted-header trust boundary
 
 | Field | Value |
 |---|---|
 | Status | `pending` |
 | Track | `platform` |
-| Branch | `batch/platform-ch05-gitops-source-contract` |
-| Scope | `platform-observability-gitops` |
-| Dependencies | P-CH05-T01 |
+| Branch | `batch/platform-ch05-trusted-header-hardening` |
+| Scope | `platform-observability-security` |
+| Dependencies | P-CH05-T02 |
 | Next actor | `platforminit-orchestrator` |
 
-Make the GitOps source boundary explicit so stable deployments may use platforminit-platform while roo-lab rehearsal can prove the tested repository and revision instead of silently reconciling another source.
+Keep Authentik forwardAuth and the nginx trusted-header bridge, but remove bypass paths and minimize identity metadata so only the intended Traefik to auth-shim to pod-local Checkmk path is trusted.
 
 ### Acceptance criteria
 
-- [ ] stable and rehearsal repository/revision choices are explicit and deterministic
-- [ ] roo-lab rehearsal validation fails if Argo CD is actually syncing an unintended stable source
-- [ ] AppProject source allowlisting is bounded to the intended PlatformInit repositories without implicit source switching
+- [ ] the Checkmk backend is not exposed through a cluster Service path that bypasses the auth-shim
+- [ ] network policy or an equivalent bounded control restricts the auth-shim ingress to the intended Traefik path and any required agent receiver exposure is explicitly justified
+- [ ] only identity headers required by the Checkmk bridge are forwarded and client-supplied authentication headers cannot become trusted upstream identity
 
 ### Allowed files
 
-- `platform/observability/argocd/**`
-- `platform/observability/scripts/ch05-register-operations-stack.sh`
+- `platform/observability/manifests/**`
 - `platform/observability/validate/**`
-- `.github/workflows/deploy-05-operations-monitoring.yml`
-- `.github/workflows/deploy-05-operations-diagnostics.yml`
-- `docs/**`
+- `platform/observability/checkmk/README.md`
+- `docs/ch05-operations-monitoring-design.md`
 - `tasks/**`
 
 ### Required validators
@@ -44,4 +42,4 @@ Make the GitOps source boundary explicit so stable deployments may use platformi
 
 ### Controller transition
 
-`python3 tools/task_controller/taskctl.py start P-CH05-T02 --actor platforminit-orchestrator`
+`python3 tools/task_controller/taskctl.py start P-CH05-T03 --actor platforminit-orchestrator`

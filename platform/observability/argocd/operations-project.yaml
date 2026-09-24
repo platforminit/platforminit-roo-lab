@@ -9,9 +9,19 @@ metadata:
     platforminit.io/chapter: ch05
 spec:
   description: PlatformInit CH05 operations monitoring stack
+  # CH05 stable/rehearsal GitOps source contract (P-CH05-T02). Both PlatformInit
+  # repositories share the same file layout: platforminit-platform is the stable
+  # source of truth (promoted revisions only), platforminit-roo-lab is the
+  # rehearsal mirror used by the disposable roo-lab rehearsal. The list is
+  # exhaustive and contains no URL wildcard, so the CH05 registration path can
+  # only select one of these repositories and cannot switch the source
+  # implicitly. scripts/ch05-register-operations-stack.sh resolves the repository
+  # from CH05_GITOPS_SOURCE_MODE and refuses anything outside this allowlist, and
+  # validate/ch05-validate-operations-registration.sh fails when the live
+  # Application syncs a source that this allowlist does not cover.
   sourceRepos:
+    - https://github.com/platforminit/platforminit-roo-lab.git
     - https://github.com/platforminit/platforminit-platform.git
-    - https://github.com/PlatformInit/platforminit-platform.git
   destinations:
     - namespace: operations
       server: https://kubernetes.default.svc

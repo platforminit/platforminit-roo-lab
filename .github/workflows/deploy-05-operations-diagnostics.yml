@@ -71,9 +71,9 @@ on:
         default: 'check_mk/dashboard.py?name=main&owner= check_mk/view.py?view_name=allhosts check_mk/wato.py?mode=global_settings'
         type: string
       platform_repo_url:
-        description: Git repository URL used by the Argo CD Application
+        description: Git repository URL used by the Argo CD Application. CH05 defaults to the rehearsal mirror (platforminit-roo-lab); the stable repository is only used with an explicit promotion, so diagnostics stay aligned with the CH05 source contract.
         required: false
-        default: https://github.com/platforminit/platforminit-platform.git
+        default: https://github.com/platforminit/platforminit-roo-lab.git
         type: string
       target_revision:
         description: Git revision for Argo CD to sync. Default is the artifact commit SHA.
@@ -246,7 +246,7 @@ jobs:
           ARCHIVE: ${{ steps.artifact.outputs.archive_path }}
           DIAGNOSTIC_MODE: ${{ inputs.diagnostic_mode }}
           BASE_DOMAIN: ${{ secrets.PLATFORM_BASE_DOMAIN }}
-          PLATFORM_REPO_URL: ${{ inputs.platform_repo_url || 'https://github.com/platforminit/platforminit-platform.git' }}
+          PLATFORM_REPO_URL: ${{ inputs.platform_repo_url || 'https://github.com/platforminit/platforminit-roo-lab.git' }}
           TARGET_REVISION_INPUT: ${{ inputs.target_revision }}
           CHECKMK_ADMIN_PASSWORD: ${{ secrets.CHECKMK_ADMIN_PASSWORD }}
           CHECKMK_SITE: cmk

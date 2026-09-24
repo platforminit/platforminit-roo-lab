@@ -68,13 +68,21 @@ on:
         required: false
         default: 'cloud-init-hotplugd.service dailyaidecheck.service'
         type: string
-      platform_repo_url:
-        description: Git repository URL used by the Argo CD Application
+      gitops_source_mode:
+        description: 'CH05 GitOps source mode: rehearsal = platforminit-roo-lab mirror at the artifact commit (default); stable = promoted platforminit-platform source, which the host additionally refuses unless PLATFORMINIT_ALLOW_STABLE_GITOPS_SOURCE=true'
         required: false
-        default: https://github.com/platforminit/platforminit-platform.git
+        default: rehearsal
+        type: choice
+        options:
+          - rehearsal
+          - stable
+      platform_repo_url:
+        description: Git repository URL used by the Argo CD Application. It must match the repository selected by gitops_source_mode; a mismatching value fails registration instead of switching the source implicitly.
+        required: false
+        default: https://github.com/platforminit/platforminit-roo-lab.git
         type: string
       target_revision:
-        description: Git revision for Argo CD to sync. Default is the artifact commit SHA.
+        description: 'Git revision for Argo CD to sync. Default is the artifact commit SHA. Rehearsal mode refuses a floating branch; stable mode requires an explicit promoted revision (branch or full commit SHA) here.'
         required: false
         default: ''
         type: string
@@ -252,7 +260,8 @@ jobs:
           ARCHIVE: ${{ steps.artifact.outputs.archive_path }}
           ACTION: ${{ inputs.action }}
           BASE_DOMAIN: ${{ secrets.PLATFORM_BASE_DOMAIN }}
-          PLATFORM_REPO_URL: ${{ inputs.platform_repo_url || 'https://github.com/platforminit/platforminit-platform.git' }}
+          CH05_GITOPS_SOURCE_MODE: ${{ inputs.gitops_source_mode || 'rehearsal' }}
+          PLATFORM_REPO_URL: ${{ inputs.platform_repo_url || 'https://github.com/platforminit/platforminit-roo-lab.git' }}
           TARGET_REVISION_INPUT: ${{ inputs.target_revision }}
           CHECKMK_ADMIN_PASSWORD: ${{ secrets.CHECKMK_ADMIN_PASSWORD }}
           CHECKMK_SITE: cmk
@@ -266,6 +275,10 @@ jobs:
           set -euo pipefail
           mkdir -p ./operations-reports
           TARGET_REVISION="${TARGET_REVISION_INPUT:-$SHORTSHA}"
+          if [[ "${CH05_GITOPS_SOURCE_MODE}" == "stable" && -z "${TARGET_REVISION_INPUT}" ]]; then
+            echo "FATAL: gitops_source_mode=stable requires an explicit target_revision (promoted branch or full commit SHA). The rehearsal artifact commit must never be synced from the stable source." >&2
+            exit 1
+          fi
           SSH_OPTS=(
             -n
             -o BatchMode=yes
@@ -346,6 +359,7 @@ jobs:
           {
             [[ -n "${BASE_DOMAIN:-}" ]] || { echo "FATAL: PLATFORM_BASE_DOMAIN secret is required; CH05 does not hardcode domains." >&2; exit 1; }
             printf 'BASE_DOMAIN=%q\n' "${BASE_DOMAIN}"
+            printf 'CH05_GITOPS_SOURCE_MODE=%q\n' "${CH05_GITOPS_SOURCE_MODE:-rehearsal}"
             printf 'PLATFORM_REPO_URL=%q\n' "${PLATFORM_REPO_URL}"
             printf 'TARGET_REVISION=%q\n' "${TARGET_REVISION}"
             printf 'CHECKMK_ADMIN_PASSWORD=%q\n' "${CHECKMK_ADMIN_PASSWORD:-}"

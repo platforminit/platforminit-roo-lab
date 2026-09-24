@@ -6,6 +6,6 @@ Generated from `tasks/tracker.json`. Do not edit manually.
 
 | Track | Current / next | Status | Branch |
 |---|---|---|---|
-| `platform` | `P-CH05-T02` — Define the CH05 stable and rehearsal GitOps source contract | `pending` | `batch/platform-ch05-gitops-source-contract` |
+| `platform` | `P-CH05-T03` — Harden the Checkmk trusted-header trust boundary | `pending` | `batch/platform-ch05-trusted-header-hardening` |
 
 Use `python3 tools/task_controller/taskctl.py next --check` for drift detection.
